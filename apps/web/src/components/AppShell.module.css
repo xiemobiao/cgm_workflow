@@ -342,6 +342,14 @@
   color: rgba(255, 200, 200, 0.95);
 }
 
+.highlight {
+  background: rgba(255, 214, 64, 0.22);
+  border: 1px solid rgba(255, 214, 64, 0.28);
+  color: inherit;
+  border-radius: 6px;
+  padding: 0 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pageEnter {
     animation: none;

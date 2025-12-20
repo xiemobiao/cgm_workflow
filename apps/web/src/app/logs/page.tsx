@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
 import { ProjectPicker } from '@/components/ProjectPicker';
@@ -20,6 +21,11 @@ type SearchItem = {
   logFileId: string;
 };
 type SearchResponse = { items: SearchItem[]; nextCursor: string | null };
+type EventContextResponse = {
+  logFileId: string;
+  before: SearchItem[];
+  after: SearchItem[];
+};
 
 type LogFileDetail = {
   id: string;
@@ -29,6 +35,8 @@ type LogFileDetail = {
   uploadedAt: string;
   eventCount: number;
   errorCount: number;
+  minTimestampMs: number | null;
+  maxTimestampMs: number | null;
 };
 
 type LogEventDetail = {
@@ -58,6 +66,44 @@ function formatDatetimeLocal(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function renderHighlighted(text: string, needle: string): ReactNode {
+  const q = needle.trim();
+  if (!q) return text;
+
+  const re = new RegExp(escapeRegExp(q), 'ig');
+  const out: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+  let i = 0;
+
+  while ((match = re.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (start > lastIndex) out.push(text.slice(lastIndex, start));
+    out.push(
+      <mark key={`${start}-${i}`} className={shellStyles.highlight}>
+        {text.slice(start, end)}
+      </mark>,
+    );
+    lastIndex = end;
+    i += 1;
+    if (re.lastIndex === match.index) re.lastIndex += 1;
+  }
+
+  if (lastIndex < text.length) out.push(text.slice(lastIndex));
+  return out.length ? out : text;
+}
+
 export default function LogsPage() {
   const { localeTag, t } = useI18n();
   const [projectId, setProjectId] = useState('');
@@ -69,12 +115,15 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false);
 
   const [eventName, setEventName] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [logFileId, setLogFileId] = useState('');
   const [level, setLevel] = useState<string>('');
   const [sdkVersion, setSdkVersion] = useState('');
   const [appId, setAppId] = useState('');
   const [limit, setLimit] = useState(50);
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
+  const [autoSearch, setAutoSearch] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [results, setResults] = useState<SearchItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -82,6 +131,9 @@ export default function LogsPage() {
   const [detail, setDetail] = useState<LogEventDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  const [context, setContext] = useState<EventContextResponse | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextError, setContextError] = useState('');
   const [copyHint, setCopyHint] = useState('');
 
   useEffect(() => {
@@ -94,9 +146,33 @@ export default function LogsPage() {
   const canSearch = useMemo(() => Boolean(projectId), [projectId]);
 
   useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const startMs = Number(sp.get('startMs') ?? '');
+    const endMs = Number(sp.get('endMs') ?? '');
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      setStartLocal(formatDatetimeLocal(new Date(startMs)));
+      setEndLocal(formatDatetimeLocal(new Date(endMs)));
+      return;
+    }
+
     const now = new Date();
     setEndLocal(formatDatetimeLocal(now));
     setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
+  }, []);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const urlLogFileId = sp.get('logFileId');
+    if (urlLogFileId && isUuid(urlLogFileId)) setLogFileId(urlLogFileId);
+    const urlKeyword = sp.get('q');
+    if (urlKeyword) setKeyword(urlKeyword);
+
+    const startMs = Number(sp.get('startMs') ?? '');
+    const endMs = Number(sp.get('endMs') ?? '');
+    const hasRange = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs;
+    if ((urlLogFileId && isUuid(urlLogFileId)) || urlKeyword || hasRange) {
+      setAutoSearch(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -116,6 +192,8 @@ export default function LogsPage() {
     let cancelled = false;
     setDetail(null);
     setDetailError('');
+    setContext(null);
+    setContextError('');
     setCopyHint('');
     setDetailLoading(true);
     apiFetch<LogEventDetail>(`/api/logs/events/${selectedEventId}`)
@@ -132,6 +210,31 @@ export default function LogsPage() {
       .finally(() => {
         if (cancelled) return;
         setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    let cancelled = false;
+    setContext(null);
+    setContextError('');
+    setContextLoading(true);
+    apiFetch<EventContextResponse>(`/api/logs/events/${selectedEventId}/context?before=8&after=8`)
+      .then((data) => {
+        if (cancelled) return;
+        setContext(data);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+        setContextError(msg);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setContextLoading(false);
       });
     return () => {
       cancelled = true;
@@ -228,6 +331,7 @@ export default function LogsPage() {
 
       setUploadResult(`logFileId=${body.data.logFileId}, status=${body.data.status}`);
       setUploadedLogFileId(body.data.logFileId);
+      setLogFileId(body.data.logFileId);
       const now = new Date();
       const end = formatDatetimeLocal(now);
       const start = formatDatetimeLocal(new Date(now.getTime() - 24 * 60 * 60 * 1000));
@@ -266,21 +370,29 @@ export default function LogsPage() {
         return;
       }
 
+      const trimmedLogFileId = logFileId.trim();
+      if (trimmedLogFileId && !isUuid(trimmedLogFileId)) {
+        setError(t('logs.invalidLogFileId'));
+        return;
+      }
+
       const startTime = toIsoFromDatetimeLocal(startValue);
       const endTime = toIsoFromDatetimeLocal(endValue);
-      const q = new URLSearchParams({
+      const qs = new URLSearchParams({
         projectId,
         startTime,
         endTime,
       });
-      if (eventName.trim()) q.set('eventName', eventName.trim());
-      if (sdkVersion.trim()) q.set('sdkVersion', sdkVersion.trim());
-      if (appId.trim()) q.set('appId', appId.trim());
-      if (level) q.set('level', level);
-      q.set('limit', String(limit));
-      if (!resetCursor && cursor) q.set('cursor', cursor);
+      if (eventName.trim()) qs.set('eventName', eventName.trim());
+      if (trimmedLogFileId) qs.set('logFileId', trimmedLogFileId);
+      if (keyword.trim()) qs.set('q', keyword.trim());
+      if (sdkVersion.trim()) qs.set('sdkVersion', sdkVersion.trim());
+      if (appId.trim()) qs.set('appId', appId.trim());
+      if (level) qs.set('level', level);
+      qs.set('limit', String(limit));
+      if (!resetCursor && cursor) qs.set('cursor', cursor);
 
-      const data = await apiFetch<SearchResponse>(`/api/logs/events/search?${q.toString()}`);
+      const data = await apiFetch<SearchResponse>(`/api/logs/events/search?${qs.toString()}`);
       if (resetCursor) {
         setCursor(null);
         setNextCursor(null);
@@ -298,10 +410,23 @@ export default function LogsPage() {
     }
   }
 
+  useEffect(() => {
+    if (!autoSearch) return;
+    if (!projectId) return;
+    if (!startLocal || !endLocal) return;
+    setAutoSearch(false);
+    void search(true);
+  }, [autoSearch, projectId, startLocal, endLocal, keyword, logFileId]);
+
   return (
     <div className={shellStyles.grid}>
       <div className={shellStyles.card}>
-        <h1 style={{ fontSize: 20, marginBottom: 8 }}>{t('logs.title')}</h1>
+        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
+          <h1 style={{ fontSize: 20, marginBottom: 0 }}>{t('logs.title')}</h1>
+          <Link href="/logs/files" className={shellStyles.button}>
+            {t('logs.files.browse')}
+          </Link>
+        </div>
         <div className={formStyles.row}>
           <ProjectPicker projectId={projectId} onChange={setProjectId} />
         </div>
@@ -344,20 +469,38 @@ export default function LogsPage() {
         </div>
 
         <div className={shellStyles.grid} style={{ marginTop: 16 }}>
-          <div className={formStyles.row}>
-            <div className={formStyles.field}>
-              <div className={formStyles.label}>{t('logs.eventNameOptional')}</div>
-              <input
-                className={formStyles.input}
-                value={eventName}
-                onChange={(e) => setEventName(e.target.value)}
-                placeholder="e.g. SDK init start"
-              />
-            </div>
-            <div className={formStyles.field} style={{ minWidth: 140 }}>
-              <div className={formStyles.label}>{t('logs.level')}</div>
-              <select
-                className={formStyles.select}
+	          <div className={formStyles.row}>
+	            <div className={formStyles.field}>
+	              <div className={formStyles.label}>{t('logs.eventNameOptional')}</div>
+	              <input
+	                className={formStyles.input}
+	                value={eventName}
+	                onChange={(e) => setEventName(e.target.value)}
+	                placeholder="e.g. SDK init start"
+	              />
+	            </div>
+	            <div className={formStyles.field} style={{ minWidth: 220 }}>
+	              <div className={formStyles.label}>{t('logs.keyword')}</div>
+	              <input
+	                className={formStyles.input}
+	                value={keyword}
+	                onChange={(e) => setKeyword(e.target.value)}
+	                placeholder="e.g. error / timeout"
+	              />
+	            </div>
+	            <div className={formStyles.field} style={{ minWidth: 260 }}>
+	              <div className={formStyles.label}>{t('logs.logFileIdOptional')}</div>
+	              <input
+	                className={formStyles.input}
+	                value={logFileId}
+	                onChange={(e) => setLogFileId(e.target.value)}
+	                placeholder="e.g. 50cda2fb-007d-4c08-b0c3-f4aa15ec562b"
+	              />
+	            </div>
+	            <div className={formStyles.field} style={{ minWidth: 140 }}>
+	              <div className={formStyles.label}>{t('logs.level')}</div>
+	              <select
+	                className={formStyles.select}
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
               >
@@ -575,29 +718,87 @@ export default function LogsPage() {
                     <div className={shellStyles.kvValue}>{detail.id}</div>
                   </div>
 
-                  <div className={formStyles.row}>
-                    <button className={shellStyles.button} type="button" onClick={() => void copyText(detail.id)}>
-                      {t('logs.detail.copyEventId')}
-                    </button>
-                    <button className={shellStyles.button} type="button" onClick={() => void copyText(detail.logFileId)}>
-                      {t('logs.detail.copyLogFileId')}
-                    </button>
-                    {copyHint ? <div className={formStyles.success}>{copyHint}</div> : null}
-                  </div>
+	                  <div className={formStyles.row}>
+	                    <button className={shellStyles.button} type="button" onClick={() => void copyText(detail.id)}>
+	                      {t('logs.detail.copyEventId')}
+	                    </button>
+	                    <button className={shellStyles.button} type="button" onClick={() => void copyText(detail.logFileId)}>
+	                      {t('logs.detail.copyLogFileId')}
+	                    </button>
+	                    {copyHint ? <div className={formStyles.success}>{copyHint}</div> : null}
+	                  </div>
 
-                  <div className={shellStyles.grid}>
-                    <div className={formStyles.label}>{t('logs.detail.msgJson')}</div>
-                    <pre className={shellStyles.codeBlock}>{prettyJson(detail.msgJson)}</pre>
-                  </div>
+	                  <div className={shellStyles.grid}>
+	                    <div className={formStyles.label}>{t('logs.detail.context')}</div>
+	                    {contextLoading ? (
+	                      <div className={formStyles.muted}>{t('common.loading')}</div>
+	                    ) : null}
+	                    {contextError ? <div className={formStyles.error}>{contextError}</div> : null}
+	                    {context ? (
+	                      <div className={shellStyles.tableWrap}>
+	                        <table className={shellStyles.table}>
+	                          <tbody>
+	                            {context.before.map((e) => (
+	                              <tr
+	                                key={e.id}
+	                                className={shellStyles.clickableRow}
+	                                onClick={() => setSelectedEventId(e.id)}
+	                              >
+	                                <td style={{ whiteSpace: 'nowrap' }}>
+	                                  {new Date(e.timestampMs).toLocaleString(localeTag)}
+	                                </td>
+	                                <td style={{ minWidth: 260 }}>{renderHighlighted(e.eventName, keyword)}</td>
+	                                <td>{e.level}</td>
+	                              </tr>
+	                            ))}
+	                            <tr>
+	                              <td colSpan={3} className={formStyles.muted} style={{ padding: 10 }}>
+	                                {t('logs.detail.current')}
+	                              </td>
+	                            </tr>
+	                            {context.after.map((e) => (
+	                              <tr
+	                                key={e.id}
+	                                className={shellStyles.clickableRow}
+	                                onClick={() => setSelectedEventId(e.id)}
+	                              >
+	                                <td style={{ whiteSpace: 'nowrap' }}>
+	                                  {new Date(e.timestampMs).toLocaleString(localeTag)}
+	                                </td>
+	                                <td style={{ minWidth: 260 }}>{renderHighlighted(e.eventName, keyword)}</td>
+	                                <td>{e.level}</td>
+	                              </tr>
+	                            ))}
+	                            {context.before.length === 0 && context.after.length === 0 ? (
+	                              <tr>
+	                                <td colSpan={3} style={{ padding: 10 }} className={formStyles.muted}>
+	                                  {t('logs.detail.contextEmpty')}
+	                                </td>
+	                              </tr>
+	                            ) : null}
+	                          </tbody>
+	                        </table>
+	                      </div>
+	                    ) : null}
+	                  </div>
 
-                  {detail.rawLine ? (
-                    <div className={shellStyles.grid}>
-                      <div className={formStyles.label}>{t('logs.detail.rawLine')}</div>
-                      <pre className={shellStyles.codeBlock}>{detail.rawLine}</pre>
-                    </div>
-                  ) : null}
-                </>
-              ) : null}
+	                  <div className={shellStyles.grid}>
+	                    <div className={formStyles.label}>{t('logs.detail.msgJson')}</div>
+	                    <pre className={shellStyles.codeBlock}>
+	                      {renderHighlighted(prettyJson(detail.msgJson), keyword)}
+	                    </pre>
+	                  </div>
+
+	                  {detail.rawLine ? (
+	                    <div className={shellStyles.grid}>
+	                      <div className={formStyles.label}>{t('logs.detail.rawLine')}</div>
+	                      <pre className={shellStyles.codeBlock}>
+	                        {renderHighlighted(detail.rawLine, keyword)}
+	                      </pre>
+	                    </div>
+	                  ) : null}
+	                </>
+	              ) : null}
             </div>
           </aside>
         </>

@@ -117,12 +117,50 @@ export class LogsService {
     return Buffer.from(payload, 'utf8').toString('base64');
   }
 
+  private decodeFileCursor(cursor: string): { id: string; uploadedAt: Date } {
+    try {
+      const json = Buffer.from(cursor, 'base64').toString('utf8');
+      const parsed = JSON.parse(json) as unknown;
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('cursor is not an object');
+      }
+      const obj = parsed as { id?: unknown; uploadedAtMs?: unknown };
+      if (typeof obj.id !== 'string') throw new Error('cursor.id invalid');
+      const uploadedAtMs =
+        typeof obj.uploadedAtMs === 'number'
+          ? obj.uploadedAtMs
+          : typeof obj.uploadedAtMs === 'string'
+            ? Number(obj.uploadedAtMs)
+            : NaN;
+      if (!Number.isFinite(uploadedAtMs)) {
+        throw new Error('cursor.uploadedAtMs invalid');
+      }
+      return { id: obj.id, uploadedAt: new Date(uploadedAtMs) };
+    } catch {
+      throw new ApiException({
+        code: 'INVALID_CURSOR',
+        message: 'Invalid cursor',
+        status: 400,
+      });
+    }
+  }
+
+  private encodeFileCursor(item: { id: string; uploadedAt: Date }) {
+    const payload = JSON.stringify({
+      id: item.id,
+      uploadedAtMs: item.uploadedAt.getTime(),
+    });
+    return Buffer.from(payload, 'utf8').toString('base64');
+  }
+
   async searchEvents(params: {
     actorUserId: string;
     projectId: string;
     startTime: string;
     endTime: string;
     eventName?: string;
+    logFileId?: string;
+    q?: string;
     appId?: string;
     sdkVersion?: string;
     level?: number;
@@ -153,9 +191,24 @@ export class LogsService {
     ];
 
     if (params.eventName) andFilters.push({ eventName: params.eventName });
+    if (params.logFileId) andFilters.push({ logFileId: params.logFileId });
     if (params.appId) andFilters.push({ appId: params.appId });
     if (params.sdkVersion) andFilters.push({ sdkVersion: params.sdkVersion });
     if (params.level) andFilters.push({ level: params.level });
+
+    const q = params.q?.trim();
+    if (q) {
+      andFilters.push({
+        OR: [
+          { eventName: { contains: q, mode: 'insensitive' } },
+          { rawLine: { contains: q, mode: 'insensitive' } },
+          { terminalInfo: { contains: q, mode: 'insensitive' } },
+          { threadName: { contains: q, mode: 'insensitive' } },
+          { appId: { contains: q, mode: 'insensitive' } },
+          { sdkVersion: { contains: q, mode: 'insensitive' } },
+        ],
+      });
+    }
 
     if (params.cursor) {
       const cursor = this.decodeCursor(params.cursor);
@@ -197,6 +250,100 @@ export class LogsService {
         sdkVersion: e.sdkVersion,
         appId: e.appId,
         logFileId: e.logFileId,
+      })),
+      nextCursor,
+    };
+  }
+
+  async listLogFiles(params: {
+    actorUserId: string;
+    projectId: string;
+    limit?: number;
+    cursor?: string;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+
+    const andFilters: Prisma.LogFileWhereInput[] = [{ projectId: params.projectId }];
+    if (params.cursor) {
+      const cursor = this.decodeFileCursor(params.cursor);
+      andFilters.push({
+        OR: [
+          { uploadedAt: { lt: cursor.uploadedAt } },
+          {
+            AND: [
+              { uploadedAt: cursor.uploadedAt },
+              { id: { lt: cursor.id } },
+            ],
+          },
+        ],
+      });
+    }
+
+    const rows = await this.prisma.logFile.findMany({
+      where: { AND: andFilters },
+      orderBy: [{ uploadedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      select: {
+        id: true,
+        fileName: true,
+        status: true,
+        parserVersion: true,
+        uploadedAt: true,
+      },
+    });
+
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    const nextCursor =
+      hasMore && page.length > 0
+        ? this.encodeFileCursor({
+            id: page[page.length - 1].id,
+            uploadedAt: page[page.length - 1].uploadedAt,
+          })
+        : null;
+
+    const ids = page.map((f) => f.id);
+    const [eventCounts, errorCounts] = await Promise.all([
+      ids.length
+        ? this.prisma.logEvent.groupBy({
+            by: ['logFileId'],
+            where: { logFileId: { in: ids } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+      ids.length
+        ? this.prisma.logEvent.groupBy({
+            by: ['logFileId'],
+            where: { logFileId: { in: ids }, eventName: 'PARSER_ERROR' },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const eventCountByFile = new Map<string, number>();
+    for (const row of eventCounts) {
+      eventCountByFile.set(row.logFileId, row._count._all);
+    }
+    const errorCountByFile = new Map<string, number>();
+    for (const row of errorCounts) {
+      errorCountByFile.set(row.logFileId, row._count._all);
+    }
+
+    return {
+      items: page.map((f) => ({
+        id: f.id,
+        fileName: f.fileName,
+        status: f.status,
+        parserVersion: f.parserVersion,
+        uploadedAt: f.uploadedAt,
+        eventCount: eventCountByFile.get(f.id) ?? 0,
+        errorCount: errorCountByFile.get(f.id) ?? 0,
       })),
       nextCursor,
     };
@@ -256,6 +403,110 @@ export class LogsService {
     };
   }
 
+  async getEventContext(params: {
+    actorUserId: string;
+    id: string;
+    before?: number;
+    after?: number;
+  }) {
+    const before = Math.min(Math.max(params.before ?? 10, 0), 50);
+    const after = Math.min(Math.max(params.after ?? 10, 0), 50);
+
+    const target = await this.prisma.logEvent.findUnique({
+      where: { id: params.id },
+      select: { id: true, projectId: true, logFileId: true, timestampMs: true },
+    });
+
+    if (!target) {
+      throw new ApiException({
+        code: 'LOG_EVENT_NOT_FOUND',
+        message: 'Log event not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: target.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const select = {
+      id: true,
+      logFileId: true,
+      timestampMs: true,
+      level: true,
+      eventName: true,
+      sdkVersion: true,
+      appId: true,
+    } as const;
+
+    const [beforeRows, afterRows] = await Promise.all([
+      before > 0
+        ? this.prisma.logEvent.findMany({
+            where: {
+              logFileId: target.logFileId,
+              OR: [
+                { timestampMs: { lt: target.timestampMs } },
+                {
+                  AND: [
+                    { timestampMs: target.timestampMs },
+                    { id: { lt: target.id } },
+                  ],
+                },
+              ],
+            },
+            orderBy: [{ timestampMs: 'desc' }, { id: 'desc' }],
+            take: before,
+            select,
+          })
+        : Promise.resolve([]),
+      after > 0
+        ? this.prisma.logEvent.findMany({
+            where: {
+              logFileId: target.logFileId,
+              OR: [
+                { timestampMs: { gt: target.timestampMs } },
+                {
+                  AND: [
+                    { timestampMs: target.timestampMs },
+                    { id: { gt: target.id } },
+                  ],
+                },
+              ],
+            },
+            orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+            take: after,
+            select,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const normalize = (e: {
+      id: string;
+      logFileId: string;
+      timestampMs: bigint;
+      level: number;
+      eventName: string;
+      sdkVersion: string | null;
+      appId: string | null;
+    }) => ({
+      id: e.id,
+      logFileId: e.logFileId,
+      timestampMs: Number(e.timestampMs),
+      level: e.level,
+      eventName: e.eventName,
+      sdkVersion: e.sdkVersion,
+      appId: e.appId,
+    });
+
+    return {
+      logFileId: target.logFileId,
+      before: beforeRows.slice().reverse().map(normalize),
+      after: afterRows.map(normalize),
+    };
+  }
+
   async getLogFileDetail(params: { actorUserId: string; id: string }) {
     const logFile = await this.prisma.logFile.findUnique({
       where: { id: params.id },
@@ -290,6 +541,21 @@ export class LogsService {
       }),
     ]);
 
+    const range = await this.prisma.logEvent.aggregate({
+      where: { logFileId: logFile.id },
+      _min: { timestampMs: true },
+      _max: { timestampMs: true },
+    });
+
+    const minTimestampMs =
+      range._min.timestampMs !== null && range._min.timestampMs !== undefined
+        ? Number(range._min.timestampMs)
+        : null;
+    const maxTimestampMs =
+      range._max.timestampMs !== null && range._max.timestampMs !== undefined
+        ? Number(range._max.timestampMs)
+        : null;
+
     return {
       id: logFile.id,
       fileName: logFile.fileName,
@@ -298,6 +564,8 @@ export class LogsService {
       uploadedAt: logFile.uploadedAt,
       eventCount,
       errorCount,
+      minTimestampMs,
+      maxTimestampMs,
     };
   }
 }

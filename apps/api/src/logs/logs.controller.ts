@@ -26,6 +26,8 @@ const uploadSchema = z.object({
 const searchSchema = z.object({
   projectId: z.string().uuid(),
   eventName: z.string().min(1).optional(),
+  logFileId: z.string().uuid().optional(),
+  q: z.string().min(1).optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   appId: z.string().min(1).optional(),
@@ -33,6 +35,17 @@ const searchSchema = z.object({
   level: z.coerce.number().int().min(1).max(4).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   cursor: z.string().min(1).optional(),
+});
+
+const fileListSchema = z.object({
+  projectId: z.string().uuid(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  cursor: z.string().min(1).optional(),
+});
+
+const contextSchema = z.object({
+  before: z.coerce.number().int().min(0).max(50).optional(),
+  after: z.coerce.number().int().min(0).max(50).optional(),
 });
 
 const idSchema = z.string().uuid();
@@ -77,6 +90,15 @@ export class LogsController {
     return this.logs.searchEvents({ actorUserId: user.userId, ...dto });
   }
 
+  @Get('files')
+  async listFiles(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = fileListSchema.parse(query);
+    return this.logs.listLogFiles({ actorUserId: user.userId, ...dto });
+  }
+
   @Get('events/:id')
   async getEvent(
     @CurrentUser() user: CurrentUserPayload,
@@ -84,6 +106,21 @@ export class LogsController {
   ) {
     const eventId = idSchema.parse(id);
     return this.logs.getEventDetail({ actorUserId: user.userId, id: eventId });
+  }
+
+  @Get('events/:id/context')
+  async getEventContext(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    const eventId = idSchema.parse(id);
+    const dto = contextSchema.parse(query);
+    return this.logs.getEventContext({
+      actorUserId: user.userId,
+      id: eventId,
+      ...dto,
+    });
   }
 
   @Get('files/:id')
