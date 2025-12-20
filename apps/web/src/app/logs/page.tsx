@@ -188,7 +188,7 @@ export default function LogsPage() {
   useEffect(() => {
     const saved = localStorage.getItem('cgm_logs_limit');
     const n = saved ? Number(saved) : NaN;
-    if (Number.isFinite(n) && n >= 1 && n <= 200) {
+    if (Number.isFinite(n) && n >= 1 && n <= 1000) {
       setLimit(Math.trunc(n));
     }
   }, []);
@@ -563,12 +563,12 @@ export default function LogsPage() {
                 className={formStyles.input}
                 type="number"
                 min={1}
-                max={200}
+                max={1000}
                 value={limit}
                 onChange={(e) => {
                   const n = e.currentTarget.valueAsNumber;
                   if (!Number.isFinite(n)) return;
-                  const next = Math.min(Math.max(Math.trunc(n), 1), 200);
+                  const next = Math.min(Math.max(Math.trunc(n), 1), 1000);
                   setLimit(next);
                 }}
               />

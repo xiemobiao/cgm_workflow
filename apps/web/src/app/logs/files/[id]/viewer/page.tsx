@@ -149,7 +149,7 @@ export default function LogFileViewerPage() {
   useEffect(() => {
     const saved = localStorage.getItem('cgm_log_file_viewer_limit');
     const n = saved ? Number(saved) : NaN;
-    if (Number.isFinite(n) && n >= 1 && n <= 200) {
+    if (Number.isFinite(n) && n >= 1 && n <= 1000) {
       setLimit(Math.trunc(n));
     }
   }, []);
@@ -451,12 +451,12 @@ export default function LogFileViewerPage() {
                   className={formStyles.input}
                   type="number"
                   min={1}
-                  max={200}
+                  max={1000}
                   value={limit}
                   onChange={(e) => {
                     const n = e.currentTarget.valueAsNumber;
                     if (!Number.isFinite(n)) return;
-                    setLimit(Math.min(Math.max(Math.trunc(n), 1), 200));
+                    setLimit(Math.min(Math.max(Math.trunc(n), 1), 1000));
                   }}
                 />
               </div>
@@ -491,7 +491,14 @@ export default function LogFileViewerPage() {
                 {t('common.loadMore')}
               </button>
               <div className={formStyles.muted}>
-                {loading ? t('common.loading') : t('common.items', { count: items.length })}
+                {loading
+                  ? t('common.loading')
+                  : fileDetail
+                    ? t('logs.files.viewerLoaded', {
+                        loaded: items.length,
+                        total: fileDetail.eventCount,
+                      })
+                    : t('common.items', { count: items.length })}
               </div>
             </div>
 

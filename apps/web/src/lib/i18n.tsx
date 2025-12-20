@@ -99,6 +99,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'logs.files.viewerStream': '日志流',
     'logs.files.viewerExpand': '展开详情',
     'logs.files.viewerCollapse': '收起详情',
+    'logs.files.viewerLoaded': '已加载 {loaded} / {total} 条',
     'logs.files.openInLogs': '在日志中查看事件',
     'logs.files.delete': '删除文件',
     'logs.files.deleteConfirm':
@@ -272,6 +273,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'logs.files.viewerStream': 'Log stream',
     'logs.files.viewerExpand': 'Expand',
     'logs.files.viewerCollapse': 'Collapse',
+    'logs.files.viewerLoaded': 'Loaded {loaded} / {total}',
     'logs.files.openInLogs': 'Open events in Logs',
     'logs.files.delete': 'Delete',
     'logs.files.deleteConfirm':

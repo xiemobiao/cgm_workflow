@@ -35,7 +35,7 @@ const searchSchema = z.object({
   appId: z.string().min(1).optional(),
   sdkVersion: z.string().min(1).optional(),
   level: z.coerce.number().int().min(1).max(4).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
   cursor: z.string().min(1).optional(),
 });
 

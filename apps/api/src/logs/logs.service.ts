@@ -221,7 +221,7 @@ export class LogsService {
       });
     }
 
-    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 1000);
 
     const andFilters: Prisma.LogEventWhereInput[] = [
       { projectId: params.projectId },
