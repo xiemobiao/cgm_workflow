@@ -131,8 +131,11 @@ export default function LogFileViewerPage() {
   const [level, setLevel] = useState<string>('');
   const [limit, setLimit] = useState(100);
 
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
+  const [nextCursorByPage, setNextCursorByPage] = useState<(string | null)[]>(
+    [],
+  );
   const [items, setItems] = useState<SearchItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -145,6 +148,7 @@ export default function LogFileViewerPage() {
   const [contextLoading, setContextLoading] = useState(false);
   const [contextError, setContextError] = useState('');
   const [copyHint, setCopyHint] = useState('');
+  const searchReqIdRef = useRef(0);
 
   useEffect(() => {
     const saved = localStorage.getItem('cgm_log_file_viewer_limit');
@@ -202,12 +206,14 @@ export default function LogFileViewerPage() {
     };
   }, [fileDetail?.maxTimestampMs, fileDetail?.minTimestampMs, fileDetail?.uploadedAt]);
 
-  async function search(resetCursor: boolean) {
+  async function fetchPage(page: number, cursor: string | null) {
     if (!fileId) return;
+    if (!fileDetail) return;
+    const reqId = (searchReqIdRef.current += 1);
     setLoading(true);
     setError('');
     try {
-      const projectId = fileDetail?.projectId || getProjectId() || '';
+      const projectId = fileDetail.projectId || getProjectId() || '';
       if (!projectId) {
         setError('Missing projectId');
         return;
@@ -224,33 +230,40 @@ export default function LogFileViewerPage() {
       if (keyword.trim()) qs.set('q', keyword.trim());
       qs.set('direction', 'asc');
       if (level) qs.set('level', level);
-      if (!resetCursor && cursor) qs.set('cursor', cursor);
+      if (cursor) qs.set('cursor', cursor);
 
       const data = await apiFetch<SearchResponse>(`/api/logs/events/search?${qs.toString()}`);
-      if (resetCursor) {
-        setCursor(null);
-        setNextCursor(null);
-        setItems(data.items);
-      } else {
-        setItems((prev) => {
-          const seen = new Set(prev.map((i) => i.id));
-          const appended = data.items.filter((i) => !seen.has(i.id));
-          return [...prev, ...appended];
-        });
-      }
-      setNextCursor(data.nextCursor);
-      setCursor(data.nextCursor);
+      if (reqId !== searchReqIdRef.current) return;
+      setItems(data.items);
+      setSelectedEventId(null);
+      setPageIndex(page);
+      setPageCursors((prev) => {
+        const next = prev.slice();
+        while (next.length <= page) next.push(null);
+        next[page] = cursor;
+        return next;
+      });
+      setNextCursorByPage((prev) => {
+        const next = prev.slice();
+        while (next.length <= page) next.push(null);
+        next[page] = data.nextCursor;
+        return next;
+      });
     } catch (e: unknown) {
+      if (reqId !== searchReqIdRef.current) return;
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
       setError(msg);
     } finally {
-      setLoading(false);
+      if (reqId === searchReqIdRef.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     if (!fileDetail) return;
-    void search(true);
+    setPageIndex(0);
+    setPageCursors([null]);
+    setNextCursorByPage([]);
+    void fetchPage(0, null);
   }, [fileDetail?.id]);
 
   useEffect(() => {
@@ -329,26 +342,9 @@ export default function LogFileViewerPage() {
     return `/logs?${qs.toString()}`;
   }, [fileId, timeRange.endMs, timeRange.startMs]);
 
-  const listSentinelRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const el = listSentinelRef.current;
-    if (!el) return;
-    if (!nextCursor) return;
-    if (loading) return;
-
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        if (!nextCursor) return;
-        if (loading) return;
-        void search(false);
-      },
-      { root: null, rootMargin: '180px', threshold: 0.01 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [nextCursor, loading]);
+  const nextCursor = nextCursorByPage[pageIndex] ?? null;
+  const viewedEnd = pageIndex * limit + items.length;
+  const totalPages = fileDetail ? Math.max(1, Math.ceil(fileDetail.eventCount / limit)) : 1;
 
   return (
     <div className={shellStyles.grid}>
@@ -469,7 +465,12 @@ export default function LogFileViewerPage() {
                 disabled={loading}
                 onClick={() => {
                   setEventName('PARSER_ERROR');
-                  window.setTimeout(() => void search(true), 0);
+                  window.setTimeout(() => {
+                    setPageIndex(0);
+                    setPageCursors([null]);
+                    setNextCursorByPage([]);
+                    void fetchPage(0, null);
+                  }, 0);
                 }}
               >
                 {t('logs.onlyParserError')}
@@ -478,26 +479,56 @@ export default function LogFileViewerPage() {
                 className={shellStyles.button}
                 type="button"
                 disabled={loading}
-                onClick={() => void search(true)}
+                onClick={() => {
+                  setPageIndex(0);
+                  setPageCursors([null]);
+                  setNextCursorByPage([]);
+                  void fetchPage(0, null);
+                }}
               >
                 {t('common.search')}
               </button>
               <button
                 className={shellStyles.button}
                 type="button"
-                disabled={loading || !nextCursor}
-                onClick={() => void search(false)}
+                disabled={loading || pageIndex <= 0}
+                onClick={() => {
+                  const prevPage = Math.max(0, pageIndex - 1);
+                  const prevCursor = pageCursors[prevPage] ?? null;
+                  void fetchPage(prevPage, prevCursor);
+                }}
               >
-                {t('common.loadMore')}
+                {t('common.prevPage')}
+              </button>
+              <button
+                className={shellStyles.button}
+                type="button"
+                disabled={loading || !nextCursor}
+                onClick={() => {
+                  if (!nextCursor) return;
+                  const nextPage = pageIndex + 1;
+                  setPageCursors((prev) => {
+                    const out = prev.slice();
+                    while (out.length <= nextPage) out.push(null);
+                    out[nextPage] = nextCursor;
+                    return out;
+                  });
+                  void fetchPage(nextPage, nextCursor);
+                }}
+              >
+                {t('common.nextPage')}
               </button>
               <div className={formStyles.muted}>
                 {loading
                   ? t('common.loading')
                   : fileDetail
-                    ? t('logs.files.viewerLoaded', {
-                        loaded: items.length,
+                    ? `${t('logs.files.viewerPage', {
+                        page: pageIndex + 1,
+                        totalPages,
+                      })} · ${t('logs.files.viewerLoaded', {
+                        loaded: Math.min(viewedEnd, fileDetail.eventCount),
                         total: fileDetail.eventCount,
-                      })
+                      })}`
                     : t('common.items', { count: items.length })}
               </div>
             </div>
@@ -518,14 +549,24 @@ export default function LogFileViewerPage() {
                       style={{ ['--hue' as any]: it.hue }}
                       onClick={() => {
                         setEventName((prev) => (prev === it.name ? '' : it.name));
-                        window.setTimeout(() => void search(true), 0);
+                        window.setTimeout(() => {
+                          setPageIndex(0);
+                          setPageCursors([null]);
+                          setNextCursorByPage([]);
+                          void fetchPage(0, null);
+                        }, 0);
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           setEventName((prev) => (prev === it.name ? '' : it.name));
-                          window.setTimeout(() => void search(true), 0);
+                          window.setTimeout(() => {
+                            setPageIndex(0);
+                            setPageCursors([null]);
+                            setNextCursorByPage([]);
+                            void fetchPage(0, null);
+                          }, 0);
                         }
                       }}
                     >
@@ -756,7 +797,6 @@ export default function LogFileViewerPage() {
             })}
 
             {items.length === 0 ? <div className={formStyles.muted}>{t('logs.empty')}</div> : null}
-            <div ref={listSentinelRef} />
           </div>
         </section>
       </div>
