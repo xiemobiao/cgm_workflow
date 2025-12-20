@@ -148,24 +148,33 @@ export class LogsParserService {
         }
       }
 
-      await this.prisma.$transaction(async (tx) => {
-        await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
+      const isGoneError = (e: unknown) =>
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        (e.code === 'P2025' || e.code === 'P2003');
 
-        const batchSize = 500;
-        for (let i = 0; i < events.length; i += batchSize) {
-          const batch = events.slice(i, i + batchSize);
-          if (batch.length === 0) continue;
-          await tx.logEvent.createMany({ data: batch });
-        }
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
 
-        await tx.logFile.update({
-          where: { id: logFile.id },
-          data: {
-            status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
-            parserVersion: 'v1',
-          },
+          const batchSize = 500;
+          for (let i = 0; i < events.length; i += batchSize) {
+            const batch = events.slice(i, i + batchSize);
+            if (batch.length === 0) continue;
+            await tx.logEvent.createMany({ data: batch });
+          }
+
+          await tx.logFile.update({
+            where: { id: logFile.id },
+            data: {
+              status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
+              parserVersion: 'v1',
+            },
+          });
         });
-      });
+      } catch (e) {
+        if (isGoneError(e)) return;
+        throw e;
+      }
 
       await this.audit.record({
         projectId: logFile.projectId,
@@ -177,10 +186,20 @@ export class LogsParserService {
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      await this.prisma.logFile.update({
-        where: { id: logFile.id },
-        data: { status: LogFileStatus.failed, parserVersion: 'v1' },
-      });
+      try {
+        await this.prisma.logFile.update({
+          where: { id: logFile.id },
+          data: { status: LogFileStatus.failed, parserVersion: 'v1' },
+        });
+      } catch (inner) {
+        if (
+          inner instanceof Prisma.PrismaClientKnownRequestError &&
+          (inner.code === 'P2025' || inner.code === 'P2003')
+        ) {
+          return;
+        }
+        throw inner;
+      }
 
       await this.audit.record({
         projectId: logFile.projectId,

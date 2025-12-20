@@ -397,6 +397,59 @@ export class LogsService {
     };
   }
 
+  async deleteLogFile(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        projectId: true,
+        fileName: true,
+        storageKey: true,
+      },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'Dev', 'QA', 'Support'],
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.incidentLogLink.deleteMany({
+        where: { logEvent: { logFileId: logFile.id } },
+      });
+      await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
+      await tx.logFile.delete({ where: { id: logFile.id } });
+    });
+
+    if (logFile.storageKey) {
+      try {
+        await this.storage.deleteObject(logFile.storageKey);
+      } catch {
+        // ignore
+      }
+    }
+
+    await this.audit.record({
+      projectId: logFile.projectId,
+      actorUserId: params.actorUserId,
+      action: 'logs.delete',
+      targetType: 'LogFile',
+      targetId: logFile.id,
+      metadata: { fileName: logFile.fileName },
+    });
+
+    return { deleted: true };
+  }
+
   async getEventDetail(params: { actorUserId: string; id: string }) {
     const event = await this.prisma.logEvent.findUnique({
       where: { id: params.id },
@@ -610,6 +663,7 @@ export class LogsService {
 
     return {
       id: logFile.id,
+      projectId: logFile.projectId,
       fileName: logFile.fileName,
       status: logFile.status,
       parserVersion: logFile.parserVersion,

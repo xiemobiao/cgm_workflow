@@ -36,4 +36,14 @@ export class LocalStorageAdapter implements StorageAdapter {
     const fullPath = this.resolvePath(key);
     return fs.readFile(fullPath);
   }
+
+  async deleteObject(key: string): Promise<void> {
+    const fullPath = this.resolvePath(key);
+    try {
+      await fs.unlink(fullPath);
+    } catch (e) {
+      if ((e as { code?: unknown } | null)?.code === 'ENOENT') return;
+      throw e;
+    }
+  }
 }

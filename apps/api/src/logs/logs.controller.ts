@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -130,5 +131,14 @@ export class LogsController {
   ) {
     const fileId = idSchema.parse(id);
     return this.logs.getLogFileDetail({ actorUserId: user.userId, id: fileId });
+  }
+
+  @Delete('files/:id')
+  async deleteLogFile(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.deleteLogFile({ actorUserId: user.userId, id: fileId });
   }
 }

@@ -106,6 +106,16 @@
   box-shadow: none;
 }
 
+.buttonDanger {
+  border-color: rgba(255, 107, 107, 0.32);
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.18), rgba(255, 255, 255, 0.04));
+}
+
+.buttonDanger:hover {
+  border-color: rgba(255, 107, 107, 0.55);
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.26), rgba(255, 255, 255, 0.05));
+}
+
 .content {
   max-width: 1180px;
   margin: 0 auto;

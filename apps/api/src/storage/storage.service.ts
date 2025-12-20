@@ -15,4 +15,8 @@ export class StorageService {
   getObjectBuffer(key: string) {
     return this.adapter.getObjectBuffer(key);
   }
+
+  deleteObject(key: string) {
+    return this.adapter.deleteObject(key);
+  }
 }

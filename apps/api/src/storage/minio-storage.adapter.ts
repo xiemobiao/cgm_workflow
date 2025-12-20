@@ -40,4 +40,15 @@ export class MinioStorageAdapter implements StorageAdapter {
     }
     return buf;
   }
+
+  async deleteObject(key: string): Promise<void> {
+    await this.ensureBucket();
+    try {
+      await this.client.removeObject(this.bucket, key);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('NoSuchKey') || msg.includes('Not Found')) return;
+      throw e;
+    }
+  }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
@@ -22,12 +22,15 @@ type LogFileDetail = {
 
 export default function LogFileDetailPage() {
   const { localeTag, t } = useI18n();
+  const router = useRouter();
   const params = useParams();
   const fileId = typeof params.id === 'string' ? params.id : '';
 
   const [detail, setDetail] = useState<LogFileDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     if (!fileId) return;
@@ -73,14 +76,41 @@ export default function LogFileDetailPage() {
             <Link href="/logs/files" className={shellStyles.button}>
               {t('common.back')}
             </Link>
+            <Link href={`/logs/files/${fileId}/viewer`} className={shellStyles.button}>
+              {t('logs.files.viewContent')}
+            </Link>
             <Link href={logsHref} className={shellStyles.button}>
               {t('logs.files.openInLogs')}
             </Link>
+            <button
+              className={`${shellStyles.button} ${shellStyles.buttonDanger}`}
+              type="button"
+              disabled={deleting || loading || !fileId}
+              onClick={() => {
+                const name = detail?.fileName ?? fileId;
+                const ok = window.confirm(t('logs.files.deleteConfirm', { fileName: name }));
+                if (!ok) return;
+                setDeleting(true);
+                setDeleteError('');
+                apiFetch<{ deleted: boolean }>(`/api/logs/files/${fileId}`, { method: 'DELETE' })
+                  .then(() => {
+                    router.push('/logs/files');
+                  })
+                  .catch((e: unknown) => {
+                    const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+                    setDeleteError(msg);
+                  })
+                  .finally(() => setDeleting(false));
+              }}
+            >
+              {t('logs.files.delete')}
+            </button>
           </div>
         </div>
 
         {loading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
         {error ? <div className={formStyles.error}>{error}</div> : null}
+        {deleteError ? <div className={formStyles.error}>{deleteError}</div> : null}
 
         {detail ? (
           <div className={shellStyles.kvGrid} style={{ marginTop: 14 }}>
