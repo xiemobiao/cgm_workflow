@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
   Post,
   Query,
   UploadedFile,
@@ -33,6 +34,8 @@ const searchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   cursor: z.string().min(1).optional(),
 });
+
+const idSchema = z.string().uuid();
 
 @UseGuards(JwtAuthGuard)
 @Controller('logs')
@@ -72,5 +75,23 @@ export class LogsController {
   ) {
     const dto = searchSchema.parse(query);
     return this.logs.searchEvents({ actorUserId: user.userId, ...dto });
+  }
+
+  @Get('events/:id')
+  async getEvent(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const eventId = idSchema.parse(id);
+    return this.logs.getEventDetail({ actorUserId: user.userId, id: eventId });
+  }
+
+  @Get('files/:id')
+  async getLogFile(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.getLogFileDetail({ actorUserId: user.userId, id: fileId });
   }
 }

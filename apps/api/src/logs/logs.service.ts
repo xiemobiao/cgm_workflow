@@ -201,4 +201,103 @@ export class LogsService {
       nextCursor,
     };
   }
+
+  async getEventDetail(params: { actorUserId: string; id: string }) {
+    const event = await this.prisma.logEvent.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        projectId: true,
+        logFileId: true,
+        timestampMs: true,
+        level: true,
+        eventName: true,
+        sdkVersion: true,
+        appId: true,
+        terminalInfo: true,
+        threadName: true,
+        threadId: true,
+        isMainThread: true,
+        msgJson: true,
+        rawLine: true,
+        createdAt: true,
+      },
+    });
+
+    if (!event) {
+      throw new ApiException({
+        code: 'LOG_EVENT_NOT_FOUND',
+        message: 'Log event not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: event.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    return {
+      id: event.id,
+      logFileId: event.logFileId,
+      timestampMs: Number(event.timestampMs),
+      level: event.level,
+      eventName: event.eventName,
+      sdkVersion: event.sdkVersion,
+      appId: event.appId,
+      terminalInfo: event.terminalInfo,
+      threadName: event.threadName,
+      threadId: event.threadId ? Number(event.threadId) : null,
+      isMainThread: event.isMainThread,
+      msgJson: event.msgJson,
+      rawLine: event.rawLine,
+      createdAt: event.createdAt,
+    };
+  }
+
+  async getLogFileDetail(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        projectId: true,
+        fileName: true,
+        status: true,
+        parserVersion: true,
+        uploadedAt: true,
+      },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const [eventCount, errorCount] = await Promise.all([
+      this.prisma.logEvent.count({ where: { logFileId: logFile.id } }),
+      this.prisma.logEvent.count({
+        where: { logFileId: logFile.id, eventName: 'PARSER_ERROR' },
+      }),
+    ]);
+
+    return {
+      id: logFile.id,
+      fileName: logFile.fileName,
+      status: logFile.status,
+      parserVersion: logFile.parserVersion,
+      uploadedAt: logFile.uploadedAt,
+      eventCount,
+      errorCount,
+    };
+  }
 }
