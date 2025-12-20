@@ -19,6 +19,7 @@ type SearchItem = {
   sdkVersion: string | null;
   appId: string | null;
   logFileId: string;
+  msg: string | null;
 };
 type SearchResponse = { items: SearchItem[]; nextCursor: string | null };
 type EventContextResponse = {
@@ -51,6 +52,7 @@ type LogEventDetail = {
   threadName: string | null;
   threadId: number | null;
   isMainThread: boolean | null;
+  msg: string | null;
   msgJson: unknown | null;
   rawLine: string | null;
   createdAt: string;
@@ -74,6 +76,14 @@ function isUuid(value: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function shortenText(value: string | null, maxLen: number) {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.length <= maxLen) return trimmed;
+  return `${trimmed.slice(0, Math.max(0, maxLen - 1))}…`;
 }
 
 function renderHighlighted(text: string, needle: string): ReactNode {
@@ -636,19 +646,24 @@ export default function LogsPage() {
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {new Date(e.timestampMs).toLocaleString(localeTag)}
                   </td>
-                  <td style={{ minWidth: 260 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      {e.eventName === 'PARSER_ERROR' ? (
-                        <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>
-                          {t('logs.parserError')}
-                        </span>
-                      ) : null}
-                      <span>{e.eventName}</span>
-                    </div>
-                  </td>
-                  <td>{e.level}</td>
-                  <td>{e.sdkVersion ?? '-'}</td>
-                  <td>{e.appId ?? '-'}</td>
+	                  <td style={{ minWidth: 260 }}>
+	                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+	                      {e.eventName === 'PARSER_ERROR' ? (
+	                        <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>
+	                          {t('logs.parserError')}
+	                        </span>
+	                      ) : null}
+	                      <span>{renderHighlighted(e.eventName, keyword)}</span>
+	                    </div>
+	                    {e.msg ? (
+	                      <div className={formStyles.muted} style={{ marginTop: 4 }}>
+	                        {renderHighlighted(shortenText(e.msg, 140), keyword)}
+	                      </div>
+	                    ) : null}
+	                  </td>
+	                  <td>{e.level}</td>
+	                  <td>{e.sdkVersion ?? '-'}</td>
+	                  <td>{e.appId ?? '-'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <span className={formStyles.muted}>{e.id}</span>
                   </td>
@@ -693,13 +708,17 @@ export default function LogsPage() {
               {detailError ? <div className={formStyles.error}>{detailError}</div> : null}
               {detail ? (
                 <>
-                  <div className={shellStyles.kvGrid}>
-                    <div className={shellStyles.kvKey}>eventName</div>
-                    <div className={shellStyles.kvValue}>{detail.eventName}</div>
-                    <div className={shellStyles.kvKey}>timestamp</div>
-                    <div className={shellStyles.kvValue}>
-                      {new Date(detail.timestampMs).toLocaleString(localeTag)}
-                    </div>
+	                  <div className={shellStyles.kvGrid}>
+	                    <div className={shellStyles.kvKey}>eventName</div>
+	                    <div className={shellStyles.kvValue}>{detail.eventName}</div>
+	                    <div className={shellStyles.kvKey}>msg</div>
+	                    <div className={shellStyles.kvValue}>
+	                      {detail.msg ? renderHighlighted(detail.msg, keyword) : '-'}
+	                    </div>
+	                    <div className={shellStyles.kvKey}>timestamp</div>
+	                    <div className={shellStyles.kvValue}>
+	                      {new Date(detail.timestampMs).toLocaleString(localeTag)}
+	                    </div>
                     <div className={shellStyles.kvKey}>level</div>
                     <div className={shellStyles.kvValue}>{detail.level}</div>
                     <div className={shellStyles.kvKey}>sdkVersion</div>
@@ -747,7 +766,14 @@ export default function LogsPage() {
 	                                <td style={{ whiteSpace: 'nowrap' }}>
 	                                  {new Date(e.timestampMs).toLocaleString(localeTag)}
 	                                </td>
-	                                <td style={{ minWidth: 260 }}>{renderHighlighted(e.eventName, keyword)}</td>
+	                                <td style={{ minWidth: 260 }}>
+	                                  <div>{renderHighlighted(e.eventName, keyword)}</div>
+	                                  {e.msg ? (
+	                                    <div className={formStyles.muted} style={{ marginTop: 4 }}>
+	                                      {renderHighlighted(shortenText(e.msg, 140), keyword)}
+	                                    </div>
+	                                  ) : null}
+	                                </td>
 	                                <td>{e.level}</td>
 	                              </tr>
 	                            ))}
@@ -765,7 +791,14 @@ export default function LogsPage() {
 	                                <td style={{ whiteSpace: 'nowrap' }}>
 	                                  {new Date(e.timestampMs).toLocaleString(localeTag)}
 	                                </td>
-	                                <td style={{ minWidth: 260 }}>{renderHighlighted(e.eventName, keyword)}</td>
+	                                <td style={{ minWidth: 260 }}>
+	                                  <div>{renderHighlighted(e.eventName, keyword)}</div>
+	                                  {e.msg ? (
+	                                    <div className={formStyles.muted} style={{ marginTop: 4 }}>
+	                                      {renderHighlighted(shortenText(e.msg, 140), keyword)}
+	                                    </div>
+	                                  ) : null}
+	                                </td>
 	                                <td>{e.level}</td>
 	                              </tr>
 	                            ))}

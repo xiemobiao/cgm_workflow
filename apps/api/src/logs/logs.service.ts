@@ -153,6 +153,43 @@ export class LogsService {
     return Buffer.from(payload, 'utf8').toString('base64');
   }
 
+  private truncateText(value: string, maxLen: number) {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLen) return normalized;
+    return `${normalized.slice(0, Math.max(0, maxLen - 1))}…`;
+  }
+
+  private msgPreviewFromJson(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') return this.truncateText(value, 240);
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return this.truncateText(String(value), 240);
+    }
+    if (Array.isArray(value)) {
+      try {
+        return this.truncateText(JSON.stringify(value), 240);
+      } catch {
+        return this.truncateText(String(value), 240);
+      }
+    }
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const knownKeys = ['message', 'msg', 'error', 'err', 'reason', 'detail'];
+      for (const key of knownKeys) {
+        const v = obj[key];
+        if (typeof v === 'string' && v.trim()) {
+          return this.truncateText(v, 240);
+        }
+      }
+      try {
+        return this.truncateText(JSON.stringify(obj), 240);
+      } catch {
+        return this.truncateText(String(value), 240);
+      }
+    }
+    return this.truncateText(String(value), 240);
+  }
+
   async searchEvents(params: {
     actorUserId: string;
     projectId: string;
@@ -229,6 +266,16 @@ export class LogsService {
       where: { AND: andFilters },
       orderBy: [{ timestampMs: 'desc' }, { id: 'desc' }],
       take: limit + 1,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        appId: true,
+        logFileId: true,
+        msgJson: true,
+      },
     });
 
     const hasMore = rows.length > limit;
@@ -250,6 +297,7 @@ export class LogsService {
         sdkVersion: e.sdkVersion,
         appId: e.appId,
         logFileId: e.logFileId,
+        msg: this.msgPreviewFromJson(e.msgJson),
       })),
       nextCursor,
     };
@@ -397,6 +445,7 @@ export class LogsService {
       threadName: event.threadName,
       threadId: event.threadId ? Number(event.threadId) : null,
       isMainThread: event.isMainThread,
+      msg: this.msgPreviewFromJson(event.msgJson),
       msgJson: event.msgJson,
       rawLine: event.rawLine,
       createdAt: event.createdAt,
@@ -439,6 +488,7 @@ export class LogsService {
       eventName: true,
       sdkVersion: true,
       appId: true,
+      msgJson: true,
     } as const;
 
     const [beforeRows, afterRows] = await Promise.all([
@@ -490,6 +540,7 @@ export class LogsService {
       eventName: string;
       sdkVersion: string | null;
       appId: string | null;
+      msgJson: unknown | null;
     }) => ({
       id: e.id,
       logFileId: e.logFileId,
@@ -498,6 +549,7 @@ export class LogsService {
       eventName: e.eventName,
       sdkVersion: e.sdkVersion,
       appId: e.appId,
+      msg: this.msgPreviewFromJson(e.msgJson),
     });
 
     return {
