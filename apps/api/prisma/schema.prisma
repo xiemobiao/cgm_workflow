@@ -1,0 +1,371 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  active
+  archived
+}
+
+enum ProjectType {
+  SDK
+  App
+}
+
+enum WorkflowStatus {
+  active
+  blocked
+  done
+}
+
+enum StageStatus {
+  pending
+  in_progress
+  done
+}
+
+enum GateStatus {
+  pending
+  approved
+  rejected
+  overridden
+}
+
+enum RequirementStatus {
+  draft
+  in_progress
+  testing
+  done
+}
+
+enum IncidentStatus {
+  open
+  investigating
+  resolved
+  closed
+}
+
+enum IncidentSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum LogFileStatus {
+  queued
+  parsed
+  failed
+}
+
+enum IntegrationStatus {
+  enabled
+  disabled
+  error
+}
+
+enum IntegrationType {
+  pingcode
+  feishu
+  gitlab
+}
+
+enum ArtifactType {
+  PRD
+  TechSpec
+  TestPlan
+  TestReport
+  ReleaseChecklist
+  Runbook
+  LogPackage
+}
+
+enum StageName {
+  Requirement
+  Design
+  Development
+  Test
+  Release
+  Diagnosis
+}
+
+model User {
+  id           String          @id @default(uuid()) @db.Uuid
+  email        String          @unique
+  name         String
+  passwordHash String
+  status       String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  memberships  ProjectMember[]
+  gateDecisions Gate[]         @relation("GateApprover")
+  auditActions AuditLog[]      @relation("AuditActor")
+  artifacts    Artifact[]      @relation("ArtifactOwner")
+  createdIntegrations IntegrationConfig[] @relation("IntegrationCreator")
+}
+
+model Role {
+  id      String          @id @default(uuid()) @db.Uuid
+  name    String          @unique
+  members ProjectMember[]
+}
+
+model Project {
+  id         String            @id @default(uuid()) @db.Uuid
+  name       String
+  type       ProjectType
+  status     ProjectStatus
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  members     ProjectMember[]
+  requirements Requirement[]
+  workflows    WorkflowInstance[]
+  templates    WorkflowTemplate[]
+  integrations IntegrationConfig[]
+  pipelineRuns PipelineRun[]
+  logFiles     LogFile[]
+  logEvents    LogEvent[]
+  incidents    Incident[]
+  auditLogs    AuditLog[]
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+  role    Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@index([projectId])
+}
+
+model Requirement {
+  id          String           @id @default(uuid()) @db.Uuid
+  projectId   String           @db.Uuid
+  externalId  String?
+  title       String
+  status      RequirementStatus
+  sourceStatus String?
+  source      String
+  owner       String?
+  priority    String?
+  tags        Json?
+  deletedAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  project   Project          @relation(fields: [projectId], references: [id])
+  workflows WorkflowInstance[]
+
+  @@index([projectId, status])
+  @@unique([projectId, externalId])
+}
+
+model WorkflowTemplate {
+  id         String      @id @default(uuid()) @db.Uuid
+  projectId  String      @db.Uuid
+  name       String
+  projectType ProjectType
+  definition Json
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, projectType])
+}
+
+model WorkflowInstance {
+  id           String        @id @default(uuid()) @db.Uuid
+  projectId    String        @db.Uuid
+  requirementId String       @db.Uuid
+  status       WorkflowStatus
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id])
+  requirement Requirement @relation(fields: [requirementId], references: [id])
+  stages      StageInstance[]
+  artifacts   Artifact[]
+
+  @@index([projectId, status])
+}
+
+model StageInstance {
+  id        String      @id @default(uuid()) @db.Uuid
+  workflowId String     @db.Uuid
+  stageName StageName
+  status    StageStatus
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  workflow WorkflowInstance @relation(fields: [workflowId], references: [id])
+  gate     Gate?
+
+  @@index([workflowId])
+}
+
+model Gate {
+  id            String      @id @default(uuid()) @db.Uuid
+  stageInstanceId String     @unique @db.Uuid
+  status        GateStatus
+  approverId    String?     @db.Uuid
+  decisionReason String?
+  decidedAt     DateTime?
+  createdAt     DateTime    @default(now())
+
+  stage    StageInstance @relation(fields: [stageInstanceId], references: [id])
+  approver User?         @relation("GateApprover", fields: [approverId], references: [id])
+}
+
+model Artifact {
+  id        String      @id @default(uuid()) @db.Uuid
+  workflowId String     @db.Uuid
+  type      ArtifactType
+  url       String
+  ownerId   String?     @db.Uuid
+  createdAt DateTime    @default(now())
+
+  workflow WorkflowInstance @relation(fields: [workflowId], references: [id])
+  owner    User?            @relation("ArtifactOwner", fields: [ownerId], references: [id])
+
+  @@index([workflowId])
+}
+
+model IntegrationConfig {
+  id         String           @id @default(uuid()) @db.Uuid
+  projectId  String           @db.Uuid
+  type       IntegrationType
+  status     IntegrationStatus
+  secretsRef String
+  mapping    Json?
+  lastSyncAt DateTime?
+  lastError  String?
+  createdBy  String?          @db.Uuid
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  creator User?   @relation("IntegrationCreator", fields: [createdBy], references: [id])
+
+  @@index([projectId, type])
+  @@unique([projectId, type])
+}
+
+model PipelineRun {
+  id         String   @id @default(uuid()) @db.Uuid
+  projectId  String   @db.Uuid
+  externalId String?
+  status     String
+  url        String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, status])
+}
+
+model LogFile {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String       @db.Uuid
+  fileName    String
+  fileSize    BigInt
+  status      LogFileStatus
+  storageKey  String
+  sourceDevice String?
+  parserVersion String?
+  uploadedAt  DateTime
+
+  project Project @relation(fields: [projectId], references: [id])
+  events  LogEvent[]
+
+  @@index([projectId, uploadedAt])
+}
+
+model LogEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  logFileId   String   @db.Uuid
+  timestampMs BigInt
+  level       Int
+  eventName   String
+  sdkVersion  String?
+  appId       String?
+  terminalInfo String?
+  threadName  String?
+  threadId    BigInt?
+  isMainThread Boolean?
+  msgJson     Json?
+  rawLine     String?
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  logFile LogFile @relation(fields: [logFileId], references: [id])
+  incidentLinks IncidentLogLink[]
+
+  @@index([projectId, timestampMs])
+  @@index([eventName, timestampMs])
+  @@index([appId, timestampMs])
+  @@index([sdkVersion, eventName])
+  @@index([logFileId])
+}
+
+model Incident {
+  id        String          @id @default(uuid()) @db.Uuid
+  projectId String          @db.Uuid
+  title     String
+  severity  IncidentSeverity
+  status    IncidentStatus
+  startTime DateTime
+  endTime   DateTime?
+  deletedAt DateTime?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  links   IncidentLogLink[]
+
+  @@index([projectId, status])
+}
+
+model IncidentLogLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  incidentId String   @db.Uuid
+  logEventId String   @db.Uuid
+
+  incident Incident @relation(fields: [incidentId], references: [id])
+  logEvent LogEvent @relation(fields: [logEventId], references: [id])
+
+  @@unique([incidentId, logEventId])
+  @@index([incidentId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  projectId  String   @db.Uuid
+  actorUserId String? @db.Uuid
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  actor   User?   @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([projectId, createdAt])
+}

@@ -48,17 +48,48 @@
 
 ## 快速开始
 
+### 0) 启动依赖（Postgres/Redis/MinIO）
+```
+docker compose up -d
+```
+
+### 0.5) 配置环境变量
+```
+cp .env.example .env
+```
+说明：
+- Web 侧会读取 `NEXT_PUBLIC_API_BASE_URL`（默认 `http://localhost:3001`），用于浏览器直连 API
+- API 同时支持 `/api/*` 与 `/api/v1/*`（推荐逐步迁移到 `/api/v1`）
+
 ### 1) 安装依赖
 ```
 npm install --prefix apps/api
 npm install --prefix apps/web
 ```
 
+### 1.5) 生成/迁移数据库（首次运行）
+```
+npm run db:generate
+npm run db:migrate:dev
+```
+
+### 1.6) 初始化基础数据（roles/admin）
+```
+npm run db:seed
+```
+默认管理员账号（可通过 seed env 覆盖）：
+- Email：`admin@local.dev`
+- Password：`admin123456`
+
 ### 2) 本地运行
 ```
 npm run api:dev
 npm run web:dev
 ```
+
+### 健康检查
+- API：`http://localhost:3001/health`（业务接口默认前缀为 `/api`）
+- Web：`http://localhost:3000/health`
 
 ### 3) 根目录脚本
 ```

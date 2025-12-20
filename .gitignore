@@ -8,17 +8,18 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Build output
-/dist
-/build
-/out
-/coverage
+dist/
+build/
+out/
+coverage/
 
 # Next.js
-/.next
+.next/
 
 # Env files
 .env
 .env.*
+!.env.example
 
 # OS
 .DS_Store

@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: cgm_user
+          POSTGRES_PASSWORD: cgm_pass
+          POSTGRES_DB: cgm_workflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cgm_user -d cgm_workflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://cgm_user:cgm_pass@localhost:5432/cgm_workflow
+      JWT_SECRET: ci-secret
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: var/ci-storage
+      WEB_BASE_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install (api)
+        run: npm ci
+        working-directory: apps/api
+
+      - name: Prisma generate
+        run: npm run db:generate
+        working-directory: apps/api
+
+      - name: Migrate (deploy)
+        run: npm run db:migrate:deploy
+        working-directory: apps/api
+
+      - name: Lint (api)
+        run: npm run lint
+        working-directory: apps/api
+
+      - name: Unit tests (api)
+        run: npm run test
+        working-directory: apps/api
+
+      - name: E2E tests (api)
+        run: npm run test:e2e
+        working-directory: apps/api
+
+      - name: Build (api)
+        run: npm run build
+        working-directory: apps/api
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install (web)
+        run: npm ci
+        working-directory: apps/web
+
+      - name: Lint (web)
+        run: npm run lint
+        working-directory: apps/web
+
+      - name: Build (web)
+        run: npm run build
+        working-directory: apps/web
+
