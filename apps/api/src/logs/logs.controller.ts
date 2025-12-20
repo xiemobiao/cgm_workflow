@@ -29,6 +29,7 @@ const searchSchema = z.object({
   eventName: z.string().min(1).optional(),
   logFileId: z.string().uuid().optional(),
   q: z.string().min(1).optional(),
+  direction: z.enum(['asc', 'desc']).optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   appId: z.string().min(1).optional(),

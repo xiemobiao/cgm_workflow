@@ -95,6 +95,10 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'logs.files.empty': '暂无日志文件',
     'logs.files.detail.title': '文件详情',
     'logs.files.viewerTitle': '文件内容',
+    'logs.files.viewerLegend': '事件颜色图例',
+    'logs.files.viewerStream': '日志流',
+    'logs.files.viewerExpand': '展开详情',
+    'logs.files.viewerCollapse': '收起详情',
     'logs.files.openInLogs': '在日志中查看事件',
     'logs.files.delete': '删除文件',
     'logs.files.deleteConfirm':
@@ -264,6 +268,10 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'logs.files.empty': 'No log files.',
     'logs.files.detail.title': 'File detail',
     'logs.files.viewerTitle': 'File content',
+    'logs.files.viewerLegend': 'Event palette',
+    'logs.files.viewerStream': 'Log stream',
+    'logs.files.viewerExpand': 'Expand',
+    'logs.files.viewerCollapse': 'Collapse',
     'logs.files.openInLogs': 'Open events in Logs',
     'logs.files.delete': 'Delete',
     'logs.files.deleteConfirm':

@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import viewerStyles from './LogViewer.module.css';
 
 type LogFileDetail = {
   id: string;
@@ -107,6 +108,15 @@ function prettyJson(value: unknown) {
   }
 }
 
+function hueForEvent(eventName: string) {
+  if (eventName === 'PARSER_ERROR') return 2;
+  let hash = 0;
+  for (let i = 0; i < eventName.length; i += 1) {
+    hash = (hash * 31 + eventName.charCodeAt(i)) >>> 0;
+  }
+  return hash % 360;
+}
+
 export default function LogFileViewerPage() {
   const { localeTag, t } = useI18n();
   const params = useParams();
@@ -175,9 +185,13 @@ export default function LogFileViewerPage() {
 
   const timeRange = useMemo(() => {
     const now = Date.now();
-    const startMs = fileDetail?.minTimestampMs ?? now - 24 * 60 * 60 * 1000;
+    const uploadedAtMs = fileDetail?.uploadedAt
+      ? new Date(fileDetail.uploadedAt).getTime()
+      : now;
+    const fallbackStart = uploadedAtMs - 60 * 1000;
+    const startMs = fileDetail?.minTimestampMs ?? fallbackStart;
     const endMs = fileDetail?.maxTimestampMs ?? now;
-    const safeStart = Number.isFinite(startMs) ? startMs : now - 24 * 60 * 60 * 1000;
+    const safeStart = Number.isFinite(startMs) ? startMs : fallbackStart;
     const safeEnd = Number.isFinite(endMs) ? endMs : now;
     const fixedEnd = safeEnd <= safeStart ? safeStart + 1 : safeEnd;
     return {
@@ -186,7 +200,7 @@ export default function LogFileViewerPage() {
       startTime: new Date(safeStart).toISOString(),
       endTime: new Date(fixedEnd).toISOString(),
     };
-  }, [fileDetail?.maxTimestampMs, fileDetail?.minTimestampMs]);
+  }, [fileDetail?.maxTimestampMs, fileDetail?.minTimestampMs, fileDetail?.uploadedAt]);
 
   async function search(resetCursor: boolean) {
     if (!fileId) return;
@@ -208,6 +222,7 @@ export default function LogFileViewerPage() {
       });
       if (eventName.trim()) qs.set('eventName', eventName.trim());
       if (keyword.trim()) qs.set('q', keyword.trim());
+      qs.set('direction', 'asc');
       if (level) qs.set('level', level);
       if (!resetCursor && cursor) qs.set('cursor', cursor);
 
@@ -217,7 +232,11 @@ export default function LogFileViewerPage() {
         setNextCursor(null);
         setItems(data.items);
       } else {
-        setItems((prev) => [...prev, ...data.items]);
+        setItems((prev) => {
+          const seen = new Set(prev.map((i) => i.id));
+          const appended = data.items.filter((i) => !seen.has(i.id));
+          return [...prev, ...appended];
+        });
       }
       setNextCursor(data.nextCursor);
       setCursor(data.nextCursor);
@@ -289,345 +308,451 @@ export default function LogFileViewerPage() {
     }
   }
 
+  const legend = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      counts.set(item.eventName, (counts.get(item.eventName) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count, hue: hueForEvent(name) }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 24);
+  }, [items]);
+
+  const logsHref = useMemo(() => {
+    if (!fileId) return '/logs';
+    const qs = new URLSearchParams({
+      logFileId: fileId,
+      startMs: String(timeRange.startMs),
+      endMs: String(timeRange.endMs),
+    });
+    return `/logs?${qs.toString()}`;
+  }, [fileId, timeRange.endMs, timeRange.startMs]);
+
+  const listSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = listSentinelRef.current;
+    if (!el) return;
+    if (!nextCursor) return;
+    if (loading) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        if (!nextCursor) return;
+        if (loading) return;
+        void search(false);
+      },
+      { root: null, rootMargin: '180px', threshold: 0.01 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [nextCursor, loading]);
+
   return (
     <div className={shellStyles.grid}>
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: 20, marginBottom: 2 }}>{t('logs.files.viewerTitle')}</h1>
+      <div className={viewerStyles.layout}>
+        <aside className={`${shellStyles.card} ${viewerStyles.panel}`}>
+          <div className={viewerStyles.header}>
+            <div className={viewerStyles.title}>
+              <h1>{t('logs.files.viewerTitle')}</h1>
+              <div className={viewerStyles.subtitle}>{fileDetail ? fileDetail.fileName : fileId}</div>
+            </div>
+            <div className={formStyles.row}>
+              <Link href={`/logs/files/${fileId}`} className={shellStyles.button}>
+                {t('common.back')}
+              </Link>
+            </div>
+          </div>
+
+          <div className={formStyles.row}>
+            <Link href="/logs/files" className={shellStyles.button}>
+              {t('logs.files.title')}
+            </Link>
+            <Link href={logsHref} className={shellStyles.button}>
+              {t('logs.files.openInLogs')}
+            </Link>
+          </div>
+
+          {fileLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
+          {fileError ? <div className={formStyles.error}>{fileError}</div> : null}
+
+          {fileDetail ? (
+            <div className={shellStyles.kvGrid} style={{ marginTop: 12 }}>
+              <div className={shellStyles.kvKey}>{t('logs.files.status')}</div>
+              <div className={shellStyles.kvValue}>
+                <span
+                  className={`${shellStyles.badge}${fileDetail.status === 'failed' ? ` ${shellStyles.badgeDanger}` : ''}`}
+                >
+                  {t(`logs.fileStatus.${fileDetail.status}`)}
+                </span>
+              </div>
+
+              <div className={shellStyles.kvKey}>{t('logs.files.uploadedAt')}</div>
+              <div className={shellStyles.kvValue}>
+                {new Date(fileDetail.uploadedAt).toLocaleString(localeTag)}
+              </div>
+
+              <div className={shellStyles.kvKey}>{t('logs.files.events')}</div>
+              <div className={shellStyles.kvValue}>{fileDetail.eventCount}</div>
+
+              <div className={shellStyles.kvKey}>{t('logs.files.errors')}</div>
+              <div className={shellStyles.kvValue}>{fileDetail.errorCount}</div>
+
+              <div className={shellStyles.kvKey}>{t('logs.files.timeRange')}</div>
+              <div className={shellStyles.kvValue}>
+                {fileDetail.minTimestampMs !== null && fileDetail.maxTimestampMs !== null
+                  ? `${new Date(timeRange.startMs).toLocaleString(localeTag)} ~ ${new Date(timeRange.endMs).toLocaleString(localeTag)}`
+                  : t('logs.files.timeRangeUnknown')}
+              </div>
+            </div>
+          ) : null}
+
+          <div className={viewerStyles.divider} />
+
+          <div className={viewerStyles.toolbar}>
+            <div className={formStyles.field}>
+              <div className={formStyles.label}>{t('logs.eventNameOptional')}</div>
+              <input
+                className={formStyles.input}
+                value={eventName}
+                onChange={(e) => setEventName(e.target.value)}
+                placeholder="e.g. sdk_auth_start"
+              />
+            </div>
+            <div className={formStyles.field}>
+              <div className={formStyles.label}>{t('logs.keyword')}</div>
+              <input
+                className={formStyles.input}
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="e.g. error / timeout"
+              />
+            </div>
+            <div className={formStyles.row}>
+              <div className={formStyles.field} style={{ minWidth: 140 }}>
+                <div className={formStyles.label}>{t('logs.level')}</div>
+                <select
+                  className={formStyles.select}
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                >
+                  <option value="">{t('logs.level.all')}</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+              <div className={formStyles.field} style={{ minWidth: 140 }}>
+                <div className={formStyles.label}>{t('logs.limit')}</div>
+                <input
+                  className={formStyles.input}
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={limit}
+                  onChange={(e) => {
+                    const n = e.currentTarget.valueAsNumber;
+                    if (!Number.isFinite(n)) return;
+                    setLimit(Math.min(Math.max(Math.trunc(n), 1), 200));
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className={formStyles.row}>
+              <button
+                className={shellStyles.button}
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setEventName('PARSER_ERROR');
+                  window.setTimeout(() => void search(true), 0);
+                }}
+              >
+                {t('logs.onlyParserError')}
+              </button>
+              <button
+                className={shellStyles.button}
+                type="button"
+                disabled={loading}
+                onClick={() => void search(true)}
+              >
+                {t('common.search')}
+              </button>
+              <button
+                className={shellStyles.button}
+                type="button"
+                disabled={loading || !nextCursor}
+                onClick={() => void search(false)}
+              >
+                {t('common.loadMore')}
+              </button>
+              <div className={formStyles.muted}>
+                {loading ? t('common.loading') : t('common.items', { count: items.length })}
+              </div>
+            </div>
+
+            {error ? <div className={formStyles.error}>{error}</div> : null}
+          </div>
+
+          {legend.length ? (
+            <>
+              <div className={viewerStyles.divider} />
+              <div className={viewerStyles.legend}>
+                <div className={viewerStyles.legendTitle}>{t('logs.files.viewerLegend')}</div>
+                <div className={viewerStyles.chips}>
+                  {legend.map((it) => (
+                    <div
+                      key={it.name}
+                      className={`${viewerStyles.chip}${eventName === it.name ? ` ${viewerStyles.chipActive}` : ''}`}
+                      style={{ ['--hue' as any]: it.hue }}
+                      onClick={() => {
+                        setEventName((prev) => (prev === it.name ? '' : it.name));
+                        window.setTimeout(() => void search(true), 0);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setEventName((prev) => (prev === it.name ? '' : it.name));
+                          window.setTimeout(() => void search(true), 0);
+                        }
+                      }}
+                    >
+                      <span className={viewerStyles.chipDot} />
+                      <span className={viewerStyles.chipText}>{it.name}</span>
+                      <span className={viewerStyles.chipCount}>{it.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </aside>
+
+        <section className={`${shellStyles.card} ${viewerStyles.stream}`}>
+          <div className={viewerStyles.streamHeader}>
+            <div className={viewerStyles.streamTitle}>{t('logs.files.viewerStream')}</div>
             <div className={formStyles.muted}>
               {fileDetail ? fileDetail.fileName : fileId}
             </div>
           </div>
-          <div className={formStyles.row}>
-            <Link href={`/logs/files/${fileId}`} className={shellStyles.button}>
-              {t('common.back')}
-            </Link>
-            <Link href="/logs/files" className={shellStyles.button}>
-              {t('logs.files.title')}
-            </Link>
-          </div>
-        </div>
 
-        {fileLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-        {fileError ? <div className={formStyles.error}>{fileError}</div> : null}
+          <div className={viewerStyles.list}>
+            {items.map((e) => {
+              const hue = hueForEvent(e.eventName);
+              const active = selectedEventId === e.id;
+              const levelClass =
+                e.level === 1
+                  ? viewerStyles.level1
+                  : e.level === 2
+                    ? viewerStyles.level2
+                    : e.level === 3
+                      ? viewerStyles.level3
+                      : viewerStyles.level4;
 
-        {fileDetail ? (
-          <div className={shellStyles.kvGrid} style={{ marginTop: 12 }}>
-            <div className={shellStyles.kvKey}>{t('logs.files.status')}</div>
-            <div className={shellStyles.kvValue}>
-              <span
-                className={`${shellStyles.badge}${fileDetail.status === 'failed' ? ` ${shellStyles.badgeDanger}` : ''}`}
-              >
-                {t(`logs.fileStatus.${fileDetail.status}`)}
-              </span>
-            </div>
+              return (
+                <div key={e.id} className={viewerStyles.line} style={{ ['--hue' as any]: hue }}>
+                  <div
+                    className={viewerStyles.lineHeader}
+                    onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
+                  >
+                    <div className={viewerStyles.gutter}>
+                      <div className={viewerStyles.time}>
+                        {new Date(e.timestampMs).toLocaleString(localeTag)}
+                      </div>
+                      <div className={viewerStyles.meta}>
+                        <span className={`${viewerStyles.levelDot} ${levelClass}`} />
+                        <span>Lv {e.level}</span>
+                        {e.sdkVersion ? <span>{e.sdkVersion}</span> : null}
+                        {e.appId ? <span>{e.appId}</span> : null}
+                      </div>
+                    </div>
 
-            <div className={shellStyles.kvKey}>{t('logs.files.uploadedAt')}</div>
-            <div className={shellStyles.kvValue}>
-              {new Date(fileDetail.uploadedAt).toLocaleString(localeTag)}
-            </div>
-
-            <div className={shellStyles.kvKey}>{t('logs.files.events')}</div>
-            <div className={shellStyles.kvValue}>{fileDetail.eventCount}</div>
-
-            <div className={shellStyles.kvKey}>{t('logs.files.errors')}</div>
-            <div className={shellStyles.kvValue}>{fileDetail.errorCount}</div>
-
-            <div className={shellStyles.kvKey}>{t('logs.files.timeRange')}</div>
-            <div className={shellStyles.kvValue}>
-              {fileDetail.minTimestampMs !== null && fileDetail.maxTimestampMs !== null
-                ? `${new Date(timeRange.startMs).toLocaleString(localeTag)} ~ ${new Date(timeRange.endMs).toLocaleString(localeTag)}`
-                : t('logs.files.timeRangeUnknown')}
-            </div>
-          </div>
-        ) : null}
-      </div>
-
-      <div className={shellStyles.card}>
-        <div className={formStyles.row}>
-          <div className={formStyles.field} style={{ minWidth: 220 }}>
-            <div className={formStyles.label}>{t('logs.eventNameOptional')}</div>
-            <input
-              className={formStyles.input}
-              value={eventName}
-              onChange={(e) => setEventName(e.target.value)}
-              placeholder="e.g. sdk_auth_start"
-            />
-          </div>
-          <div className={formStyles.field} style={{ minWidth: 220 }}>
-            <div className={formStyles.label}>{t('logs.keyword')}</div>
-            <input
-              className={formStyles.input}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="e.g. error / timeout"
-            />
-          </div>
-          <div className={formStyles.field} style={{ minWidth: 140 }}>
-            <div className={formStyles.label}>{t('logs.level')}</div>
-            <select className={formStyles.select} value={level} onChange={(e) => setLevel(e.target.value)}>
-              <option value="">{t('logs.level.all')}</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-            </select>
-          </div>
-          <div className={formStyles.field} style={{ minWidth: 140 }}>
-            <div className={formStyles.label}>{t('logs.limit')}</div>
-            <input
-              className={formStyles.input}
-              type="number"
-              min={1}
-              max={200}
-              value={limit}
-              onChange={(e) => {
-                const n = e.currentTarget.valueAsNumber;
-                if (!Number.isFinite(n)) return;
-                setLimit(Math.min(Math.max(Math.trunc(n), 1), 200));
-              }}
-            />
-          </div>
-          <button
-            className={shellStyles.button}
-            type="button"
-            disabled={loading}
-            onClick={() => {
-              setEventName('PARSER_ERROR');
-              window.setTimeout(() => void search(true), 0);
-            }}
-          >
-            {t('logs.onlyParserError')}
-          </button>
-          <button className={shellStyles.button} type="button" disabled={loading} onClick={() => void search(true)}>
-            {t('common.search')}
-          </button>
-          <button
-            className={shellStyles.button}
-            type="button"
-            disabled={loading || !nextCursor}
-            onClick={() => void search(false)}
-          >
-            {t('common.loadMore')}
-          </button>
-          <div className={formStyles.muted}>
-            {loading ? t('common.loading') : t('common.items', { count: items.length })}
-          </div>
-        </div>
-
-        {error ? <div className={formStyles.error}>{error}</div> : null}
-      </div>
-
-      <div className={shellStyles.card}>
-        <div className={shellStyles.tableWrap}>
-          <table className={shellStyles.table}>
-            <thead>
-              <tr>
-                <th>{t('table.time')}</th>
-                <th>{t('table.event')}</th>
-                <th>{t('table.level')}</th>
-                <th>{t('table.sdk')}</th>
-                <th>{t('table.app')}</th>
-                <th>{t('table.id')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((e) => (
-                <tr
-                  key={e.id}
-                  className={shellStyles.clickableRow}
-                  onClick={() => setSelectedEventId(e.id)}
-                >
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    {new Date(e.timestampMs).toLocaleString(localeTag)}
-                  </td>
-                  <td style={{ minWidth: 360 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      {e.eventName === 'PARSER_ERROR' ? (
-                        <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>
-                          {t('logs.parserError')}
+                    <div className={viewerStyles.main}>
+                      <div className={viewerStyles.eventRow}>
+                        <span className={viewerStyles.eventBadge} style={{ ['--hue' as any]: hue }}>
+                          <span className={viewerStyles.eventBadgeDot} />
+                          {renderHighlighted(e.eventName, keyword)}
                         </span>
-                      ) : null}
-                      <span>{renderHighlighted(e.eventName, keyword)}</span>
-                    </div>
-                    {e.msg ? (
-                      <div className={formStyles.muted} style={{ marginTop: 4 }}>
-                        {renderHighlighted(shortenText(e.msg, 160), keyword)}
                       </div>
-                    ) : null}
-                  </td>
-                  <td>{e.level}</td>
-                  <td>{e.sdkVersion ?? '-'}</td>
-                  <td>{e.appId ?? '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <span className={formStyles.muted}>{e.id}</span>
-                  </td>
-                </tr>
-              ))}
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: 10 }} className={formStyles.muted}>
-                    {t('logs.empty')}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      <div className={viewerStyles.message}>
+                        {e.msg ? renderHighlighted(shortenText(e.msg, 220), keyword) : ''}
+                      </div>
+                    </div>
 
-      {selectedEventId ? (
-        <>
-          <div className={shellStyles.drawerOverlay} onClick={() => setSelectedEventId(null)} />
-          <aside className={shellStyles.drawer} role="dialog" aria-modal="true">
-            <div className={shellStyles.drawerHeader}>
-              <div>
-                <div className={shellStyles.drawerTitle}>{t('logs.detail.title')}</div>
-                <div className={formStyles.muted}>{detail ? detail.eventName : selectedEventId}</div>
-              </div>
-              <button className={shellStyles.button} type="button" onClick={() => setSelectedEventId(null)}>
-                {t('logs.detail.close')}
-              </button>
-            </div>
-            <div className={shellStyles.drawerBody}>
-              {detailLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-              {detailError ? <div className={formStyles.error}>{detailError}</div> : null}
-              {detail ? (
-                <>
-                  <div className={shellStyles.kvGrid}>
-                    <div className={shellStyles.kvKey}>eventName</div>
-                    <div className={shellStyles.kvValue}>{detail.eventName}</div>
-                    <div className={shellStyles.kvKey}>msg</div>
-                    <div className={shellStyles.kvValue}>
-                      {detail.msg ? renderHighlighted(detail.msg, keyword) : '-'}
+                    <div className={viewerStyles.right}>
+                      <div className={viewerStyles.id}>{e.id.slice(0, 8)}…</div>
+                      <div className={viewerStyles.expandHint}>
+                        {active ? t('logs.files.viewerCollapse') : t('logs.files.viewerExpand')}
+                      </div>
                     </div>
-                    <div className={shellStyles.kvKey}>timestamp</div>
-                    <div className={shellStyles.kvValue}>
-                      {new Date(detail.timestampMs).toLocaleString(localeTag)}
-                    </div>
-                    <div className={shellStyles.kvKey}>level</div>
-                    <div className={shellStyles.kvValue}>{detail.level}</div>
-                    <div className={shellStyles.kvKey}>sdkVersion</div>
-                    <div className={shellStyles.kvValue}>{detail.sdkVersion ?? '-'}</div>
-                    <div className={shellStyles.kvKey}>appId</div>
-                    <div className={shellStyles.kvValue}>{detail.appId ?? '-'}</div>
-                    <div className={shellStyles.kvKey}>terminalInfo</div>
-                    <div className={shellStyles.kvValue}>{detail.terminalInfo ?? '-'}</div>
-                    <div className={shellStyles.kvKey}>thread</div>
-                    <div className={shellStyles.kvValue}>
-                      {detail.threadName ?? '-'}
-                      {detail.threadId !== null ? ` (#${detail.threadId})` : ''}
-                      {detail.isMainThread === null ? '' : detail.isMainThread ? ' · main' : ' · bg'}
-                    </div>
-                    <div className={shellStyles.kvKey}>logFileId</div>
-                    <div className={shellStyles.kvValue}>{detail.logFileId}</div>
-                    <div className={shellStyles.kvKey}>eventId</div>
-                    <div className={shellStyles.kvValue}>{detail.id}</div>
                   </div>
 
-                  <div className={formStyles.row}>
-                    <button className={shellStyles.button} type="button" onClick={() => void copyText(detail.id)}>
-                      {t('logs.detail.copyEventId')}
-                    </button>
-                    <button
-                      className={shellStyles.button}
-                      type="button"
-                      onClick={() => void copyText(detail.logFileId)}
-                    >
-                      {t('logs.detail.copyLogFileId')}
-                    </button>
-                    {copyHint ? <div className={formStyles.success}>{copyHint}</div> : null}
-                  </div>
+                  {active ? (
+                    <div className={viewerStyles.expanded}>
+                      {detailLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
+                      {detailError ? <div className={formStyles.error}>{detailError}</div> : null}
 
-                  <div className={shellStyles.grid}>
-                    <div className={formStyles.label}>{t('logs.detail.context')}</div>
-                    {contextLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-                    {contextError ? <div className={formStyles.error}>{contextError}</div> : null}
-                    {context ? (
-                      <div className={shellStyles.tableWrap}>
-                        <table className={shellStyles.table}>
-                          <tbody>
-                            {context.before.map((e) => (
-                              <tr
-                                key={e.id}
-                                className={shellStyles.clickableRow}
-                                onClick={() => setSelectedEventId(e.id)}
-                              >
-                                <td style={{ whiteSpace: 'nowrap' }}>
-                                  {new Date(e.timestampMs).toLocaleString(localeTag)}
-                                </td>
-                                <td style={{ minWidth: 260 }}>
-                                  <div>{renderHighlighted(e.eventName, keyword)}</div>
-                                  {e.msg ? (
-                                    <div className={formStyles.muted} style={{ marginTop: 4 }}>
-                                      {renderHighlighted(shortenText(e.msg, 140), keyword)}
-                                    </div>
-                                  ) : null}
-                                </td>
-                                <td>{e.level}</td>
-                              </tr>
-                            ))}
-                            <tr>
-                              <td colSpan={3} className={formStyles.muted} style={{ padding: 10 }}>
-                                {t('logs.detail.current')}
-                              </td>
-                            </tr>
-                            {context.after.map((e) => (
-                              <tr
-                                key={e.id}
-                                className={shellStyles.clickableRow}
-                                onClick={() => setSelectedEventId(e.id)}
-                              >
-                                <td style={{ whiteSpace: 'nowrap' }}>
-                                  {new Date(e.timestampMs).toLocaleString(localeTag)}
-                                </td>
-                                <td style={{ minWidth: 260 }}>
-                                  <div>{renderHighlighted(e.eventName, keyword)}</div>
-                                  {e.msg ? (
-                                    <div className={formStyles.muted} style={{ marginTop: 4 }}>
-                                      {renderHighlighted(shortenText(e.msg, 140), keyword)}
-                                    </div>
-                                  ) : null}
-                                </td>
-                                <td>{e.level}</td>
-                              </tr>
-                            ))}
-                            {context.before.length === 0 && context.after.length === 0 ? (
-                              <tr>
-                                <td colSpan={3} style={{ padding: 10 }} className={formStyles.muted}>
-                                  {t('logs.detail.contextEmpty')}
-                                </td>
-                              </tr>
+                      {detail && detail.id === e.id ? (
+                        <>
+                          <div className={viewerStyles.expandedGrid}>
+                            <div>
+                              <div className={viewerStyles.fieldTitle}>msg</div>
+                              <div className={viewerStyles.fieldText}>
+                                {detail.msg ? renderHighlighted(detail.msg, keyword) : '-'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className={viewerStyles.fieldTitle}>terminalInfo</div>
+                              <div className={viewerStyles.fieldText}>{detail.terminalInfo ?? '-'}</div>
+                            </div>
+                            <div>
+                              <div className={viewerStyles.fieldTitle}>thread</div>
+                              <div className={viewerStyles.fieldText}>
+                                {detail.threadName ?? '-'}
+                                {detail.threadId !== null ? ` (#${detail.threadId})` : ''}
+                                {detail.isMainThread === null ? '' : detail.isMainThread ? ' · main' : ' · bg'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className={viewerStyles.fieldTitle}>ids</div>
+                              <div className={viewerStyles.fieldText}>
+                                eventId: {detail.id}
+                                {'\n'}
+                                logFileId: {detail.logFileId}
+                              </div>
+                            </div>
+
+                            <div className={viewerStyles.expandedGridFull}>
+                              <div className={viewerStyles.fieldTitle}>{t('logs.detail.msgJson')}</div>
+                              <pre className={shellStyles.codeBlock}>
+                                {renderHighlighted(prettyJson(detail.msgJson), keyword)}
+                              </pre>
+                            </div>
+
+                            {detail.rawLine ? (
+                              <div className={viewerStyles.expandedGridFull}>
+                                <div className={viewerStyles.fieldTitle}>{t('logs.detail.rawLine')}</div>
+                                <pre className={shellStyles.codeBlock}>
+                                  {renderHighlighted(detail.rawLine, keyword)}
+                                </pre>
+                              </div>
                             ) : null}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : null}
-                  </div>
+                          </div>
 
-                  <div className={shellStyles.grid}>
-                    <div className={formStyles.label}>{t('logs.detail.msgJson')}</div>
-                    <pre className={shellStyles.codeBlock}>
-                      {renderHighlighted(prettyJson(detail.msgJson), keyword)}
-                    </pre>
-                  </div>
+                          <div className={formStyles.row}>
+                            <button
+                              className={shellStyles.button}
+                              type="button"
+                              onClick={() => void copyText(detail.id)}
+                            >
+                              {t('logs.detail.copyEventId')}
+                            </button>
+                            <button
+                              className={shellStyles.button}
+                              type="button"
+                              onClick={() => void copyText(detail.logFileId)}
+                            >
+                              {t('logs.detail.copyLogFileId')}
+                            </button>
+                            {copyHint ? <div className={formStyles.success}>{copyHint}</div> : null}
+                          </div>
 
-                  {detail.rawLine ? (
-                    <div className={shellStyles.grid}>
-                      <div className={formStyles.label}>{t('logs.detail.rawLine')}</div>
-                      <pre className={shellStyles.codeBlock}>
-                        {renderHighlighted(detail.rawLine, keyword)}
-                      </pre>
+                          <div className={viewerStyles.contextStrip}>
+                            <div className={viewerStyles.fieldTitle}>{t('logs.detail.context')}</div>
+                            {contextLoading ? (
+                              <div className={formStyles.muted}>{t('common.loading')}</div>
+                            ) : null}
+                            {contextError ? <div className={formStyles.error}>{contextError}</div> : null}
+                            {context ? (
+                              <>
+                                {context.before.map((c) => (
+                                  <div
+                                    key={c.id}
+                                    className={viewerStyles.contextRow}
+                                    onClick={() => {
+                                      setItems((prev) => {
+                                        if (prev.some((p) => p.id === c.id)) return prev;
+                                        const next = [...prev, c];
+                                        next.sort(
+                                          (a, b) =>
+                                            a.timestampMs - b.timestampMs || a.id.localeCompare(b.id),
+                                        );
+                                        return next;
+                                      });
+                                      setSelectedEventId(c.id);
+                                    }}
+                                  >
+                                    <div className={viewerStyles.contextTime}>
+                                      {new Date(c.timestampMs).toLocaleString(localeTag)}
+                                    </div>
+                                    <div className={viewerStyles.contextEvent}>
+                                      <div>{renderHighlighted(c.eventName, keyword)}</div>
+                                      {c.msg ? (
+                                        <div className={formStyles.muted} style={{ marginTop: 4 }}>
+                                          {renderHighlighted(shortenText(c.msg, 180), keyword)}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                <div className={formStyles.muted}>{t('logs.detail.current')}</div>
+
+                                {context.after.map((c) => (
+                                  <div
+                                    key={c.id}
+                                    className={viewerStyles.contextRow}
+                                    onClick={() => {
+                                      setItems((prev) => {
+                                        if (prev.some((p) => p.id === c.id)) return prev;
+                                        const next = [...prev, c];
+                                        next.sort(
+                                          (a, b) =>
+                                            a.timestampMs - b.timestampMs || a.id.localeCompare(b.id),
+                                        );
+                                        return next;
+                                      });
+                                      setSelectedEventId(c.id);
+                                    }}
+                                  >
+                                    <div className={viewerStyles.contextTime}>
+                                      {new Date(c.timestampMs).toLocaleString(localeTag)}
+                                    </div>
+                                    <div className={viewerStyles.contextEvent}>
+                                      <div>{renderHighlighted(c.eventName, keyword)}</div>
+                                      {c.msg ? (
+                                        <div className={formStyles.muted} style={{ marginTop: 4 }}>
+                                          {renderHighlighted(shortenText(c.msg, 180), keyword)}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {context.before.length === 0 && context.after.length === 0 ? (
+                                  <div className={formStyles.muted}>{t('logs.detail.contextEmpty')}</div>
+                                ) : null}
+                              </>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
-                </>
-              ) : null}
-            </div>
-          </aside>
-        </>
-      ) : null}
+                </div>
+              );
+            })}
+
+            {items.length === 0 ? <div className={formStyles.muted}>{t('logs.empty')}</div> : null}
+            <div ref={listSentinelRef} />
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
-

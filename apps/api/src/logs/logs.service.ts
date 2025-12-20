@@ -198,6 +198,7 @@ export class LogsService {
     eventName?: string;
     logFileId?: string;
     q?: string;
+    direction?: 'asc' | 'desc';
     appId?: string;
     sdkVersion?: string;
     level?: number;
@@ -247,24 +248,35 @@ export class LogsService {
       });
     }
 
+    const direction = params.direction === 'asc' ? 'asc' : 'desc';
+
     if (params.cursor) {
       const cursor = this.decodeCursor(params.cursor);
       andFilters.push({
         OR: [
-          { timestampMs: { lt: cursor.timestampMs } },
-          {
-            AND: [
-              { timestampMs: cursor.timestampMs },
-              { id: { lt: cursor.id } },
-            ],
-          },
+          direction === 'desc'
+            ? { timestampMs: { lt: cursor.timestampMs } }
+            : { timestampMs: { gt: cursor.timestampMs } },
+          direction === 'desc'
+            ? {
+                AND: [
+                  { timestampMs: cursor.timestampMs },
+                  { id: { lt: cursor.id } },
+                ],
+              }
+            : {
+                AND: [
+                  { timestampMs: cursor.timestampMs },
+                  { id: { gt: cursor.id } },
+                ],
+              },
         ],
       });
     }
 
     const rows = await this.prisma.logEvent.findMany({
       where: { AND: andFilters },
-      orderBy: [{ timestampMs: 'desc' }, { id: 'desc' }],
+      orderBy: [{ timestampMs: direction }, { id: direction }],
       take: limit + 1,
       select: {
         id: true,
