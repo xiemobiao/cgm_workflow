@@ -26,6 +26,8 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'common.loadMore': '加载更多',
     'common.prevPage': '上一页',
     'common.nextPage': '下一页',
+    'common.close': '关闭',
+    'common.copy': '复制',
     'common.copied': '已复制',
     'common.copyFailed': '复制失败',
     'common.items': '共 {count} 条',
@@ -172,6 +174,13 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'integrations.saveMapping': '保存 mapping',
     'integrations.integrationJson': 'Integration JSON（GET /api/integrations/:id）',
 
+    'projects.name': '名称',
+    'projects.type': '类型',
+    'projects.status': '状态',
+    'projects.role': '角色',
+    'projects.current': '当前',
+    'projects.setCurrent': '设为当前',
+
     'settings.title': '设置',
     'settings.apiBaseUrl': 'API Base URL',
     'settings.token': 'Token',
@@ -180,6 +189,40 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'settings.selectedProjectId': '已选择的 projectId',
     'settings.clearProjectSelection': '清除项目选择',
     'settings.refreshPage': '刷新页面',
+    'settings.projects.title': '项目',
+    'settings.projects.desc': '创建多个 App 项目并在各页面选择使用。',
+    'settings.projects.empty': '暂无可访问的项目。',
+    'settings.projects.noMatch': '未匹配到项目。',
+    'settings.projects.filter': '过滤（可选）',
+    'settings.projects.filterPlaceholder': '按名称 / ID / 类型过滤…',
+    'settings.projects.rename': '重命名',
+    'settings.projects.renamePrompt': '请输入新的项目名称',
+    'settings.projects.renameEmpty': '项目名称不能为空。',
+    'settings.projects.archive': '归档',
+    'settings.projects.archiveConfirm': '确认归档项目“{name}”？',
+    'settings.projects.restore': '恢复',
+    'settings.projects.restoreConfirm': '确认恢复项目“{name}”？',
+    'settings.projects.updated': '已更新',
+    'settings.projects.createName': '项目名称',
+    'settings.projects.setAsCurrent': '创建后设为当前项目',
+    'settings.projects.createApp': '创建 App 项目',
+    'settings.projects.created': '已创建项目：{name}',
+    'settings.projects.adminOnly': '需要 Admin 权限才能创建项目。',
+
+    'settings.members.open': '成员',
+    'settings.members.title': '项目成员',
+    'settings.members.email': '邮箱',
+    'settings.members.name': '名称',
+    'settings.members.role': '角色',
+    'settings.members.createdAt': '加入时间',
+    'settings.members.empty': '暂无成员。',
+    'settings.members.addTitle': '添加 / 更新成员',
+    'settings.members.addHint': '按邮箱添加成员（该邮箱必须已存在于用户表）。如果已存在成员则会更新其角色。',
+    'settings.members.add': '添加',
+    'settings.members.remove': '移除',
+    'settings.members.removeConfirm': '确认从项目“{project}”移除成员 {email}？',
+    'settings.members.updated': '成员已更新',
+    'settings.members.removed': '已移除：{email}',
   },
   en: {
     'nav.dashboard': 'Dashboard',
@@ -200,6 +243,8 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'common.loadMore': 'Load more',
     'common.prevPage': 'Prev',
     'common.nextPage': 'Next',
+    'common.close': 'Close',
+    'common.copy': 'Copy',
     'common.copied': 'Copied',
     'common.copyFailed': 'Copy failed',
     'common.items': '{count} items',
@@ -349,6 +394,13 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'integrations.saveMapping': 'Save mapping',
     'integrations.integrationJson': 'Integration JSON (GET /api/integrations/:id)',
 
+    'projects.name': 'Name',
+    'projects.type': 'Type',
+    'projects.status': 'Status',
+    'projects.role': 'Role',
+    'projects.current': 'Current',
+    'projects.setCurrent': 'Set current',
+
     'settings.title': 'Settings',
     'settings.apiBaseUrl': 'API Base URL',
     'settings.token': 'Token',
@@ -357,6 +409,41 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'settings.selectedProjectId': 'Selected projectId',
     'settings.clearProjectSelection': 'Clear project selection',
     'settings.refreshPage': 'Refresh page',
+    'settings.projects.title': 'Projects',
+    'settings.projects.desc': 'Create multiple App projects and pick them across pages.',
+    'settings.projects.empty': 'No accessible projects.',
+    'settings.projects.noMatch': 'No matching projects.',
+    'settings.projects.filter': 'Filter (optional)',
+    'settings.projects.filterPlaceholder': 'Filter by name / ID / type…',
+    'settings.projects.rename': 'Rename',
+    'settings.projects.renamePrompt': 'Enter a new project name',
+    'settings.projects.renameEmpty': 'Project name cannot be empty.',
+    'settings.projects.archive': 'Archive',
+    'settings.projects.archiveConfirm': 'Archive project “{name}”?',
+    'settings.projects.restore': 'Restore',
+    'settings.projects.restoreConfirm': 'Restore project “{name}”?',
+    'settings.projects.updated': 'Updated',
+    'settings.projects.createName': 'Project name',
+    'settings.projects.setAsCurrent': 'Set as current after creation',
+    'settings.projects.createApp': 'Create App project',
+    'settings.projects.created': 'Created project: {name}',
+    'settings.projects.adminOnly': 'Admin permission is required to create projects.',
+
+    'settings.members.open': 'Members',
+    'settings.members.title': 'Project members',
+    'settings.members.email': 'Email',
+    'settings.members.name': 'Name',
+    'settings.members.role': 'Role',
+    'settings.members.createdAt': 'Joined at',
+    'settings.members.empty': 'No members.',
+    'settings.members.addTitle': 'Add / update member',
+    'settings.members.addHint':
+      'Add a member by email (the email must exist in users). If the member already exists, it will update the role.',
+    'settings.members.add': 'Add',
+    'settings.members.remove': 'Remove',
+    'settings.members.removeConfirm': 'Remove {email} from project “{project}”?',
+    'settings.members.updated': 'Member updated',
+    'settings.members.removed': 'Removed: {email}',
   },
 };
 
@@ -385,8 +472,11 @@ export function I18nProvider(props: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('zh');
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'zh' || saved === 'en') setLocaleState(saved);
+    const id = window.setTimeout(() => {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved === 'zh' || saved === 'en') setLocaleState(saved);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, []);
 
   const setLocale = useCallback((next: Locale) => {

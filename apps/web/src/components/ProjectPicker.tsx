@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import formStyles from '@/components/Form.module.css';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId, setProjectId } from '@/lib/auth';
+import { PROJECTS_REFRESH_EVENT } from '@/lib/projects';
 import { useI18n } from '@/lib/i18n';
 
 type Project = {
@@ -22,20 +23,28 @@ export function ProjectPicker(props: {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<Project[]>('/api/projects')
-      .then((rows) => {
-        if (cancelled) return;
-        setError('');
-        setProjects(rows);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg =
-          e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setError(msg);
-      });
+
+    const load = () => {
+      apiFetch<Project[]>('/api/projects')
+        .then((rows) => {
+          if (cancelled) return;
+          setError('');
+          setProjects(rows);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg =
+            e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setError(msg);
+        });
+    };
+
+    const onRefresh = () => load();
+    load();
+    window.addEventListener(PROJECTS_REFRESH_EVENT, onRefresh);
     return () => {
       cancelled = true;
+      window.removeEventListener(PROJECTS_REFRESH_EVENT, onRefresh);
     };
   }, []);
 

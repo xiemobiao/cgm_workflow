@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
 import { ProjectPicker } from '@/components/ProjectPicker';
@@ -145,6 +145,12 @@ export default function LogsPage() {
   const [contextLoading, setContextLoading] = useState(false);
   const [contextError, setContextError] = useState('');
   const [copyHint, setCopyHint] = useState('');
+  const searchRef = useRef<
+    (
+      resetCursor: boolean,
+      range?: { startLocal: string; endLocal: string },
+    ) => Promise<void>
+  >(async () => {});
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -420,12 +426,14 @@ export default function LogsPage() {
     }
   }
 
+  searchRef.current = search;
+
   useEffect(() => {
     if (!autoSearch) return;
     if (!projectId) return;
     if (!startLocal || !endLocal) return;
     setAutoSearch(false);
-    void search(true);
+    void searchRef.current(true);
   }, [autoSearch, projectId, startLocal, endLocal, keyword, logFileId]);
 
   return (

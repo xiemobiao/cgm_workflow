@@ -2,7 +2,15 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
 import { ApiClientError, apiFetch } from '@/lib/api';
@@ -59,6 +67,13 @@ type EventContextResponse = {
   before: SearchItem[];
   after: SearchItem[];
 };
+
+type CssVars = { [key: `--${string}`]: string | number };
+type StyleWithVars = CSSProperties & CssVars;
+
+function hueVars(hue: number): StyleWithVars {
+  return { '--hue': hue };
+}
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -149,6 +164,9 @@ export default function LogFileViewerPage() {
   const [contextError, setContextError] = useState('');
   const [copyHint, setCopyHint] = useState('');
   const searchReqIdRef = useRef(0);
+  const fetchPageRef = useRef<(page: number, cursor: string | null) => Promise<void>>(
+    async () => {},
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem('cgm_log_file_viewer_limit');
@@ -258,13 +276,19 @@ export default function LogFileViewerPage() {
     }
   }
 
-  useEffect(() => {
-    if (!fileDetail) return;
+  fetchPageRef.current = fetchPage;
+
+  const runSearch = useCallback(() => {
     setPageIndex(0);
     setPageCursors([null]);
     setNextCursorByPage([]);
-    void fetchPage(0, null);
-  }, [fileDetail?.id]);
+    void fetchPageRef.current(0, null);
+  }, []);
+
+  useEffect(() => {
+    if (!fileDetail?.id) return;
+    runSearch();
+  }, [fileDetail?.id, runSearch]);
 
   useEffect(() => {
     if (!selectedEventId) return;
@@ -414,6 +438,11 @@ export default function LogFileViewerPage() {
                 className={formStyles.input}
                 value={eventName}
                 onChange={(e) => setEventName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  runSearch();
+                }}
                 placeholder="e.g. sdk_auth_start"
               />
             </div>
@@ -423,6 +452,11 @@ export default function LogFileViewerPage() {
                 className={formStyles.input}
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  runSearch();
+                }}
                 placeholder="e.g. error / timeout"
               />
             </div>
@@ -454,6 +488,11 @@ export default function LogFileViewerPage() {
                     if (!Number.isFinite(n)) return;
                     setLimit(Math.min(Math.max(Math.trunc(n), 1), 1000));
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    runSearch();
+                  }}
                 />
               </div>
             </div>
@@ -466,10 +505,7 @@ export default function LogFileViewerPage() {
                 onClick={() => {
                   setEventName('PARSER_ERROR');
                   window.setTimeout(() => {
-                    setPageIndex(0);
-                    setPageCursors([null]);
-                    setNextCursorByPage([]);
-                    void fetchPage(0, null);
+                    runSearch();
                   }, 0);
                 }}
               >
@@ -480,10 +516,7 @@ export default function LogFileViewerPage() {
                 type="button"
                 disabled={loading}
                 onClick={() => {
-                  setPageIndex(0);
-                  setPageCursors([null]);
-                  setNextCursorByPage([]);
-                  void fetchPage(0, null);
+                  runSearch();
                 }}
               >
                 {t('common.search')}
@@ -546,14 +579,11 @@ export default function LogFileViewerPage() {
                     <div
                       key={it.name}
                       className={`${viewerStyles.chip}${eventName === it.name ? ` ${viewerStyles.chipActive}` : ''}`}
-                      style={{ ['--hue' as any]: it.hue }}
+                      style={hueVars(it.hue)}
                       onClick={() => {
                         setEventName((prev) => (prev === it.name ? '' : it.name));
                         window.setTimeout(() => {
-                          setPageIndex(0);
-                          setPageCursors([null]);
-                          setNextCursorByPage([]);
-                          void fetchPage(0, null);
+                          runSearch();
                         }, 0);
                       }}
                       role="button"
@@ -562,10 +592,7 @@ export default function LogFileViewerPage() {
                         if (e.key === 'Enter' || e.key === ' ') {
                           setEventName((prev) => (prev === it.name ? '' : it.name));
                           window.setTimeout(() => {
-                            setPageIndex(0);
-                            setPageCursors([null]);
-                            setNextCursorByPage([]);
-                            void fetchPage(0, null);
+                            runSearch();
                           }, 0);
                         }
                       }}
@@ -603,7 +630,7 @@ export default function LogFileViewerPage() {
                       : viewerStyles.level4;
 
               return (
-                <div key={e.id} className={viewerStyles.line} style={{ ['--hue' as any]: hue }}>
+                <div key={e.id} className={viewerStyles.line} style={hueVars(hue)}>
                   <div
                     className={viewerStyles.lineHeader}
                     onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
@@ -620,9 +647,9 @@ export default function LogFileViewerPage() {
                       </div>
                     </div>
 
-                    <div className={viewerStyles.main}>
-                      <div className={viewerStyles.eventRow}>
-                        <span className={viewerStyles.eventBadge} style={{ ['--hue' as any]: hue }}>
+                      <div className={viewerStyles.main}>
+                        <div className={viewerStyles.eventRow}>
+                        <span className={viewerStyles.eventBadge} style={hueVars(hue)}>
                           <span className={viewerStyles.eventBadgeDot} />
                           {renderHighlighted(e.eventName, keyword)}
                         </span>

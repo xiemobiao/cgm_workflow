@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
 import { ApiClientError, apiFetch } from '@/lib/api';
@@ -35,29 +35,34 @@ export default function LogFileDetailPage() {
   useEffect(() => {
     if (!fileId) return;
     let cancelled = false;
-    setLoading(true);
-    setError('');
-    setDetail(null);
-    apiFetch<LogFileDetail>(`/api/logs/files/${fileId}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDetail(data);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setError(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
+    const id = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError('');
+      setDetail(null);
+      apiFetch<LogFileDetail>(`/api/logs/files/${fileId}`)
+        .then((data) => {
+          if (cancelled) return;
+          setDetail(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg =
+            e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setLoading(false);
+        });
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(id);
     };
   }, [fileId]);
 
-  const logsHref = useMemo(() => {
+  const logsHref = (() => {
     if (!fileId) return '/logs';
     const qs = new URLSearchParams({ logFileId: fileId });
     if (detail && detail.minTimestampMs !== null && detail.maxTimestampMs !== null) {
@@ -65,7 +70,7 @@ export default function LogFileDetailPage() {
       qs.set('endMs', String(detail.maxTimestampMs));
     }
     return `/logs?${qs.toString()}`;
-  }, [detail?.maxTimestampMs, detail?.minTimestampMs, fileId]);
+  })();
 
   return (
     <div className={shellStyles.grid}>

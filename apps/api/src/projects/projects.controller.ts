@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -21,10 +23,24 @@ const createProjectSchema = z.object({
   status: z.nativeEnum(ProjectStatus).default(ProjectStatus.active),
 });
 
-const addMemberSchema = z.object({
-  userId: z.string().uuid(),
-  role: z.enum(['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer']),
-});
+const addMemberSchema = z
+  .object({
+    userId: z.string().uuid().optional(),
+    email: z.string().email().optional(),
+    role: z.enum(['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer']),
+  })
+  .refine((v) => v.userId !== undefined || v.email !== undefined, {
+    message: 'userId or email is required',
+  });
+
+const updateProjectSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    status: z.nativeEnum(ProjectStatus).optional(),
+  })
+  .refine((v) => v.name !== undefined || v.status !== undefined, {
+    message: 'No updates provided',
+  });
 
 @UseGuards(JwtAuthGuard)
 @Controller('projects')
@@ -44,6 +60,22 @@ export class ProjectsController {
       actorUserId: user.userId,
       name: dto.name,
       type: dto.type,
+      status: dto.status,
+    });
+  }
+
+  @Patch(':id')
+  @HttpCode(200)
+  async update(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') projectId: string,
+    @Body() body: unknown,
+  ) {
+    const dto = updateProjectSchema.parse(body);
+    return this.projects.updateProject({
+      actorUserId: user.userId,
+      projectId,
+      name: dto.name,
       status: dto.status,
     });
   }
@@ -68,7 +100,23 @@ export class ProjectsController {
       actorUserId: user.userId,
       projectId,
       userId: dto.userId,
+      email: dto.email,
       roleName: dto.role as RoleName,
+    });
+  }
+
+  @Delete(':id/members/:userId')
+  @HttpCode(200)
+  async removeMember(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') projectId: string,
+    @Param('userId') userId: string,
+  ) {
+    const memberUserId = z.string().uuid().parse(userId);
+    return this.projects.removeMember({
+      actorUserId: user.userId,
+      projectId,
+      userId: memberUserId,
     });
   }
 }

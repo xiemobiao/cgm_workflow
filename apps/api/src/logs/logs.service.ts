@@ -184,10 +184,26 @@ export class LogsService {
       try {
         return this.truncateText(JSON.stringify(obj), 240);
       } catch {
-        return this.truncateText(String(value), 240);
+        return this.truncateText(
+          Object.prototype.toString.call(value) as string,
+          240,
+        );
       }
     }
-    return this.truncateText(String(value), 240);
+    if (typeof value === 'bigint') {
+      return this.truncateText(value.toString(), 240);
+    }
+    if (typeof value === 'symbol') {
+      return this.truncateText(value.toString(), 240);
+    }
+    if (typeof value === 'function') {
+      const name = value.name ? ` ${value.name}` : '';
+      return this.truncateText(`[function${name}]`, 240);
+    }
+    return this.truncateText(
+      Object.prototype.toString.call(value) as string,
+      240,
+    );
   }
 
   async searchEvents(params: {
@@ -329,17 +345,16 @@ export class LogsService {
 
     const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
 
-    const andFilters: Prisma.LogFileWhereInput[] = [{ projectId: params.projectId }];
+    const andFilters: Prisma.LogFileWhereInput[] = [
+      { projectId: params.projectId },
+    ];
     if (params.cursor) {
       const cursor = this.decodeFileCursor(params.cursor);
       andFilters.push({
         OR: [
           { uploadedAt: { lt: cursor.uploadedAt } },
           {
-            AND: [
-              { uploadedAt: cursor.uploadedAt },
-              { id: { lt: cursor.id } },
-            ],
+            AND: [{ uploadedAt: cursor.uploadedAt }, { id: { lt: cursor.id } }],
           },
         ],
       });
@@ -605,7 +620,7 @@ export class LogsService {
       eventName: string;
       sdkVersion: string | null;
       appId: string | null;
-      msgJson: unknown | null;
+      msgJson: unknown;
     }) => ({
       id: e.id,
       logFileId: e.logFileId,

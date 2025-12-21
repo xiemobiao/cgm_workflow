@@ -26,9 +26,21 @@ export class MinioStorageAdapter implements StorageAdapter {
 
   async getObjectBuffer(key: string): Promise<Buffer> {
     const stream = await this.client.getObject(this.bucket, key);
-    const chunks: Buffer[] = [];
+    const chunks: Uint8Array[] = [];
     for await (const chunk of stream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      if (chunk instanceof Uint8Array) {
+        chunks.push(chunk);
+        continue;
+      }
+      if (typeof chunk === 'string') {
+        chunks.push(Buffer.from(chunk));
+        continue;
+      }
+      throw new ApiException({
+        code: 'STORAGE_INVALID_STREAM_CHUNK',
+        message: 'Storage stream yielded an unexpected chunk type',
+        status: 500,
+      });
     }
     const buf = Buffer.concat(chunks);
     if (buf.length === 0) {

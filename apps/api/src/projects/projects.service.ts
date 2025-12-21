@@ -61,10 +61,45 @@ export class ProjectsService {
     return project;
   }
 
+  async updateProject(params: {
+    actorUserId: string;
+    projectId: string;
+    name?: string;
+    status?: ProjectStatus;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin'],
+    });
+
+    const existing = await this.prisma.project.findUnique({
+      where: { id: params.projectId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new ApiException({
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Project not found',
+        status: 404,
+      });
+    }
+
+    const data: { name?: string; status?: ProjectStatus } = {};
+    if (params.name !== undefined) data.name = params.name;
+    if (params.status !== undefined) data.status = params.status;
+
+    return this.prisma.project.update({
+      where: { id: params.projectId },
+      data,
+    });
+  }
+
   async addMember(params: {
     actorUserId: string;
     projectId: string;
-    userId: string;
+    userId?: string;
+    email?: string;
     roleName: RoleName;
   }) {
     await this.rbac.requireProjectRoles({
@@ -84,10 +119,22 @@ export class ProjectsService {
       });
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: params.userId },
-    });
-    if (!user) {
+    let targetUser: { id: string; email: string; name: string } | null = null;
+    if (params.userId) {
+      targetUser = await this.prisma.user.findUnique({
+        where: { id: params.userId },
+        select: { id: true, email: true, name: true },
+      });
+    } else if (params.email) {
+      const email = params.email.trim();
+      targetUser = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, name: true },
+      });
+    }
+
+    const targetUserId = targetUser?.id;
+    if (!targetUserId) {
       throw new ApiException({
         code: 'USER_NOT_FOUND',
         message: 'User not found',
@@ -95,17 +142,40 @@ export class ProjectsService {
       });
     }
 
+    const existing = await this.prisma.projectMember.findUnique({
+      where: {
+        projectId_userId: {
+          projectId: params.projectId,
+          userId: targetUserId,
+        },
+      },
+      include: { role: true },
+    });
+
+    if (existing?.role?.name === 'Admin' && params.roleName !== 'Admin') {
+      const adminCount = await this.prisma.projectMember.count({
+        where: { projectId: params.projectId, role: { name: 'Admin' } },
+      });
+      if (adminCount <= 1) {
+        throw new ApiException({
+          code: 'PROJECT_LAST_ADMIN',
+          message: 'Cannot remove the last Admin from the project',
+          status: 400,
+        });
+      }
+    }
+
     const membership = await this.prisma.projectMember.upsert({
       where: {
         projectId_userId: {
           projectId: params.projectId,
-          userId: params.userId,
+          userId: targetUserId,
         },
       },
       update: { roleId: role.id },
       create: {
         projectId: params.projectId,
-        userId: params.userId,
+        userId: targetUserId,
         roleId: role.id,
       },
       include: { role: true, user: true },
@@ -117,6 +187,59 @@ export class ProjectsService {
       name: membership.user.name,
       role: membership.role.name,
     };
+  }
+
+  async removeMember(params: {
+    actorUserId: string;
+    projectId: string;
+    userId: string;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin'],
+    });
+
+    const existing = await this.prisma.projectMember.findUnique({
+      where: {
+        projectId_userId: {
+          projectId: params.projectId,
+          userId: params.userId,
+        },
+      },
+      include: { role: true },
+    });
+    if (!existing) {
+      throw new ApiException({
+        code: 'PROJECT_MEMBER_NOT_FOUND',
+        message: 'Project member not found',
+        status: 404,
+      });
+    }
+
+    if (existing.role?.name === 'Admin') {
+      const adminCount = await this.prisma.projectMember.count({
+        where: { projectId: params.projectId, role: { name: 'Admin' } },
+      });
+      if (adminCount <= 1) {
+        throw new ApiException({
+          code: 'PROJECT_LAST_ADMIN',
+          message: 'Cannot remove the last Admin from the project',
+          status: 400,
+        });
+      }
+    }
+
+    await this.prisma.projectMember.delete({
+      where: {
+        projectId_userId: {
+          projectId: params.projectId,
+          userId: params.userId,
+        },
+      },
+    });
+
+    return { removed: true };
   }
 
   async listMembers(actorUserId: string, projectId: string) {

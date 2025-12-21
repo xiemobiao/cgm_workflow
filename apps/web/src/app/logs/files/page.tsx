@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import shellStyles from '@/components/AppShell.module.css';
 import formStyles from '@/components/Form.module.css';
 import { ProjectPicker } from '@/components/ProjectPicker';
@@ -54,6 +54,7 @@ export default function LogFilesPage() {
   }, [limit]);
 
   const canLoad = useMemo(() => Boolean(projectId), [projectId]);
+  const loadRef = useRef<(resetCursor: boolean) => Promise<void>>(async () => {});
 
   async function load(resetCursor: boolean) {
     if (!projectId) return;
@@ -80,9 +81,11 @@ export default function LogFilesPage() {
     }
   }
 
+  loadRef.current = load;
+
   useEffect(() => {
     if (!projectId) return;
-    void load(true);
+    void loadRef.current(true);
   }, [projectId]);
 
   return (
@@ -188,4 +191,3 @@ export default function LogFilesPage() {
     </div>
   );
 }
-
