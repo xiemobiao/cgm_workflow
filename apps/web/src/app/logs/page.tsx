@@ -128,8 +128,16 @@ export default function LogsPage() {
   const [keyword, setKeyword] = useState('');
   const [logFileId, setLogFileId] = useState('');
   const [level, setLevel] = useState<string>('');
+  const [levelGte, setLevelGte] = useState<string>('');
   const [sdkVersion, setSdkVersion] = useState('');
   const [appId, setAppId] = useState('');
+  // Tracking field filters
+  const [linkCode, setLinkCode] = useState('');
+  const [requestId, setRequestId] = useState('');
+  const [deviceMac, setDeviceMac] = useState('');
+  const [errorCode, setErrorCode] = useState('');
+  // Content search
+  const [msgContains, setMsgContains] = useState('');
   const [limit, setLimit] = useState(50);
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
@@ -405,6 +413,14 @@ export default function LogsPage() {
       if (sdkVersion.trim()) qs.set('sdkVersion', sdkVersion.trim());
       if (appId.trim()) qs.set('appId', appId.trim());
       if (level) qs.set('level', level);
+      if (levelGte) qs.set('levelGte', levelGte);
+      // Tracking field filters
+      if (linkCode.trim()) qs.set('linkCode', linkCode.trim());
+      if (requestId.trim()) qs.set('requestId', requestId.trim());
+      if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
+      if (errorCode.trim()) qs.set('errorCode', errorCode.trim());
+      // Content search
+      if (msgContains.trim()) qs.set('msgContains', msgContains.trim());
       qs.set('limit', String(limit));
       if (!resetCursor && cursor) qs.set('cursor', cursor);
 
@@ -441,9 +457,20 @@ export default function LogsPage() {
       <div className={shellStyles.card}>
         <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
           <h1 style={{ fontSize: 20, marginBottom: 0 }}>{t('logs.title')}</h1>
-          <Link href="/logs/files" className={shellStyles.button}>
-            {t('logs.files.browse')}
-          </Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link href="/logs/trace" className={shellStyles.button}>
+              {t('logs.trace')}
+            </Link>
+            <Link href="/logs/commands" className={shellStyles.button}>
+              {t('logs.commands')}
+            </Link>
+            <Link href="/logs/stats" className={shellStyles.button}>
+              {t('logs.stats')}
+            </Link>
+            <Link href="/logs/files" className={shellStyles.button}>
+              {t('logs.files.browse')}
+            </Link>
+          </div>
         </div>
         <div className={formStyles.row}>
           <ProjectPicker projectId={projectId} onChange={setProjectId} />
@@ -546,6 +573,66 @@ export default function LogsPage() {
                 onChange={(e) => setAppId(e.target.value)}
                 placeholder="e.g. com.example.app"
               />
+            </div>
+          </div>
+          <div className={formStyles.row}>
+            <div className={formStyles.field} style={{ minWidth: 180 }}>
+              <div className={formStyles.label}>linkCode</div>
+              <input
+                className={formStyles.input}
+                value={linkCode}
+                onChange={(e) => setLinkCode(e.target.value)}
+                placeholder="APP session ID"
+              />
+            </div>
+            <div className={formStyles.field} style={{ minWidth: 180 }}>
+              <div className={formStyles.label}>requestId</div>
+              <input
+                className={formStyles.input}
+                value={requestId}
+                onChange={(e) => setRequestId(e.target.value)}
+                placeholder="Command chain ID"
+              />
+            </div>
+            <div className={formStyles.field} style={{ minWidth: 180 }}>
+              <div className={formStyles.label}>deviceMac</div>
+              <input
+                className={formStyles.input}
+                value={deviceMac}
+                onChange={(e) => setDeviceMac(e.target.value)}
+                placeholder="e.g. AA:BB:CC:DD:EE:FF"
+              />
+            </div>
+            <div className={formStyles.field} style={{ minWidth: 140 }}>
+              <div className={formStyles.label}>errorCode</div>
+              <input
+                className={formStyles.input}
+                value={errorCode}
+                onChange={(e) => setErrorCode(e.target.value)}
+                placeholder="e.g. E001"
+              />
+            </div>
+            <div className={formStyles.field} style={{ minWidth: 200 }}>
+              <div className={formStyles.label}>{t('logs.msgContains')}</div>
+              <input
+                className={formStyles.input}
+                value={msgContains}
+                onChange={(e) => setMsgContains(e.target.value)}
+                placeholder={t('logs.msgContainsPlaceholder')}
+              />
+            </div>
+            <div className={formStyles.field} style={{ minWidth: 100 }}>
+              <div className={formStyles.label}>{t('logs.levelGte')}</div>
+              <select
+                className={formStyles.select}
+                value={levelGte}
+                onChange={(e) => setLevelGte(e.target.value)}
+              >
+                <option value="">{t('logs.level.all')}</option>
+                <option value="2">&gt;=2</option>
+                <option value="3">&gt;=3 (WARN+)</option>
+                <option value="4">&gt;=4 (ERROR)</option>
+              </select>
             </div>
             <div className={formStyles.field}>
               <div className={formStyles.label}>{t('logs.startTime')}</div>

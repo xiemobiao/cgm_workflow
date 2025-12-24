@@ -4,6 +4,7 @@ import { ApiException } from '../common/api-exception';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { LoganDecryptService } from './logan-decrypt.service';
 
 type OuterLine = {
   c: string;
@@ -43,12 +44,60 @@ function asBoolean(x: unknown): boolean | undefined {
   return undefined;
 }
 
+// Extract tracking fields from msg object for flow tracing
+function extractTrackingFields(msg: unknown): {
+  linkCode: string | null;
+  requestId: string | null;
+  deviceMac: string | null;
+  errorCode: string | null;
+} {
+  const result = {
+    linkCode: null as string | null,
+    requestId: null as string | null,
+    deviceMac: null as string | null,
+    errorCode: null as string | null,
+  };
+
+  if (!msg || typeof msg !== 'object') return result;
+
+  const obj = msg as Record<string, unknown>;
+
+  // Extract linkCode (APP session identifier)
+  result.linkCode =
+    asString(obj.linkCode) || asString(obj.link_code) || null;
+
+  // Extract requestId (command chain identifier)
+  result.requestId =
+    asString(obj.requestId) || asString(obj.request_id) || null;
+
+  // Extract deviceMac (device identifier)
+  result.deviceMac =
+    asString(obj.deviceMac) ||
+    asString(obj.mac) ||
+    asString(obj.device_mac) ||
+    asString(obj.deviceId) ||
+    null;
+
+  // Extract errorCode
+  const errorObj = obj.error;
+  if (errorObj && typeof errorObj === 'object') {
+    result.errorCode = asString((errorObj as Record<string, unknown>).code) || null;
+  }
+  if (!result.errorCode) {
+    result.errorCode =
+      asString(obj.errorCode) || asString(obj.error_code) || null;
+  }
+
+  return result;
+}
+
 @Injectable()
 export class LogsParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly loganDecrypt: LoganDecryptService,
   ) {}
 
   enqueue(logFileId: string) {
@@ -73,7 +122,15 @@ export class LogsParserService {
       }
 
       const buf = await this.storage.getObjectBuffer(logFile.storageKey);
-      const text = buf.toString('utf8');
+
+      // Auto-detect and decrypt Logan encrypted binary files
+      let text: string;
+      if (this.loganDecrypt.isLoganEncrypted(buf)) {
+        text = this.loganDecrypt.decrypt(buf);
+      } else {
+        text = buf.toString('utf8');
+      }
+
       const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
 
       const nowMs = BigInt(Date.now());
@@ -114,6 +171,9 @@ export class LogsParserService {
             appInfo: asString(innerObj.appInfo),
           };
 
+          // Extract tracking fields from msg
+          const tracking = extractTrackingFields(inner.msg);
+
           events.push({
             projectId: logFile.projectId,
             logFileId: logFile.id,
@@ -132,6 +192,11 @@ export class LogsParserService {
                 ? undefined
                 : (inner.msg as Prisma.InputJsonValue),
             rawLine: null,
+            // Tracking fields
+            linkCode: tracking.linkCode,
+            requestId: tracking.requestId,
+            deviceMac: tracking.deviceMac,
+            errorCode: tracking.errorCode,
           });
         } catch (e) {
           hadError = true;
@@ -154,6 +219,8 @@ export class LogsParserService {
 
       try {
         await this.prisma.$transaction(async (tx) => {
+          // Delete existing events and stats for this file
+          await tx.logEventStats.deleteMany({ where: { logFileId: logFile.id } });
           await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
 
           const batchSize = 500;
@@ -163,11 +230,40 @@ export class LogsParserService {
             await tx.logEvent.createMany({ data: batch });
           }
 
+          // Generate event statistics
+          const statsMap = new Map<string, { eventName: string; level: number; count: number }>();
+          for (const event of events) {
+            const key = `${event.eventName}:${event.level}`;
+            const existing = statsMap.get(key);
+            if (existing) {
+              existing.count++;
+            } else {
+              statsMap.set(key, {
+                eventName: event.eventName,
+                level: event.level,
+                count: 1,
+              });
+            }
+          }
+
+          // Insert statistics
+          if (statsMap.size > 0) {
+            await tx.logEventStats.createMany({
+              data: Array.from(statsMap.values()).map((s) => ({
+                projectId: logFile.projectId,
+                logFileId: logFile.id,
+                eventName: s.eventName,
+                level: s.level,
+                count: s.count,
+              })),
+            });
+          }
+
           await tx.logFile.update({
             where: { id: logFile.id },
             data: {
               status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
-              parserVersion: 'v1',
+              parserVersion: 'v2',
             },
           });
         });

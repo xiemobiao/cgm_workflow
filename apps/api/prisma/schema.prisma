@@ -132,6 +132,7 @@ model Project {
   pipelineRuns PipelineRun[]
   logFiles     LogFile[]
   logEvents    LogEvent[]
+  logEventStats LogEventStats[]
   incidents    Incident[]
   auditLogs    AuditLog[]
 }
@@ -292,6 +293,7 @@ model LogFile {
 
   project Project @relation(fields: [projectId], references: [id])
   events  LogEvent[]
+  stats   LogEventStats[]
 
   @@index([projectId, uploadedAt])
 }
@@ -313,6 +315,12 @@ model LogEvent {
   rawLine     String?
   createdAt   DateTime @default(now())
 
+  // Tracking fields extracted from msgJson
+  linkCode    String?   // APP session identifier for tracing device connection flow
+  requestId   String?   // Request ID for tracing command send-response chain
+  deviceMac   String?   // Device MAC address for filtering device-specific events
+  errorCode   String?   // Error code for quick error filtering
+
   project Project @relation(fields: [projectId], references: [id])
   logFile LogFile @relation(fields: [logFileId], references: [id])
   incidentLinks IncidentLogLink[]
@@ -322,6 +330,10 @@ model LogEvent {
   @@index([appId, timestampMs])
   @@index([sdkVersion, eventName])
   @@index([logFileId])
+  @@index([linkCode, timestampMs])
+  @@index([requestId, timestampMs])
+  @@index([deviceMac, timestampMs])
+  @@index([errorCode])
 }
 
 model Incident {
@@ -368,4 +380,19 @@ model AuditLog {
   actor   User?   @relation("AuditActor", fields: [actorUserId], references: [id])
 
   @@index([projectId, createdAt])
+}
+
+model LogEventStats {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @db.Uuid
+  logFileId String   @db.Uuid
+  eventName String
+  level     Int
+  count     Int
+
+  project   Project  @relation(fields: [projectId], references: [id])
+  logFile   LogFile  @relation(fields: [logFileId], references: [id])
+
+  @@unique([logFileId, eventName, level])
+  @@index([projectId, eventName])
 }

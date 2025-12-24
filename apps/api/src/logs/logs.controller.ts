@@ -35,6 +35,15 @@ const searchSchema = z.object({
   appId: z.string().min(1).optional(),
   sdkVersion: z.string().min(1).optional(),
   level: z.coerce.number().int().min(1).max(4).optional(),
+  levelGte: z.coerce.number().int().min(1).max(4).optional(),
+  levelLte: z.coerce.number().int().min(1).max(4).optional(),
+  // Tracking field filters
+  linkCode: z.string().min(1).optional(),
+  requestId: z.string().min(1).optional(),
+  deviceMac: z.string().min(1).optional(),
+  errorCode: z.string().min(1).optional(),
+  // Content search
+  msgContains: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
   cursor: z.string().min(1).optional(),
 });
@@ -51,6 +60,68 @@ const contextSchema = z.object({
 });
 
 const idSchema = z.string().uuid();
+
+// Tracing schemas
+const traceLinkCodeSchema = z.object({
+  projectId: z.string().uuid(),
+  limit: z.coerce.number().int().min(1).max(2000).optional(),
+});
+
+const traceRequestIdSchema = z.object({
+  projectId: z.string().uuid(),
+});
+
+const traceDeviceMacSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  limit: z.coerce.number().int().min(1).max(2000).optional(),
+});
+
+// Statistics schemas
+const statsSchema = z.object({
+  projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
+  startTime: z.string().datetime().optional(),
+  endTime: z.string().datetime().optional(),
+});
+
+const errorHotspotsSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const timelineSchema = z.object({
+  projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
+  linkCode: z.string().min(1).optional(),
+  deviceMac: z.string().min(1).optional(),
+  startTime: z.string().datetime().optional(),
+  endTime: z.string().datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+// Command chain schema
+const commandChainsSchema = z.object({
+  projectId: z.string().uuid(),
+  deviceMac: z.string().min(1).optional(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+// Relation discovery schemas
+const linkCodeDevicesSchema = z.object({
+  projectId: z.string().uuid(),
+});
+
+const deviceSessionsSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+});
 
 @UseGuards(JwtAuthGuard)
 @Controller('logs')
@@ -141,5 +212,153 @@ export class LogsController {
   ) {
     const fileId = idSchema.parse(id);
     return this.logs.deleteLogFile({ actorUserId: user.userId, id: fileId });
+  }
+
+  // ========== Tracing APIs ==========
+
+  @Get('trace/link-code/:linkCode')
+  async traceByLinkCode(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('linkCode') linkCode: string,
+    @Query() query: unknown,
+  ) {
+    const dto = traceLinkCodeSchema.parse(query);
+    return this.logs.traceByLinkCode({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      linkCode,
+      limit: dto.limit,
+    });
+  }
+
+  @Get('trace/request-id/:requestId')
+  async traceByRequestId(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('requestId') requestId: string,
+    @Query() query: unknown,
+  ) {
+    const dto = traceRequestIdSchema.parse(query);
+    return this.logs.traceByRequestId({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      requestId,
+    });
+  }
+
+  @Get('trace/device/:deviceMac')
+  async traceByDeviceMac(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('deviceMac') deviceMac: string,
+    @Query() query: unknown,
+  ) {
+    const dto = traceDeviceMacSchema.parse(query);
+    return this.logs.traceByDeviceMac({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      deviceMac,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      limit: dto.limit,
+    });
+  }
+
+  // ========== Statistics APIs ==========
+
+  @Get('stats')
+  async getStats(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = statsSchema.parse(query);
+    return this.logs.getEventStats({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      logFileId: dto.logFileId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+    });
+  }
+
+  @Get('stats/errors')
+  async getErrorHotspots(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = errorHotspotsSchema.parse(query);
+    return this.logs.getErrorHotspots({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      limit: dto.limit,
+    });
+  }
+
+  @Get('timeline')
+  async getTimeline(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = timelineSchema.parse(query);
+    return this.logs.getTimeline({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      logFileId: dto.logFileId,
+      linkCode: dto.linkCode,
+      deviceMac: dto.deviceMac,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      limit: dto.limit,
+    });
+  }
+
+  // ========== Command Chain APIs ==========
+
+  @Get('commands')
+  async getCommandChains(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = commandChainsSchema.parse(query);
+    return this.logs.getCommandChains({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      deviceMac: dto.deviceMac,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      limit: dto.limit,
+    });
+  }
+
+  // ========== Relation Discovery APIs ==========
+
+  @Get('trace/link-code/:linkCode/devices')
+  async getLinkCodeDevices(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('linkCode') linkCode: string,
+    @Query() query: unknown,
+  ) {
+    const dto = linkCodeDevicesSchema.parse(query);
+    return this.logs.getLinkCodeDevices({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      linkCode,
+    });
+  }
+
+  @Get('trace/device/:deviceMac/sessions')
+  async getDeviceSessions(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('deviceMac') deviceMac: string,
+    @Query() query: unknown,
+  ) {
+    const dto = deviceSessionsSchema.parse(query);
+    return this.logs.getDeviceSessions({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      deviceMac,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+    });
   }
 }
