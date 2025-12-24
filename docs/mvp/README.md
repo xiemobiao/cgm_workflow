@@ -1,11 +1,13 @@
-# CGM Workflow Web MVP Spec Pack
+# CGM SDK Debug Platform Spec Pack
 
 ## Version
-- v0.1
+- v0.2
 
 ## Scope
-- Self-hosted workflow system for CGM SDK and app work
-- Requirement intake, workflow instances, gate approvals, and diagnosis
+- SDK 日志调试诊断平台
+- 日志上传、解析、搜索
+- 蓝牙设备会话追踪与异常检测
+- 事故管理与已知问题库
 - Input logs are decoded JSONL per `../logging/cgm_log_format_spec.md`
 
 ## Default Stack
@@ -17,11 +19,8 @@
 - Storage: MinIO (S3 compatible)
 
 ## Deliverables
-- `01_product_scope.md`
-- `02_workflow_model.md`
 - `03_roles_permissions.md`
 - `04_data_model.md`
-- `05_integrations.md`
 - `06_api_outline.md`
 - `07_acceptance_criteria.md`
 
