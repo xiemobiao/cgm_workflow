@@ -12,11 +12,13 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { SessionStatus } from '@prisma/client';
 import { z } from 'zod';
 import { ApiException } from '../common/api-exception';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BluetoothService } from './bluetooth.service';
 import { LogsService } from './logs.service';
 
 const uploadSchema = z.object({
@@ -123,10 +125,68 @@ const deviceSessionsSchema = z.object({
   endTime: z.string().datetime(),
 });
 
+// Bluetooth debugging schemas
+const bluetoothSessionsSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime().optional(),
+  endTime: z.string().datetime().optional(),
+  deviceMac: z.string().min(1).optional(),
+  status: z.nativeEnum(SessionStatus).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+const bluetoothAggregateSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  forceRefresh: z.coerce.boolean().optional(),
+});
+
+const bluetoothSessionDetailSchema = z.object({
+  projectId: z.string().uuid(),
+});
+
+const bluetoothCommandAnalysisSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  deviceMac: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+const bluetoothAnomaliesSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  deviceMac: z.string().min(1).optional(),
+});
+
+const bluetoothErrorsSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  deviceMac: z.string().min(1).optional(),
+});
+
+const bluetoothErrorContextSchema = z.object({
+  projectId: z.string().uuid(),
+  contextSize: z.coerce.number().int().min(1).max(50).optional(),
+});
+
+const bluetoothAnomaliesEnhancedSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  deviceMac: z.string().min(1).optional(),
+});
+
 @UseGuards(JwtAuthGuard)
 @Controller('logs')
 export class LogsController {
-  constructor(private readonly logs: LogsService) {}
+  constructor(
+    private readonly logs: LogsService,
+    private readonly bluetooth: BluetoothService,
+  ) {}
 
   @Post('upload')
   @HttpCode(200)
@@ -359,6 +419,148 @@ export class LogsController {
       deviceMac,
       startTime: dto.startTime,
       endTime: dto.endTime,
+    });
+  }
+
+  // ========== Bluetooth Debugging APIs ==========
+
+  @Get('bluetooth/sessions')
+  async getBluetoothSessions(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothSessionsSchema.parse(query);
+    return this.bluetooth.getSessions({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      deviceMac: dto.deviceMac,
+      status: dto.status,
+      limit: dto.limit,
+    });
+  }
+
+  @Post('bluetooth/sessions/aggregate')
+  @HttpCode(200)
+  async aggregateBluetoothSessions(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: unknown,
+  ) {
+    const dto = bluetoothAggregateSchema.parse(body);
+    return this.bluetooth.aggregateSessions({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      forceRefresh: dto.forceRefresh,
+    });
+  }
+
+  @Get('bluetooth/session/:linkCode')
+  async getBluetoothSessionDetail(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('linkCode') linkCode: string,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothSessionDetailSchema.parse(query);
+    const result = await this.bluetooth.getSessionDetail({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      linkCode,
+    });
+    if (!result) {
+      throw new ApiException({
+        code: 'SESSION_NOT_FOUND',
+        message: 'Session not found',
+        status: 404,
+      });
+    }
+    return result;
+  }
+
+  @Get('bluetooth/commands/analysis')
+  async analyzeBluetoothCommands(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothCommandAnalysisSchema.parse(query);
+    return this.bluetooth.analyzeCommandChains({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      deviceMac: dto.deviceMac,
+      limit: dto.limit,
+    });
+  }
+
+  @Get('bluetooth/anomalies')
+  async detectBluetoothAnomalies(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothAnomaliesSchema.parse(query);
+    return this.bluetooth.detectAnomalies({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      deviceMac: dto.deviceMac,
+    });
+  }
+
+  @Get('bluetooth/errors/distribution')
+  async getBluetoothErrorDistribution(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothErrorsSchema.parse(query);
+    return this.bluetooth.getErrorDistribution({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      deviceMac: dto.deviceMac,
+    });
+  }
+
+  @Get('bluetooth/events/:eventId/context')
+  async getBluetoothErrorContext(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('eventId') eventId: string,
+    @Query() query: unknown,
+  ) {
+    const eventIdParsed = idSchema.parse(eventId);
+    const dto = bluetoothErrorContextSchema.parse(query);
+    const result = await this.bluetooth.analyzeErrorsWithContext({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      eventId: eventIdParsed,
+      contextSize: dto.contextSize,
+    });
+    if (!result) {
+      throw new ApiException({
+        code: 'EVENT_NOT_FOUND',
+        message: 'Event not found',
+        status: 404,
+      });
+    }
+    return result;
+  }
+
+  @Get('bluetooth/anomalies/enhanced')
+  async detectBluetoothAnomaliesEnhanced(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothAnomaliesEnhancedSchema.parse(query);
+    return this.bluetooth.detectAnomaliesEnhanced({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      deviceMac: dto.deviceMac,
     });
   }
 }

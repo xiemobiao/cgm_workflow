@@ -989,18 +989,21 @@ export class LogsService {
         timestampMs: { gte: startMs, lte: endMs },
         level: { gte: 3 }, // WARN and ERROR
       },
-      _count: { _all: true },
+      _count: true,
       _max: { timestampMs: true },
-      orderBy: { _count: { _all: 'desc' } },
-      take: limit,
     });
 
+    // Sort by count descending and take limit
+    const sorted = errorEvents
+      .sort((a, b) => (b._count ?? 0) - (a._count ?? 0))
+      .slice(0, limit);
+
     return {
-      items: errorEvents.map((e) => ({
+      items: sorted.map((e) => ({
         eventName: e.eventName,
         errorCode: e.errorCode,
-        count: e._count._all,
-        lastSeenMs: e._max.timestampMs ? Number(e._max.timestampMs) : null,
+        count: e._count ?? 0,
+        lastSeenMs: e._max?.timestampMs ? Number(e._max.timestampMs) : null,
       })),
     };
   }
@@ -1078,6 +1081,17 @@ export class LogsService {
 
   // ========== Command Chain Analysis ==========
 
+  // Helper to extract command info from msgJson
+  private extractCommandInfo(msgJson: unknown): { commandName: string | null; commandCode: string | null } {
+    if (!msgJson || typeof msgJson !== 'object') {
+      return { commandName: null, commandCode: null };
+    }
+    const obj = msgJson as Record<string, unknown>;
+    const commandName = typeof obj.commandName === 'string' ? obj.commandName : null;
+    const commandCode = typeof obj.commandCode === 'string' ? obj.commandCode : null;
+    return { commandName, commandCode };
+  }
+
   async getCommandChains(params: {
     actorUserId: string;
     projectId: string;
@@ -1096,19 +1110,14 @@ export class LogsService {
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
 
-    // Query all events with requestId
-    const whereClause: Prisma.LogEventWhereInput = {
-      projectId: params.projectId,
-      requestId: { not: null },
-      timestampMs: { gte: startMs, lte: endMs },
-    };
-
-    if (params.deviceMac) {
-      whereClause.deviceMac = params.deviceMac;
-    }
-
-    const events = await this.prisma.logEvent.findMany({
-      where: whereClause,
+    // First try to find events with requestId
+    const requestIdEvents = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        requestId: { not: null },
+        timestampMs: { gte: startMs, lte: endMs },
+        ...(params.deviceMac ? { deviceMac: params.deviceMac } : {}),
+      },
       orderBy: [{ timestampMs: 'asc' }],
       select: {
         id: true,
@@ -1122,7 +1131,69 @@ export class LogsService {
       },
     });
 
-    // Group by requestId
+    // If we have events with requestId, use the original grouping logic
+    if (requestIdEvents.length > 0) {
+      return this.buildCommandChainsFromRequestId(requestIdEvents, limit);
+    }
+
+    // Fallback: Query protocol/command events and group by commandName
+    // Include various BLE and protocol related events
+    const commandEventNames = [
+      'protocol_command_sent',
+      'protocol_response_received',
+      'protocol_created',
+      'data_request_start',
+      'data_request_success',
+      'BLE auth sendKey',
+      'BLE auth success',
+      'BLE start connection',
+      'BLE connection success',
+      'BLE search success',
+      'BLE query device status',
+      'BLE query device status success',
+      'BLE query sn',
+      'BLE query sn success',
+      'BLE query active time',
+      'BLE query active time success',
+    ];
+
+    const commandEvents = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        eventName: { in: commandEventNames },
+        timestampMs: { gte: startMs, lte: endMs },
+        ...(params.deviceMac ? { deviceMac: params.deviceMac } : {}),
+      },
+      orderBy: [{ timestampMs: 'asc' }],
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        requestId: true,
+        deviceMac: true,
+        errorCode: true,
+        msgJson: true,
+      },
+    });
+
+    // Group commands by commandName extracted from msgJson
+    return this.buildCommandChainsFromEvents(commandEvents, limit);
+  }
+
+  private buildCommandChainsFromRequestId(
+    events: Array<{
+      id: string;
+      eventName: string;
+      level: number;
+      timestampMs: bigint;
+      requestId: string | null;
+      deviceMac: string | null;
+      errorCode: string | null;
+      msgJson: unknown;
+    }>,
+    limit: number,
+  ) {
     const chainMap = new Map<
       string,
       {
@@ -1149,66 +1220,139 @@ export class LogsService {
       }
     }
 
-    // Build command chains with status detection
+    const chains = Array.from(chainMap.values())
+      .slice(0, limit)
+      .map((chain) => this.buildChainResult(chain.requestId, chain.deviceMac, chain.events));
+
+    chains.sort((a, b) => b.startTime - a.startTime);
+    return { count: chains.length, items: chains };
+  }
+
+  private buildCommandChainsFromEvents(
+    events: Array<{
+      id: string;
+      eventName: string;
+      level: number;
+      timestampMs: bigint;
+      requestId: string | null;
+      deviceMac: string | null;
+      errorCode: string | null;
+      msgJson: unknown;
+    }>,
+    limit: number,
+  ) {
+    // Group by commandName or use eventName as fallback
+    const chainMap = new Map<
+      string,
+      {
+        commandKey: string;
+        deviceMac: string | null;
+        events: typeof events;
+      }
+    >();
+
+    // Track command sequences by timestamp proximity (within 5 seconds)
+    const TIME_WINDOW_MS = 5000;
+    let sequenceCounter = 0;
+    let lastTimestamp = 0n;
+
+    for (const event of events) {
+      const { commandName, commandCode } = this.extractCommandInfo(event.msgJson);
+      const baseKey = commandName || commandCode || event.eventName;
+
+      // Start new sequence if time gap is large
+      if (Number(event.timestampMs - lastTimestamp) > TIME_WINDOW_MS) {
+        sequenceCounter++;
+      }
+      lastTimestamp = event.timestampMs;
+
+      const commandKey = `${baseKey}#${sequenceCounter}`;
+
+      const existing = chainMap.get(commandKey);
+      if (existing) {
+        existing.events.push(event);
+        if (!existing.deviceMac && event.deviceMac) {
+          existing.deviceMac = event.deviceMac;
+        }
+      } else {
+        chainMap.set(commandKey, {
+          commandKey,
+          deviceMac: event.deviceMac,
+          events: [event],
+        });
+      }
+    }
+
     const chains = Array.from(chainMap.values())
       .slice(0, limit)
       .map((chain) => {
-        const sortedEvents = chain.events.sort(
-          (a, b) => Number(a.timestampMs) - Number(b.timestampMs),
-        );
-
-        const firstEvent = sortedEvents[0];
-        const lastEvent = sortedEvents[sortedEvents.length - 1];
-        const duration = Number(lastEvent.timestampMs) - Number(firstEvent.timestampMs);
-
-        // Detect status based on event names and error codes
-        let status: 'success' | 'timeout' | 'error' | 'pending' = 'pending';
-        const hasError = sortedEvents.some((e) => e.level >= 4 || e.errorCode);
-        const hasTimeout = sortedEvents.some(
-          (e) =>
-            e.eventName.toLowerCase().includes('timeout') ||
-            e.errorCode?.toLowerCase().includes('timeout'),
-        );
-        const hasResponse = sortedEvents.some(
-          (e) =>
-            e.eventName.toLowerCase().includes('response') ||
-            e.eventName.toLowerCase().includes('success') ||
-            e.eventName.toLowerCase().includes('received'),
-        );
-
-        if (hasTimeout) {
-          status = 'timeout';
-        } else if (hasError) {
-          status = 'error';
-        } else if (hasResponse) {
-          status = 'success';
-        }
-
-        return {
-          requestId: chain.requestId,
-          deviceMac: chain.deviceMac,
-          eventCount: sortedEvents.length,
-          startTime: Number(firstEvent.timestampMs),
-          endTime: Number(lastEvent.timestampMs),
-          duration,
-          status,
-          events: sortedEvents.map((e) => ({
-            id: e.id,
-            eventName: e.eventName,
-            level: e.level,
-            timestampMs: Number(e.timestampMs),
-            errorCode: e.errorCode,
-            msg: this.msgPreviewFromJson(e.msgJson),
-          })),
-        };
+        // Use commandKey without sequence number for display
+        const displayKey = chain.commandKey.split('#')[0];
+        return this.buildChainResult(displayKey, chain.deviceMac, chain.events);
       });
 
-    // Sort by start time descending (newest first)
     chains.sort((a, b) => b.startTime - a.startTime);
+    return { count: chains.length, items: chains };
+  }
+
+  private buildChainResult(
+    requestId: string,
+    deviceMac: string | null,
+    events: Array<{
+      id: string;
+      eventName: string;
+      level: number;
+      timestampMs: bigint;
+      errorCode: string | null;
+      msgJson: unknown;
+    }>,
+  ) {
+    const sortedEvents = [...events].sort(
+      (a, b) => Number(a.timestampMs) - Number(b.timestampMs),
+    );
+
+    const firstEvent = sortedEvents[0];
+    const lastEvent = sortedEvents[sortedEvents.length - 1];
+    const duration = Number(lastEvent.timestampMs) - Number(firstEvent.timestampMs);
+
+    let status: 'success' | 'timeout' | 'error' | 'pending' = 'pending';
+    const hasError = sortedEvents.some((e) => e.level >= 4 || e.errorCode);
+    const hasTimeout = sortedEvents.some(
+      (e) =>
+        e.eventName.toLowerCase().includes('timeout') ||
+        e.errorCode?.toLowerCase().includes('timeout'),
+    );
+    const hasResponse = sortedEvents.some(
+      (e) =>
+        e.eventName.toLowerCase().includes('response') ||
+        e.eventName.toLowerCase().includes('success') ||
+        e.eventName.toLowerCase().includes('received'),
+    );
+
+    if (hasTimeout) {
+      status = 'timeout';
+    } else if (hasError) {
+      status = 'error';
+    } else if (hasResponse) {
+      status = 'success';
+    }
 
     return {
-      count: chains.length,
-      items: chains,
+      requestId,
+      deviceMac,
+      eventCount: sortedEvents.length,
+      startTime: Number(firstEvent.timestampMs),
+      endTime: Number(lastEvent.timestampMs),
+      duration,
+      status,
+      events: sortedEvents.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        errorCode: e.errorCode,
+        msg: this.msgPreviewFromJson(e.msgJson),
+      })),
     };
   }
 

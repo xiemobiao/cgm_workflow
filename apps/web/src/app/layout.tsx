@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { AppShell } from '@/components/AppShell';
+import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 const geistSans = Geist({
@@ -27,6 +28,7 @@ export default function RootLayout({
     <html lang="zh-CN" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <AppShell>{children}</AppShell>
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

@@ -218,7 +218,9 @@ export class LogsParserService {
         (e.code === 'P2025' || e.code === 'P2003');
 
       try {
-        await this.prisma.$transaction(async (tx) => {
+        // Use longer timeout for large files (28000+ events need more than 5s)
+        await this.prisma.$transaction(
+          async (tx) => {
           // Delete existing events and stats for this file
           await tx.logEventStats.deleteMany({ where: { logFileId: logFile.id } });
           await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
@@ -266,7 +268,9 @@ export class LogsParserService {
               parserVersion: 'v2',
             },
           });
-        });
+          },
+          { timeout: 60000 }, // 60 seconds for large files
+        );
       } catch (e) {
         if (isGoneError(e)) return;
         throw e;

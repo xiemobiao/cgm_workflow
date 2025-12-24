@@ -12,15 +12,10 @@ import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { RbacModule } from './rbac/rbac.module';
 import { ProjectsModule } from './projects/projects.module';
-import { TemplatesModule } from './templates/templates.module';
-import { IntegrationsModule } from './integrations/integrations.module';
-import { WorkflowsModule } from './workflows/workflows.module';
-import { RequirementsModule } from './requirements/requirements.module';
-import { ArtifactsModule } from './artifacts/artifacts.module';
-import { PipelinesModule } from './pipelines/pipelines.module';
 import { StorageModule } from './storage/storage.module';
 import { LogsModule } from './logs/logs.module';
 import { IncidentsModule } from './incidents/incidents.module';
+import { KnownIssuesModule } from './known-issues/known-issues.module';
 
 @Module({
   imports: [
@@ -35,14 +30,9 @@ import { IncidentsModule } from './incidents/incidents.module';
     RbacModule,
     AuditModule,
     ProjectsModule,
-    TemplatesModule,
-    IntegrationsModule,
-    WorkflowsModule,
-    RequirementsModule,
-    ArtifactsModule,
-    PipelinesModule,
     LogsModule,
     IncidentsModule,
+    KnownIssuesModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

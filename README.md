@@ -1,112 +1,106 @@
-# CGM 工作流平台
+# CGM SDK Debug Platform
 
-用于 CGM SDK 与 App 开发的自建工作流系统，覆盖需求同步、流程推进、
-日志诊断与交付验收等关键环节。
+用于 CGM SDK 开发调试的诊断平台，聚焦于日志分析、问题诊断与事故追踪。
 
 ## 项目目标
-- 建立从需求到交付、线上诊断的统一闭环
-- 在自建环境中保留与现有工具的集成能力
-- 用日志驱动问题定位与复盘
+- 提供强大的日志上传、解析与搜索能力
+- 蓝牙设备会话追踪与异常检测
+- 已知问题库快速诊断匹配
+- 事故管理与日志关联分析
+- 一键生成分析报告
 
-## 核心能力（MVP）
-- 需求同步与状态标准化（保留 source_status）
-- 工作流实例、阶段流转与闸门审批
-- 解码后 JSONL 日志上传与检索
-- 事故管理与日志/需求关联
-- 权限与审计记录
+## 核心功能
+- **日志系统**: JSONL 日志上传、解析、多维搜索
+- **追踪分析**: 按 requestId/linkCode/deviceMac 追踪命令链路
+- **蓝牙调试**: 设备会话时间线、连接状态分析
+- **异常检测**: 自动识别频繁断连、超时重试等模式
+- **问题库**: 已知问题管理与智能诊断匹配
+- **事故管理**: 事故记录与日志事件关联
+- **分析报告**: 会话分析、错误分布等报告生成
 
-## 工作流阶段（MVP）
-- Requirement
-- Design
-- Development
-- Test
-- Release
-- Diagnosis
+## 技术栈
+- **后端**: NestJS + TypeScript + Prisma + PostgreSQL
+- **前端**: Next.js + React + Tailwind CSS + Framer Motion
+- **存储**: MinIO (S3 兼容) / 本地文件系统
+- **缓存**: Redis
 
-## 环境要求（建议）
-- Node.js：使用团队指定的 LTS 版本
-- npm
-- PostgreSQL、Redis、MinIO（S3 兼容）
-- 具体版本与部署参数见 `docs/mvp/16_local_dev_deploy.md`
-
-## 部署与发布
-- 本地开发/部署步骤见 `docs/mvp/16_local_dev_deploy.md`
-- CI/CD 与发布流程规划见 `docs/v1/05_cicd_release.md`
-- 生产环境密钥、存储与数据库配置按环境补充
-
-## 版本规范（建议）
-- 使用语义化版本号（SemVer）
-- 里程碑验收通过后打 `vX.Y.Z` tag
-- 重大变更同步更新 `docs/mvp` 与 `docs/v1`
-
-## 目录结构
-- `apps/api`: NestJS API 服务
-- `apps/web`: Next.js Web 前端
-- `docs/mvp`: MVP 规格文档
-- `docs/v1`: MVP 之后的规划文档
-- `docs/logging`: 日志格式规范
+## 环境要求
+- Node.js >= 20 LTS
+- PostgreSQL 14+
+- Redis 6+
+- MinIO (可选，本地开发可用文件系统)
 
 ## 快速开始
 
-### 0) 启动依赖（Postgres/Redis/MinIO）
-```
+### 1) 启动依赖服务
+```bash
 docker compose up -d
 ```
 
-### 0.5) 配置环境变量
-```
+### 2) 配置环境变量
+```bash
 cp .env.example .env
 ```
-说明：
-- Web 侧会读取 `NEXT_PUBLIC_API_BASE_URL`（默认 `http://localhost:3001`），用于浏览器直连 API
-- API 同时支持 `/api/*` 与 `/api/v1/*`（推荐逐步迁移到 `/api/v1`）
 
-### 1) 安装依赖
-```
+### 3) 安装依赖
+```bash
 npm install --prefix apps/api
 npm install --prefix apps/web
 ```
 
-### 1.5) 生成/迁移数据库（首次运行）
-```
+### 4) 初始化数据库
+```bash
 npm run db:generate
 npm run db:migrate:dev
-```
-
-### 1.6) 初始化基础数据（roles/admin）
-```
 npm run db:seed
 ```
-默认管理员账号（可通过 seed env 覆盖）：
-- Email：`admin@local.dev`
-- Password：`admin123456`
 
-### 2) 本地运行
-```
-npm run api:dev
-npm run web:dev
+默认管理员账号：
+- Email: `admin@local.dev`
+- Password: `admin123456`
+
+### 5) 启动开发服务
+```bash
+npm run api:dev   # API: http://localhost:3001
+npm run web:dev   # Web: http://localhost:3000
 ```
 
 ### 健康检查
-- API：`http://localhost:3001/health`（业务接口默认前缀为 `/api`）
-- Web：`http://localhost:3000/health`
+- API: `http://localhost:3001/health`
+- Web: `http://localhost:3000/health`
 
-### 3) 根目录脚本
+## 目录结构
 ```
-api:dev     启动 NestJS 开发服务
-api:build   构建 API
-api:start   启动 API（生产）
-web:dev     启动 Next 开发服务
-web:build   构建 Web
-web:start   启动 Web（生产）
+apps/
+  api/          # NestJS API 服务
+    src/
+      auth/       # 认证模块
+      projects/   # 项目管理
+      logs/       # 日志系统 (核心)
+      incidents/  # 事故管理
+      known-issues/ # 问题库
+    prisma/       # 数据库模型
+  web/          # Next.js 前端
+    src/
+      app/        # 页面
+      components/ # 组件
+      lib/        # 工具函数
+docs/
+  mvp/          # MVP 规格文档
+  logging/      # 日志格式规范
 ```
 
-## 文档索引
-- `docs/mvp/README_INDEX.md`
-- `docs/v1/README.md`
-- `docs/logging/cgm_log_format_spec.md`
+## 主要页面
+- `/` - 仪表盘
+- `/logs` - 日志中心
+- `/logs/files` - 日志文件管理
+- `/logs/trace` - 追踪分析
+- `/logs/commands` - 命令链路
+- `/logs/bluetooth` - 蓝牙调试
+- `/incidents` - 事故管理
+- `/known-issues` - 问题库
+- `/reports` - 分析报告
+- `/settings` - 设置
 
-## 贡献与协作
-- 需求/流程变更先更新 `docs/mvp`
-- 日志格式以 `docs/logging/cgm_log_format_spec.md` 为准
-- 里程碑验收记录见 `docs/mvp/27_milestone_acceptance_mvp.md`
+## 文档
+- `docs/logging/cgm_log_format_spec.md` - 日志格式规范

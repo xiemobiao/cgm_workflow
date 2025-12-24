@@ -17,31 +17,6 @@ enum ProjectType {
   App
 }
 
-enum WorkflowStatus {
-  active
-  blocked
-  done
-}
-
-enum StageStatus {
-  pending
-  in_progress
-  done
-}
-
-enum GateStatus {
-  pending
-  approved
-  rejected
-  overridden
-}
-
-enum RequirementStatus {
-  draft
-  in_progress
-  testing
-  done
-}
 
 enum IncidentStatus {
   open
@@ -63,35 +38,26 @@ enum LogFileStatus {
   failed
 }
 
-enum IntegrationStatus {
-  enabled
-  disabled
+
+// Bluetooth session status
+enum SessionStatus {
+  scanning
+  pairing
+  connecting
+  connected
+  communicating
+  disconnected
+  timeout
   error
 }
 
-enum IntegrationType {
-  pingcode
-  feishu
-  gitlab
-}
-
-enum ArtifactType {
-  PRD
-  TechSpec
-  TestPlan
-  TestReport
-  ReleaseChecklist
-  Runbook
-  LogPackage
-}
-
-enum StageName {
-  Requirement
-  Design
-  Development
-  Test
-  Release
-  Diagnosis
+// Anomaly pattern types for auto-detection
+enum AnomalyType {
+  frequent_disconnect
+  timeout_retry
+  error_burst
+  slow_connection
+  command_failure
 }
 
 model User {
@@ -103,11 +69,10 @@ model User {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  memberships  ProjectMember[]
-  gateDecisions Gate[]         @relation("GateApprover")
-  auditActions AuditLog[]      @relation("AuditActor")
-  artifacts    Artifact[]      @relation("ArtifactOwner")
-  createdIntegrations IntegrationConfig[] @relation("IntegrationCreator")
+  memberships        ProjectMember[]
+  auditActions       AuditLog[]       @relation("AuditActor")
+  createdKnownIssues KnownIssue[]     @relation("KnownIssueCreator")
+  createdReports     AnalysisReport[] @relation("ReportCreator")
 }
 
 model Role {
@@ -124,17 +89,16 @@ model Project {
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
 
-  members     ProjectMember[]
-  requirements Requirement[]
-  workflows    WorkflowInstance[]
-  templates    WorkflowTemplate[]
-  integrations IntegrationConfig[]
-  pipelineRuns PipelineRun[]
-  logFiles     LogFile[]
-  logEvents    LogEvent[]
-  logEventStats LogEventStats[]
-  incidents    Incident[]
-  auditLogs    AuditLog[]
+  members         ProjectMember[]
+  logFiles        LogFile[]
+  logEvents       LogEvent[]
+  logEventStats   LogEventStats[]
+  incidents       Incident[]
+  auditLogs       AuditLog[]
+  deviceSessions  DeviceSession[]
+  anomalyPatterns AnomalyPattern[]
+  knownIssues     KnownIssue[]
+  analysisReports AnalysisReport[]
 }
 
 model ProjectMember {
@@ -151,133 +115,6 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId])
   @@index([projectId])
-}
-
-model Requirement {
-  id          String           @id @default(uuid()) @db.Uuid
-  projectId   String           @db.Uuid
-  externalId  String?
-  title       String
-  status      RequirementStatus
-  sourceStatus String?
-  source      String
-  owner       String?
-  priority    String?
-  tags        Json?
-  deletedAt   DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-
-  project   Project          @relation(fields: [projectId], references: [id])
-  workflows WorkflowInstance[]
-
-  @@index([projectId, status])
-  @@unique([projectId, externalId])
-}
-
-model WorkflowTemplate {
-  id         String      @id @default(uuid()) @db.Uuid
-  projectId  String      @db.Uuid
-  name       String
-  projectType ProjectType
-  definition Json
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-
-  project Project @relation(fields: [projectId], references: [id])
-
-  @@index([projectId, projectType])
-}
-
-model WorkflowInstance {
-  id           String        @id @default(uuid()) @db.Uuid
-  projectId    String        @db.Uuid
-  requirementId String       @db.Uuid
-  status       WorkflowStatus
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  project     Project     @relation(fields: [projectId], references: [id])
-  requirement Requirement @relation(fields: [requirementId], references: [id])
-  stages      StageInstance[]
-  artifacts   Artifact[]
-
-  @@index([projectId, status])
-}
-
-model StageInstance {
-  id        String      @id @default(uuid()) @db.Uuid
-  workflowId String     @db.Uuid
-  stageName StageName
-  status    StageStatus
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-
-  workflow WorkflowInstance @relation(fields: [workflowId], references: [id])
-  gate     Gate?
-
-  @@index([workflowId])
-}
-
-model Gate {
-  id            String      @id @default(uuid()) @db.Uuid
-  stageInstanceId String     @unique @db.Uuid
-  status        GateStatus
-  approverId    String?     @db.Uuid
-  decisionReason String?
-  decidedAt     DateTime?
-  createdAt     DateTime    @default(now())
-
-  stage    StageInstance @relation(fields: [stageInstanceId], references: [id])
-  approver User?         @relation("GateApprover", fields: [approverId], references: [id])
-}
-
-model Artifact {
-  id        String      @id @default(uuid()) @db.Uuid
-  workflowId String     @db.Uuid
-  type      ArtifactType
-  url       String
-  ownerId   String?     @db.Uuid
-  createdAt DateTime    @default(now())
-
-  workflow WorkflowInstance @relation(fields: [workflowId], references: [id])
-  owner    User?            @relation("ArtifactOwner", fields: [ownerId], references: [id])
-
-  @@index([workflowId])
-}
-
-model IntegrationConfig {
-  id         String           @id @default(uuid()) @db.Uuid
-  projectId  String           @db.Uuid
-  type       IntegrationType
-  status     IntegrationStatus
-  secretsRef String
-  mapping    Json?
-  lastSyncAt DateTime?
-  lastError  String?
-  createdBy  String?          @db.Uuid
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-
-  project Project @relation(fields: [projectId], references: [id])
-  creator User?   @relation("IntegrationCreator", fields: [createdBy], references: [id])
-
-  @@index([projectId, type])
-  @@unique([projectId, type])
-}
-
-model PipelineRun {
-  id         String   @id @default(uuid()) @db.Uuid
-  projectId  String   @db.Uuid
-  externalId String?
-  status     String
-  url        String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  project Project @relation(fields: [projectId], references: [id])
-
-  @@index([projectId, status])
 }
 
 model LogFile {
@@ -395,4 +232,137 @@ model LogEventStats {
 
   @@unique([logFileId, eventName, level])
   @@index([projectId, eventName])
+}
+
+// Device session aggregated from log events
+model DeviceSession {
+  id            String        @id @default(uuid()) @db.Uuid
+  projectId     String        @db.Uuid
+  linkCode      String        // APP session identifier
+  deviceMac     String?       // Device MAC address
+
+  startTimeMs   BigInt        // Session start timestamp
+  endTimeMs     BigInt?       // Session end timestamp
+  durationMs    Int?          // Session duration in milliseconds
+
+  status        SessionStatus // Current session status
+  eventCount    Int           @default(0)
+  errorCount    Int           @default(0)
+  commandCount  Int           @default(0)
+
+  // Phase timestamps for timeline visualization
+  scanStartMs     BigInt?
+  pairStartMs     BigInt?
+  connectStartMs  BigInt?
+  connectedMs     BigInt?
+  disconnectMs    BigInt?
+
+  sdkVersion    String?
+  appId         String?
+  terminalInfo  String?
+  createdAt     DateTime      @default(now())
+
+  project       Project       @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, linkCode])
+  @@index([projectId, startTimeMs])
+  @@index([deviceMac, startTimeMs])
+  @@index([status])
+}
+
+// Detected anomaly patterns for debugging assistance
+model AnomalyPattern {
+  id              String      @id @default(uuid()) @db.Uuid
+  projectId       String      @db.Uuid
+  patternType     AnomalyType
+  deviceMac       String?
+  sdkVersion      String?
+
+  startTimeMs     BigInt      // Pattern detection start time
+  endTimeMs       BigInt      // Pattern detection end time
+
+  occurrenceCount Int         // Number of occurrences
+  avgIntervalMs   Int?        // Average interval between occurrences
+  affectedSessions Int        // Number of affected sessions
+  sampleEventIds  Json        // Sample event IDs for reference
+
+  severity        Int         @default(1) // 1-5 severity level
+  description     String?
+  createdAt       DateTime    @default(now())
+
+  project         Project     @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, patternType, createdAt])
+  @@index([deviceMac])
+  @@index([severity])
+}
+
+// Issue category for known issues
+enum IssueCategory {
+  connection
+  data
+  device
+  app
+  permission
+  protocol
+  other
+}
+
+// Known issue library for quick diagnosis
+model KnownIssue {
+  id           String        @id @default(uuid()) @db.Uuid
+  projectId    String        @db.Uuid
+  errorCode    String?       // Associated error code
+  eventPattern String?       // Event name pattern (regex)
+  msgPattern   String?       // Message content pattern (regex)
+
+  title        String
+  description  String
+  solution     String        // Solution/fix steps
+  category     IssueCategory @default(other)
+  severity     Int           @default(2) // 1-5
+
+  hitCount     Int           @default(0) // Number of matches
+  isActive     Boolean       @default(true)
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdBy    String?       @db.Uuid
+
+  project      Project       @relation(fields: [projectId], references: [id])
+  creator      User?         @relation("KnownIssueCreator", fields: [createdBy], references: [id])
+
+  @@index([projectId, errorCode])
+  @@index([projectId, category])
+  @@index([isActive])
+}
+
+// Report type for analysis reports
+enum ReportType {
+  session_analysis
+  device_comparison
+  incident_summary
+  error_distribution
+  performance_analysis
+}
+
+// Analysis report for one-click generation
+model AnalysisReport {
+  id           String      @id @default(uuid()) @db.Uuid
+  projectId    String      @db.Uuid
+  title        String
+  reportType   ReportType
+
+  content      Json        // Structured report content
+  sourceData   Json        // Source data (linkCode, time range, etc.)
+  summary      String?     // Text summary
+
+  createdAt    DateTime    @default(now())
+  createdBy    String?     @db.Uuid
+
+  project      Project     @relation(fields: [projectId], references: [id])
+  creator      User?       @relation("ReportCreator", fields: [createdBy], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([reportType])
 }

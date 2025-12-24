@@ -2,12 +2,34 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import shellStyles from '@/components/AppShell.module.css';
-import formStyles from '@/components/Form.module.css';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Zap,
+  Search,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Timer,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  ArrowLeft,
+  Activity,
+  XCircle,
+  Hourglass,
+} from 'lucide-react';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations';
+import { cn } from '@/lib/utils';
 
 type CommandEvent = {
   id: string;
@@ -49,24 +71,26 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-function getStatusColor(status: string): string {
+function getStatusBadge(status: string) {
   switch (status) {
     case 'success':
-      return '#22c55e';
+      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">success</Badge>;
     case 'timeout':
-      return '#f59e0b';
+      return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">timeout</Badge>;
     case 'error':
-      return '#ef4444';
+      return <Badge variant="destructive">error</Badge>;
+    case 'pending':
+      return <Badge variant="secondary">pending</Badge>;
     default:
-      return '#6b7280';
+      return <Badge variant="outline">{status}</Badge>;
   }
 }
 
 function getLevelColor(level: number): string {
-  if (level >= 4) return '#ef4444';
-  if (level >= 3) return '#f59e0b';
-  if (level >= 2) return '#3b82f6';
-  return '#22c55e';
+  if (level >= 4) return 'bg-red-500';
+  if (level >= 3) return 'bg-orange-500';
+  if (level >= 2) return 'bg-blue-500';
+  return 'bg-emerald-500';
 }
 
 export default function CommandsPage() {
@@ -137,242 +161,339 @@ export default function CommandsPage() {
   }, [chains]);
 
   return (
-    <div className={shellStyles.grid}>
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <h1 style={{ fontSize: 20, marginBottom: 0 }}>{t('logs.commands')}</h1>
-          <Link href="/logs" className={shellStyles.button}>
+    <div className="space-y-4">
+      {/* Header */}
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        animate="animate"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+            <Zap className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold gradient-text">{t('logs.commands')}</h1>
+            <p className="text-sm text-muted-foreground">
+              {loading ? t('common.loading') : t('common.items', { count: chains.length })}
+            </p>
+          </div>
+        </div>
+        <Link href="/logs">
+          <Button variant="outline" size="sm" className="gap-2">
+            <ArrowLeft size={16} />
             {t('common.back')}
-          </Link>
-        </div>
-        <p className={formStyles.muted} style={{ marginTop: 8 }}>
-          {t('logs.commands.description')}
-        </p>
+          </Button>
+        </Link>
+      </motion.div>
 
-        <div className={formStyles.row} style={{ marginTop: 16 }}>
-          <ProjectPicker projectId={projectId} onChange={setProjectId} />
-        </div>
+      {/* Description */}
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        animate="animate"
+        transition={{ delay: 0.05 }}
+      >
+        <Card className="glass border-border/50">
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">{t('logs.commands.description')}</p>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-        <div className={formStyles.row} style={{ marginTop: 12, flexWrap: 'wrap' }}>
-          <div className={formStyles.field} style={{ minWidth: 200 }}>
-            <div className={formStyles.label}>deviceMac ({t('common.optional')})</div>
-            <input
-              className={formStyles.input}
-              value={deviceMac}
-              onChange={(e) => setDeviceMac(e.target.value)}
-              placeholder="e.g. AA:BB:CC:DD:EE:FF"
-            />
-          </div>
-          <div className={formStyles.field}>
-            <div className={formStyles.label}>{t('logs.startTime')}</div>
-            <input
-              className={formStyles.input}
-              type="datetime-local"
-              value={startLocal}
-              onChange={(e) => setStartLocal(e.target.value)}
-            />
-          </div>
-          <div className={formStyles.field}>
-            <div className={formStyles.label}>{t('logs.endTime')}</div>
-            <input
-              className={formStyles.input}
-              type="datetime-local"
-              value={endLocal}
-              onChange={(e) => setEndLocal(e.target.value)}
-            />
-          </div>
-          <div className={formStyles.field} style={{ minWidth: 100 }}>
-            <div className={formStyles.label}>{t('logs.limit')}</div>
-            <input
-              className={formStyles.input}
-              type="number"
-              min={1}
-              max={500}
-              value={limit}
-              onChange={(e) => {
-                const n = e.currentTarget.valueAsNumber;
-                if (Number.isFinite(n)) setLimit(Math.min(Math.max(Math.trunc(n), 1), 500));
-              }}
-            />
-          </div>
-        </div>
+      {/* Filters */}
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        animate="animate"
+        transition={{ delay: 0.1 }}
+      >
+        <Card className="glass border-border/50">
+          <CardContent className="p-4 space-y-4">
+            <ProjectPicker projectId={projectId} onChange={setProjectId} />
 
-        <div className={formStyles.row} style={{ marginTop: 12 }}>
-          <button className={shellStyles.button} type="button" disabled={loading} onClick={() => setPresetRange(1)}>
-            {t('logs.preset.1h')}
-          </button>
-          <button className={shellStyles.button} type="button" disabled={loading} onClick={() => setPresetRange(24)}>
-            {t('logs.preset.24h')}
-          </button>
-          <button className={shellStyles.button} type="button" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
-            {t('logs.preset.7d')}
-          </button>
-          <button
-            className={shellStyles.button}
-            type="button"
-            disabled={!canSearch || loading}
-            onClick={() => void search()}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  deviceMac ({t('common.optional')})
+                </label>
+                <Input
+                  value={deviceMac}
+                  onChange={(e) => setDeviceMac(e.target.value)}
+                  placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.startTime')}</label>
+                <Input
+                  type="datetime-local"
+                  value={startLocal}
+                  onChange={(e) => setStartLocal(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.endTime')}</label>
+                <Input
+                  type="datetime-local"
+                  value={endLocal}
+                  onChange={(e) => setEndLocal(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.limit')}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={limit}
+                  onChange={(e) => {
+                    const n = e.currentTarget.valueAsNumber;
+                    if (Number.isFinite(n)) setLimit(Math.min(Math.max(Math.trunc(n), 1), 500));
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(1)}>
+                {t('logs.preset.1h')}
+              </Button>
+              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24)}>
+                {t('logs.preset.24h')}
+              </Button>
+              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
+                {t('logs.preset.7d')}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!canSearch || loading}
+                onClick={() => void search()}
+                className="gap-2"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search size={16} />}
+                {t('common.search')}
+              </Button>
+            </div>
+
+            {/* Error */}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm"
+                >
+                  <AlertCircle size={16} />
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Stats */}
+      <AnimatePresence>
+        {chains.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
           >
-            {t('common.search')}
-          </button>
-          <div className={formStyles.muted}>
-            {loading ? t('common.loading') : t('common.items', { count: chains.length })}
-          </div>
-        </div>
+            <Card className="glass border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Activity size={18} />
+                  {t('logs.commands.stats')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="text-xs text-muted-foreground">{t('logs.commands.total')}</div>
+                    <div className="text-2xl font-bold">{stats.total}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                    <div className="text-xs text-muted-foreground">{t('logs.commands.success')}</div>
+                    <div className="text-2xl font-bold text-emerald-400">{stats.success}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                    <div className="text-xs text-muted-foreground">{t('logs.commands.timeout')}</div>
+                    <div className="text-2xl font-bold text-orange-400">{stats.timeout}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <div className="text-xs text-muted-foreground">{t('logs.commands.error')}</div>
+                    <div className="text-2xl font-bold text-red-400">{stats.error}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="text-xs text-muted-foreground">{t('logs.commands.pending')}</div>
+                    <div className="text-2xl font-bold text-muted-foreground">{stats.pending}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                    <div className="text-xs text-muted-foreground">{t('logs.commands.avgDuration')}</div>
+                    <div className="text-2xl font-bold text-primary">{formatDuration(stats.avgDuration)}</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {error ? <div className={formStyles.error}>{error}</div> : null}
-      </div>
-
-      {chains.length > 0 && (
-        <div className={shellStyles.card}>
-          <h2 style={{ fontSize: 16, marginBottom: 12 }}>{t('logs.commands.stats')}</h2>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <div className={shellStyles.card} style={{ padding: 12, minWidth: 100 }}>
-              <div className={formStyles.muted}>{t('logs.commands.total')}</div>
-              <div style={{ fontSize: 20, fontWeight: 600 }}>{stats.total}</div>
-            </div>
-            <div className={shellStyles.card} style={{ padding: 12, minWidth: 100 }}>
-              <div className={formStyles.muted}>{t('logs.commands.success')}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: '#22c55e' }}>{stats.success}</div>
-            </div>
-            <div className={shellStyles.card} style={{ padding: 12, minWidth: 100 }}>
-              <div className={formStyles.muted}>{t('logs.commands.timeout')}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: '#f59e0b' }}>{stats.timeout}</div>
-            </div>
-            <div className={shellStyles.card} style={{ padding: 12, minWidth: 100 }}>
-              <div className={formStyles.muted}>{t('logs.commands.error')}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: '#ef4444' }}>{stats.error}</div>
-            </div>
-            <div className={shellStyles.card} style={{ padding: 12, minWidth: 100 }}>
-              <div className={formStyles.muted}>{t('logs.commands.pending')}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: '#6b7280' }}>{stats.pending}</div>
-            </div>
-            <div className={shellStyles.card} style={{ padding: 12, minWidth: 120 }}>
-              <div className={formStyles.muted}>{t('logs.commands.avgDuration')}</div>
-              <div style={{ fontSize: 20, fontWeight: 600 }}>{formatDuration(stats.avgDuration)}</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className={shellStyles.card}>
-        <h2 style={{ fontSize: 16, marginBottom: 12 }}>{t('logs.commands.list')}</h2>
-        <div className={shellStyles.tableWrap}>
-          <table className={shellStyles.table}>
-            <thead>
-              <tr>
-                <th>requestId</th>
-                <th>deviceMac</th>
-                <th>{t('logs.commands.events')}</th>
-                <th>{t('logs.commands.duration')}</th>
-                <th>{t('logs.commands.status')}</th>
-                <th>{t('table.time')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {chains.map((chain) => (
-                <>
-                  <tr
+      {/* Command Chains List */}
+      <motion.div
+        variants={fadeIn}
+        initial="initial"
+        animate="animate"
+        transition={{ delay: 0.15 }}
+      >
+        <Card className="glass border-border/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Zap size={18} />
+              {t('logs.commands.list')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {loading && chains.length === 0 ? (
+              <div className="p-4 space-y-3">
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+              </div>
+            ) : chains.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
+                  <Zap size={24} className="text-muted-foreground" />
+                </div>
+                <p className="text-muted-foreground">{t('common.noData')}</p>
+              </div>
+            ) : (
+              <motion.div
+                variants={staggerContainer}
+                initial="initial"
+                animate="animate"
+                className="divide-y divide-border/30"
+              >
+                {chains.map((chain, index) => (
+                  <motion.div
                     key={chain.requestId}
-                    className={shellStyles.clickableRow}
-                    onClick={() => setExpandedId(expandedId === chain.requestId ? null : chain.requestId)}
+                    variants={staggerItem}
+                    custom={index}
                   >
-                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{chain.requestId}</td>
-                    <td>{chain.deviceMac ?? '-'}</td>
-                    <td>{chain.eventCount}</td>
-                    <td>{formatDuration(chain.duration)}</td>
-                    <td>
-                      <span
-                        className={shellStyles.badge}
-                        style={{ backgroundColor: getStatusColor(chain.status), color: '#fff' }}
-                      >
-                        {chain.status}
-                      </span>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {new Date(chain.startTime).toLocaleString(localeTag)}
-                    </td>
-                  </tr>
-                  {expandedId === chain.requestId && (
-                    <tr key={`${chain.requestId}-detail`}>
-                      <td colSpan={6} style={{ padding: 0, background: 'var(--bg-muted, #f9fafb)' }}>
-                        <div style={{ padding: 16 }}>
-                          <h4 style={{ marginBottom: 8 }}>{t('logs.commands.eventChain')}</h4>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {chain.events.map((event, idx) => (
-                              <div
-                                key={event.id}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'flex-start',
-                                  gap: 12,
-                                  padding: 8,
-                                  background: '#fff',
-                                  borderRadius: 4,
-                                  border: '1px solid var(--border, #e5e7eb)',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    width: 8,
-                                    height: 8,
-                                    borderRadius: '50%',
-                                    backgroundColor: getLevelColor(event.level),
-                                    marginTop: 6,
-                                    flexShrink: 0,
-                                  }}
-                                />
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <span style={{ fontWeight: 500 }}>{event.eventName}</span>
-                                    {event.errorCode && (
-                                      <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>
-                                        {event.errorCode}
-                                      </span>
-                                    )}
-                                    <span className={formStyles.muted} style={{ fontSize: 12 }}>
-                                      {new Date(event.timestampMs).toLocaleString(localeTag)}
-                                    </span>
-                                    {idx > 0 && (
-                                      <span className={formStyles.muted} style={{ fontSize: 12 }}>
-                                        (+{event.timestampMs - chain.events[idx - 1].timestampMs}ms)
-                                      </span>
-                                    )}
-                                  </div>
-                                  {event.msg && (
-                                    <div className={formStyles.muted} style={{ marginTop: 4, fontSize: 12 }}>
-                                      {event.msg}
-                                    </div>
-                                  )}
-                                </div>
-                                <Link
-                                  href={`/logs?q=${encodeURIComponent(event.eventName)}&startMs=${event.timestampMs - 60000}&endMs=${event.timestampMs + 60000}`}
-                                  className={formStyles.muted}
-                                  style={{ fontSize: 12 }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {t('common.view')}
-                                </Link>
-                              </div>
-                            ))}
+                    {/* Chain Header */}
+                    <div
+                      className="p-4 hover:bg-primary/5 transition-colors cursor-pointer"
+                      onClick={() => setExpandedId(expandedId === chain.requestId ? null : chain.requestId)}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="flex-shrink-0">
+                            {expandedId === chain.requestId ? (
+                              <ChevronDown size={18} className="text-muted-foreground" />
+                            ) : (
+                              <ChevronRight size={18} className="text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs text-primary truncate max-w-[200px]">
+                                {chain.requestId}
+                              </span>
+                              {getStatusBadge(chain.status)}
+                            </div>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                              <span>{chain.deviceMac ?? '-'}</span>
+                              <span className="flex items-center gap-1">
+                                <Activity size={12} />
+                                {chain.eventCount} events
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Timer size={12} />
+                                {formatDuration(chain.duration)}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-              {chains.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                    {t('common.noData')}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(chain.startTime).toLocaleString(localeTag)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expanded Event Chain */}
+                    <AnimatePresence>
+                      {expandedId === chain.requestId && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-4 pb-4 pt-0">
+                            <div className="p-4 rounded-lg bg-background/50 border border-border/30 space-y-3">
+                              <h4 className="text-sm font-medium text-muted-foreground mb-3">
+                                {t('logs.commands.eventChain')}
+                              </h4>
+                              {chain.events.map((event, idx) => (
+                                <motion.div
+                                  key={event.id}
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: idx * 0.03 }}
+                                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/20 border border-border/20"
+                                >
+                                  <div className={cn('w-2 h-2 rounded-full mt-2 flex-shrink-0', getLevelColor(event.level))} />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-medium text-foreground">{event.eventName}</span>
+                                      {event.errorCode && (
+                                        <Badge variant="destructive" className="text-xs">
+                                          {event.errorCode}
+                                        </Badge>
+                                      )}
+                                      <span className="text-xs text-muted-foreground">
+                                        {new Date(event.timestampMs).toLocaleString(localeTag)}
+                                      </span>
+                                      {idx > 0 && (
+                                        <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-400 border-purple-500/30">
+                                          +{event.timestampMs - chain.events[idx - 1].timestampMs}ms
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {event.msg && (
+                                      <p className="mt-1 text-xs text-muted-foreground break-words">
+                                        {event.msg}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <Link
+                                    href={`/logs?q=${encodeURIComponent(event.eventName)}&startMs=${event.timestampMs - 60000}&endMs=${event.timestampMs + 60000}`}
+                                    className="flex-shrink-0"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                                      <ExternalLink size={12} />
+                                      {t('common.view')}
+                                    </Button>
+                                  </Link>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }

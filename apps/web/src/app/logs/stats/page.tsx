@@ -2,8 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import shellStyles from '@/components/AppShell.module.css';
-import formStyles from '@/components/Form.module.css';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, BarChart3, AlertTriangle, Activity, Layers, RefreshCw, TrendingUp, Clock } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
@@ -27,6 +32,24 @@ type ErrorHotspotsResponse = {
   items: ErrorHotspot[];
 };
 
+const fadeIn = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } },
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08 },
+  },
+};
+
+const staggerItem = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
+};
+
 function formatDatetimeLocal(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -37,23 +60,18 @@ function toIsoFromDatetimeLocal(value: string) {
   return d.toISOString();
 }
 
-function getLevelLabel(level: number): string {
+function getLevelConfig(level: number): { label: string; color: string; bgClass: string; borderClass: string } {
   switch (level) {
-    case 1: return 'INFO';
-    case 2: return 'DEBUG';
-    case 3: return 'WARN';
-    case 4: return 'ERROR';
-    default: return `L${level}`;
-  }
-}
-
-function getLevelColor(level: number): string {
-  switch (level) {
-    case 1: return '#3b82f6';
-    case 2: return '#22c55e';
-    case 3: return '#f59e0b';
-    case 4: return '#ef4444';
-    default: return '#6b7280';
+    case 1:
+      return { label: 'INFO', color: 'text-blue-400', bgClass: 'bg-blue-500/10', borderClass: 'border-blue-500/20' };
+    case 2:
+      return { label: 'DEBUG', color: 'text-emerald-400', bgClass: 'bg-emerald-500/10', borderClass: 'border-emerald-500/20' };
+    case 3:
+      return { label: 'WARN', color: 'text-amber-400', bgClass: 'bg-amber-500/10', borderClass: 'border-amber-500/20' };
+    case 4:
+      return { label: 'ERROR', color: 'text-red-400', bgClass: 'bg-red-500/10', borderClass: 'border-red-500/20' };
+    default:
+      return { label: `L${level}`, color: 'text-gray-400', bgClass: 'bg-gray-500/10', borderClass: 'border-gray-500/20' };
   }
 }
 
@@ -114,182 +132,392 @@ export default function StatsPage() {
   const maxEventCount = stats?.byEventName.reduce((max, e) => Math.max(max, e.count), 0) ?? 1;
 
   return (
-    <div className={shellStyles.grid}>
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <h1 style={{ fontSize: 20, marginBottom: 0 }}>{t('logs.stats')}</h1>
-          <Link href="/logs" className={shellStyles.button}>
-            {t('common.back')}
-          </Link>
-        </div>
-        <div className={formStyles.row}>
-          <ProjectPicker projectId={projectId} onChange={setProjectId} />
-        </div>
-
-        <div className={formStyles.row}>
-          <div className={formStyles.field} style={{ minWidth: 280 }}>
-            <div className={formStyles.label}>{t('logs.logFileIdOptional')}</div>
-            <input
-              className={formStyles.input}
-              value={logFileId}
-              onChange={(e) => setLogFileId(e.target.value)}
-              placeholder="Filter by logFileId (optional)"
-            />
-          </div>
-          <div className={formStyles.field}>
-            <div className={formStyles.label}>{t('logs.startTime')}</div>
-            <input
-              className={formStyles.input}
-              type="datetime-local"
-              value={startLocal}
-              onChange={(e) => setStartLocal(e.target.value)}
-            />
-          </div>
-          <div className={formStyles.field}>
-            <div className={formStyles.label}>{t('logs.endTime')}</div>
-            <input
-              className={formStyles.input}
-              type="datetime-local"
-              value={endLocal}
-              onChange={(e) => setEndLocal(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className={formStyles.row}>
-          <button
-            className={shellStyles.button}
-            type="button"
-            disabled={!projectId || loading}
-            onClick={() => void loadStats()}
-          >
-            {loading ? t('common.loading') : t('common.refresh')}
-          </button>
-        </div>
-
-        {error && <div className={formStyles.error}>{error}</div>}
-      </div>
-
-      {stats && (
-        <>
-          {/* Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-            <div className={shellStyles.card} style={{ textAlign: 'center' }}>
-              <div className={formStyles.muted} style={{ marginBottom: 8 }}>Total Events</div>
-              <div style={{ fontSize: 32, fontWeight: 700 }}>{stats.totalEvents.toLocaleString()}</div>
+    <motion.div
+      className="space-y-6"
+      initial="hidden"
+      animate="visible"
+      variants={staggerContainer}
+    >
+      {/* Header */}
+      <motion.div variants={fadeIn}>
+        <Card className="glass">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                  <BarChart3 className="w-5 h-5 text-violet-400" />
+                </div>
+                <CardTitle className="text-xl">{t('logs.stats')}</CardTitle>
+              </div>
+              <Link href="/logs">
+                <Button variant="outline" size="sm" className="gap-2">
+                  <ArrowLeft className="w-4 h-4" />
+                  {t('common.back')}
+                </Button>
+              </Link>
             </div>
-            <div className={shellStyles.card} style={{ textAlign: 'center' }}>
-              <div className={formStyles.muted} style={{ marginBottom: 8 }}>Error Rate</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: stats.errorRate > 5 ? '#ef4444' : stats.errorRate > 1 ? '#f59e0b' : '#22c55e' }}>
-                {stats.errorRate}%
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="min-w-[200px]">
+                <ProjectPicker projectId={projectId} onChange={setProjectId} />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm text-muted-foreground mb-1.5">
+                  {t('logs.logFileIdOptional')}
+                </label>
+                <Input
+                  value={logFileId}
+                  onChange={(e) => setLogFileId(e.target.value)}
+                  placeholder="Filter by logFileId (optional)"
+                  className="bg-card/50"
+                />
               </div>
             </div>
-            <div className={shellStyles.card} style={{ textAlign: 'center' }}>
-              <div className={formStyles.muted} style={{ marginBottom: 8 }}>Event Types</div>
-              <div style={{ fontSize: 32, fontWeight: 700 }}>{stats.byEventName.length}</div>
-            </div>
-          </div>
 
-          {/* Level Distribution */}
-          <div className={shellStyles.card}>
-            <h2 style={{ fontSize: 16, marginBottom: 16 }}>Level Distribution</h2>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              {stats.byLevel.map((item) => (
-                <div
-                  key={item.level}
-                  style={{
-                    padding: '12px 20px',
-                    borderRadius: 8,
-                    backgroundColor: getLevelColor(item.level) + '20',
-                    border: `2px solid ${getLevelColor(item.level)}`,
-                    textAlign: 'center',
-                    minWidth: 100,
-                  }}
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm text-muted-foreground mb-1.5">
+                  {t('logs.startTime')}
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={startLocal}
+                  onChange={(e) => setStartLocal(e.target.value)}
+                  className="bg-card/50"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm text-muted-foreground mb-1.5">
+                  {t('logs.endTime')}
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={endLocal}
+                  onChange={(e) => setEndLocal(e.target.value)}
+                  className="bg-card/50"
+                />
+              </div>
+              <Button
+                disabled={!projectId || loading}
+                onClick={() => void loadStats()}
+                className="gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? t('common.loading') : t('common.refresh')}
+              </Button>
+            </div>
+
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
                 >
-                  <div style={{ fontSize: 12, fontWeight: 600, color: getLevelColor(item.level) }}>
-                    {getLevelLabel(item.level)}
-                  </div>
-                  <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>
-                    {item.count.toLocaleString()}
-                  </div>
-                </div>
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Loading State */}
+      <AnimatePresence>
+        {loading && !stats && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-6"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <Card key={i} className="glass">
+                  <CardContent className="p-6">
+                    <Skeleton className="h-4 w-24 mb-3" />
+                    <Skeleton className="h-10 w-32" />
+                  </CardContent>
+                </Card>
               ))}
             </div>
-          </div>
+            <Card className="glass">
+              <CardContent className="p-6 space-y-3">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          {/* Top Events */}
-          <div className={shellStyles.card}>
-            <h2 style={{ fontSize: 16, marginBottom: 16 }}>Top Events (by count)</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {stats.byEventName.slice(0, 20).map((item) => (
-                <div key={item.eventName} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 200, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {item.eventName}
+      {/* Stats Content */}
+      <AnimatePresence>
+        {stats && (
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={staggerContainer}
+            className="space-y-6"
+          >
+            {/* Overview Cards */}
+            <motion.div variants={staggerItem} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Total Events */}
+              <Card className="glass group hover:border-blue-500/30 transition-colors">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 transition-colors">
+                      <Activity className="w-4 h-4 text-blue-400" />
+                    </div>
+                    <span className="text-sm text-muted-foreground">Total Events</span>
                   </div>
-                  <div style={{ flex: 1, height: 20, backgroundColor: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        height: '100%',
-                        width: `${(item.count / maxEventCount) * 100}%`,
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4,
-                      }}
-                    />
-                  </div>
-                  <div style={{ width: 80, textAlign: 'right', fontSize: 14, color: '#6b7280' }}>
-                    {item.count.toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                    className="text-3xl font-semibold text-blue-400 tabular-nums"
+                  >
+                    {stats.totalEvents.toLocaleString()}
+                  </motion.div>
+                </CardContent>
+              </Card>
 
-          {/* Error Hotspots */}
-          {hotspots && hotspots.items.length > 0 && (
-            <div className={shellStyles.card}>
-              <h2 style={{ fontSize: 16, marginBottom: 16, color: '#ef4444' }}>Error Hotspots</h2>
-              <div className={shellStyles.tableWrap}>
-                <table className={shellStyles.table}>
-                  <thead>
-                    <tr>
-                      <th>Event</th>
-                      <th>Error Code</th>
-                      <th>Count</th>
-                      <th>Last Seen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hotspots.items.map((item, index) => (
-                      <tr key={`${item.eventName}-${item.errorCode}-${index}`}>
-                        <td style={{ fontWeight: 500 }}>{item.eventName}</td>
-                        <td>
-                          {item.errorCode ? (
-                            <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>
-                              {item.errorCode}
-                            </span>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td>{item.count.toLocaleString()}</td>
-                        <td className={formStyles.muted}>
-                          {item.lastSeenMs ? new Date(item.lastSeenMs).toLocaleString(localeTag) : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+              {/* Error Rate */}
+              <Card className={`glass group transition-colors ${
+                stats.errorRate > 5
+                  ? 'hover:border-red-500/30'
+                  : stats.errorRate > 1
+                    ? 'hover:border-amber-500/30'
+                    : 'hover:border-emerald-500/30'
+              }`}>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`p-2 rounded-lg border transition-colors ${
+                      stats.errorRate > 5
+                        ? 'bg-red-500/10 border-red-500/20 group-hover:bg-red-500/15'
+                        : stats.errorRate > 1
+                          ? 'bg-amber-500/10 border-amber-500/20 group-hover:bg-amber-500/15'
+                          : 'bg-emerald-500/10 border-emerald-500/20 group-hover:bg-emerald-500/15'
+                    }`}>
+                      <AlertTriangle className={`w-4 h-4 ${
+                        stats.errorRate > 5 ? 'text-red-400' : stats.errorRate > 1 ? 'text-amber-400' : 'text-emerald-400'
+                      }`} />
+                    </div>
+                    <span className="text-sm text-muted-foreground">Error Rate</span>
+                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                    className={`text-3xl font-semibold tabular-nums ${
+                      stats.errorRate > 5 ? 'text-red-400' : stats.errorRate > 1 ? 'text-amber-400' : 'text-emerald-400'
+                    }`}
+                  >
+                    {stats.errorRate.toFixed(2)}%
+                  </motion.div>
+                </CardContent>
+              </Card>
 
-      {stats && stats.totalEvents === 0 && (
-        <div className={shellStyles.card}>
-          <div className={formStyles.muted}>{t('logs.empty')}</div>
-        </div>
-      )}
-    </div>
+              {/* Event Types */}
+              <Card className="glass group hover:border-violet-500/30 transition-colors">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 transition-colors">
+                      <Layers className="w-4 h-4 text-violet-400" />
+                    </div>
+                    <span className="text-sm text-muted-foreground">Event Types</span>
+                  </div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, delay: 0.4 }}
+                    className="text-3xl font-semibold text-violet-400 tabular-nums"
+                  >
+                    {stats.byEventName.length}
+                  </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Level Distribution */}
+            <motion.div variants={staggerItem}>
+              <Card className="glass">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                      Level Distribution
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {stats.byLevel.map((item, index) => {
+                      const config = getLevelConfig(item.level);
+                      return (
+                        <motion.div
+                          key={item.level}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.4, delay: 0.1 * index }}
+                          className={`p-4 rounded-xl ${config.bgClass} border ${config.borderClass} hover:scale-[1.02] transition-transform`}
+                        >
+                          <div className={`text-xs font-medium ${config.color} mb-2 tracking-wide`}>
+                            {config.label}
+                          </div>
+                          <div className="text-2xl font-semibold text-foreground/90 tabular-nums">
+                            {item.count.toLocaleString()}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Top Events */}
+            <motion.div variants={staggerItem}>
+              <Card className="glass">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                      Top Events
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-1">
+                    {stats.byEventName.slice(0, 12).map((item, index) => {
+                      const percentage = (item.count / maxEventCount) * 100;
+                      return (
+                        <motion.div
+                          key={item.eventName}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.4, delay: 0.05 * index }}
+                          className="grid grid-cols-[32px_180px_1fr_90px] md:grid-cols-[32px_220px_1fr_100px] items-center gap-4 p-2 rounded-lg hover:bg-white/[0.02] transition-colors"
+                        >
+                          <div className="text-xs text-muted-foreground text-right tabular-nums">
+                            {index + 1}
+                          </div>
+                          <div className="text-sm font-medium text-foreground/80 truncate">
+                            {item.eventName}
+                          </div>
+                          <div className="h-2 bg-white/[0.04] rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ scaleX: 0 }}
+                              animate={{ scaleX: 1 }}
+                              transition={{ duration: 0.6, delay: 0.1 * index, ease: 'easeOut' }}
+                              style={{ width: `${percentage}%`, transformOrigin: 'left' }}
+                              className="h-full bg-gradient-to-r from-blue-500/60 to-violet-500/60 rounded-full"
+                            />
+                          </div>
+                          <div className="text-sm text-muted-foreground text-right tabular-nums">
+                            {item.count.toLocaleString()}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                  {stats.byEventName.length > 12 && (
+                    <div className="mt-4 pt-4 border-t border-white/[0.06] text-center text-xs text-muted-foreground">
+                      + {stats.byEventName.length - 12} more events
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Error Hotspots */}
+            {hotspots && hotspots.items.length > 0 && (
+              <motion.div variants={staggerItem}>
+                <Card className="glass border-red-500/20">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-400" />
+                      <CardTitle className="text-sm font-medium text-red-400 uppercase tracking-wider">
+                        Error Hotspots
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-white/[0.06]">
+                            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
+                              Event
+                            </th>
+                            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
+                              Error Code
+                            </th>
+                            <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
+                              Count
+                            </th>
+                            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
+                              Last Seen
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {hotspots.items.slice(0, 10).map((item, index) => (
+                            <motion.tr
+                              key={`${item.eventName}-${item.errorCode}-${index}`}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: 0.3, delay: 0.05 * index }}
+                              className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
+                            >
+                              <td className="py-3 px-2 font-medium text-foreground/80 text-sm">
+                                {item.eventName}
+                              </td>
+                              <td className="py-3 px-2">
+                                {item.errorCode ? (
+                                  <Badge variant="destructive" className="text-xs">
+                                    {item.errorCode}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-2 text-right tabular-nums text-sm text-foreground/70">
+                                {item.count.toLocaleString()}
+                              </td>
+                              <td className="py-3 px-2 text-sm text-muted-foreground">
+                                <div className="flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  {item.lastSeenMs ? new Date(item.lastSeenMs).toLocaleString(localeTag) : '-'}
+                                </div>
+                              </td>
+                            </motion.tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Empty State */}
+            {stats.totalEvents === 0 && (
+              <motion.div variants={fadeIn}>
+                <Card className="glass">
+                  <CardContent className="py-12 text-center">
+                    <BarChart3 className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                    <p className="text-muted-foreground">{t('logs.empty')}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

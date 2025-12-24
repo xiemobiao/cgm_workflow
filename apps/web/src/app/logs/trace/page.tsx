@@ -2,8 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import shellStyles from '@/components/AppShell.module.css';
-import formStyles from '@/components/Form.module.css';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
@@ -57,6 +62,24 @@ type DeviceSessionsResponse = {
   sessions: RelatedSession[];
 };
 
+const fadeIn = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } },
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.06 },
+  },
+};
+
+const staggerItem = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
+};
+
 function formatDatetimeLocal(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -67,25 +90,56 @@ function toIsoFromDatetimeLocal(value: string) {
   return d.toISOString();
 }
 
-function getLevelColor(level: number): string {
+function getLevelConfig(level: number): { label: string; color: string; bgClass: string; borderClass: string; dotClass: string } {
   switch (level) {
-    case 1: return '#3b82f6'; // blue - INFO
-    case 2: return '#22c55e'; // green - DEBUG
-    case 3: return '#f59e0b'; // amber - WARN
-    case 4: return '#ef4444'; // red - ERROR
-    default: return '#6b7280'; // gray
+    case 1:
+      return {
+        label: 'INFO',
+        color: 'text-blue-400',
+        bgClass: 'bg-blue-500/10',
+        borderClass: 'border-blue-500/20',
+        dotClass: 'bg-blue-500',
+      };
+    case 2:
+      return {
+        label: 'DEBUG',
+        color: 'text-emerald-400',
+        bgClass: 'bg-emerald-500/10',
+        borderClass: 'border-emerald-500/20',
+        dotClass: 'bg-emerald-500',
+      };
+    case 3:
+      return {
+        label: 'WARN',
+        color: 'text-amber-400',
+        bgClass: 'bg-amber-500/10',
+        borderClass: 'border-amber-500/20',
+        dotClass: 'bg-amber-500',
+      };
+    case 4:
+      return {
+        label: 'ERROR',
+        color: 'text-red-400',
+        bgClass: 'bg-red-500/10',
+        borderClass: 'border-red-500/20',
+        dotClass: 'bg-red-500',
+      };
+    default:
+      return {
+        label: `L${level}`,
+        color: 'text-gray-400',
+        bgClass: 'bg-gray-500/10',
+        borderClass: 'border-gray-500/20',
+        dotClass: 'bg-gray-500',
+      };
   }
 }
 
-function getLevelLabel(level: number): string {
-  switch (level) {
-    case 1: return 'INFO';
-    case 2: return 'DEBUG';
-    case 3: return 'WARN';
-    case 4: return 'ERROR';
-    default: return `L${level}`;
-  }
-}
+const traceTypeOptions = [
+  { value: 'linkCode', label: 'Link Code', icon: Link2, placeholder: 'e.g. abc123' },
+  { value: 'requestId', label: 'Request ID', icon: Hash, placeholder: 'e.g. req-001' },
+  { value: 'deviceMac', label: 'Device MAC', icon: Bluetooth, placeholder: 'e.g. AA:BB:CC:DD:EE:FF' },
+] as const;
 
 export default function TracePage() {
   const { localeTag, t } = useI18n();
@@ -173,261 +227,412 @@ export default function TracePage() {
     }
   }
 
+  const selectedTypeOption = traceTypeOptions.find((o) => o.value === traceType) ?? traceTypeOptions[0];
+
   return (
-    <div className={shellStyles.grid}>
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <h1 style={{ fontSize: 20, marginBottom: 0 }}>{t('logs.trace')}</h1>
-          <Link href="/logs" className={shellStyles.button}>
-            {t('common.back')}
-          </Link>
-        </div>
-        <div className={formStyles.row}>
-          <ProjectPicker projectId={projectId} onChange={setProjectId} />
-        </div>
-
-        <div className={formStyles.row}>
-          <div className={formStyles.field} style={{ minWidth: 140 }}>
-            <div className={formStyles.label}>Trace Type</div>
-            <select
-              className={formStyles.select}
-              value={traceType}
-              onChange={(e) => setTraceType(e.target.value as 'linkCode' | 'requestId' | 'deviceMac')}
-            >
-              <option value="linkCode">linkCode</option>
-              <option value="requestId">requestId</option>
-              <option value="deviceMac">deviceMac</option>
-            </select>
-          </div>
-          <div className={formStyles.field} style={{ minWidth: 300 }}>
-            <div className={formStyles.label}>Value</div>
-            <input
-              className={formStyles.input}
-              value={traceValue}
-              onChange={(e) => setTraceValue(e.target.value)}
-              placeholder={
-                traceType === 'linkCode' ? 'e.g. abc123'
-                  : traceType === 'requestId' ? 'e.g. req-001'
-                    : 'e.g. AA:BB:CC:DD:EE:FF'
-              }
-            />
-          </div>
-          {traceType === 'deviceMac' && (
-            <>
-              <div className={formStyles.field}>
-                <div className={formStyles.label}>{t('logs.startTime')}</div>
-                <input
-                  className={formStyles.input}
-                  type="datetime-local"
-                  value={startLocal}
-                  onChange={(e) => setStartLocal(e.target.value)}
-                />
+    <motion.div
+      className="space-y-6"
+      initial="hidden"
+      animate="visible"
+      variants={staggerContainer}
+    >
+      {/* Header */}
+      <motion.div variants={fadeIn}>
+        <Card className="glass">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                  <Search className="w-5 h-5 text-cyan-400" />
+                </div>
+                <CardTitle className="text-xl">{t('logs.trace')}</CardTitle>
               </div>
-              <div className={formStyles.field}>
-                <div className={formStyles.label}>{t('logs.endTime')}</div>
-                <input
-                  className={formStyles.input}
-                  type="datetime-local"
-                  value={endLocal}
-                  onChange={(e) => setEndLocal(e.target.value)}
-                />
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className={formStyles.row}>
-          <button
-            className={shellStyles.button}
-            type="button"
-            disabled={!projectId || !traceValue.trim() || loading}
-            onClick={() => void trace()}
-          >
-            {loading ? t('common.loading') : t('logs.trace')}
-          </button>
-          {result && (
-            <div className={formStyles.muted}>
-              {t('common.items', { count: result.count })}
+              <Link href="/logs">
+                <Button variant="outline" size="sm" className="gap-2">
+                  <ArrowLeft className="w-4 h-4" />
+                  {t('common.back')}
+                </Button>
+              </Link>
             </div>
-          )}
-        </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="min-w-[200px]">
+              <ProjectPicker projectId={projectId} onChange={setProjectId} />
+            </div>
 
-        {error && <div className={formStyles.error}>{error}</div>}
-      </div>
+            {/* Trace Type Selector */}
+            <div className="space-y-2">
+              <label className="block text-sm text-muted-foreground">Trace Type</label>
+              <div className="flex flex-wrap gap-2">
+                {traceTypeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const isSelected = traceType === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      onClick={() => setTraceType(option.value)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+                          : 'bg-card/50 border-white/10 text-muted-foreground hover:bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="text-sm font-medium">{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[280px]">
+                <label className="block text-sm text-muted-foreground mb-1.5">Value</label>
+                <div className="relative">
+                  <selectedTypeOption.icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={traceValue}
+                    onChange={(e) => setTraceValue(e.target.value)}
+                    placeholder={selectedTypeOption.placeholder}
+                    className="pl-10 bg-card/50"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void trace();
+                    }}
+                  />
+                </div>
+              </div>
+
+              {traceType === 'deviceMac' && (
+                <>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="block text-sm text-muted-foreground mb-1.5">
+                      {t('logs.startTime')}
+                    </label>
+                    <Input
+                      type="datetime-local"
+                      value={startLocal}
+                      onChange={(e) => setStartLocal(e.target.value)}
+                      className="bg-card/50"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="block text-sm text-muted-foreground mb-1.5">
+                      {t('logs.endTime')}
+                    </label>
+                    <Input
+                      type="datetime-local"
+                      value={endLocal}
+                      onChange={(e) => setEndLocal(e.target.value)}
+                      className="bg-card/50"
+                    />
+                  </div>
+                </>
+              )}
+
+              <Button
+                disabled={!projectId || !traceValue.trim() || loading}
+                onClick={() => void trace()}
+                className="gap-2"
+              >
+                <Search className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
+                {loading ? t('common.loading') : t('logs.trace')}
+              </Button>
+            </div>
+
+            {result && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Activity className="w-4 h-4" />
+                {t('common.items', { count: result.count })}
+              </div>
+            )}
+
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Loading State */}
+      <AnimatePresence>
+        {loading && !result && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-4"
+          >
+            <Card className="glass">
+              <CardContent className="p-6">
+                <div className="flex gap-4">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-20 flex-1" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass">
+              <CardContent className="p-6 space-y-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-24 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Related Devices (for linkCode trace) */}
-      {relatedDevices.length > 0 && (
-        <div className={shellStyles.card}>
-          <h2 style={{ fontSize: 16, marginBottom: 12 }}>{t('logs.trace.relatedDevices')}</h2>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {relatedDevices.map((device) => (
-              <div
-                key={device.deviceMac}
-                className={shellStyles.card}
-                style={{ padding: 12, minWidth: 200, cursor: 'pointer' }}
-                onClick={() => {
-                  setTraceType('deviceMac');
-                  setTraceValue(device.deviceMac);
-                }}
-              >
-                <div style={{ fontFamily: 'monospace', fontWeight: 600 }}>{device.deviceMac}</div>
-                <div className={formStyles.muted} style={{ fontSize: 12, marginTop: 4 }}>
-                  {t('common.events')}: {device.eventCount}
+      <AnimatePresence>
+        {relatedDevices.length > 0 && (
+          <motion.div variants={staggerItem} initial="hidden" animate="visible" exit="hidden">
+            <Card className="glass">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-2">
+                  <Bluetooth className="w-4 h-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    {t('logs.trace.relatedDevices')}
+                  </CardTitle>
                 </div>
-                {device.firstSeenMs && device.lastSeenMs && (
-                  <div className={formStyles.muted} style={{ fontSize: 11, marginTop: 2 }}>
-                    {new Date(device.firstSeenMs).toLocaleString(localeTag)} ~ {new Date(device.lastSeenMs).toLocaleString(localeTag)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {relatedDevices.map((device, index) => (
+                    <motion.div
+                      key={device.deviceMac}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: 0.05 * index }}
+                    >
+                      <button
+                        onClick={() => {
+                          setTraceType('deviceMac');
+                          setTraceValue(device.deviceMac);
+                        }}
+                        className="w-full p-4 rounded-xl bg-card/50 border border-white/10 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all text-left group"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-foreground/90">
+                            {device.deviceMac}
+                          </code>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-cyan-400 transition-colors" />
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            {device.eventCount} events
+                          </span>
+                        </div>
+                        {device.firstSeenMs && device.lastSeenMs && (
+                          <div className="mt-2 text-xs text-muted-foreground/70 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(device.firstSeenMs).toLocaleString(localeTag)} ~{' '}
+                            {new Date(device.lastSeenMs).toLocaleString(localeTag)}
+                          </div>
+                        )}
+                      </button>
+                    </motion.div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Related Sessions (for deviceMac trace) */}
-      {relatedSessions.length > 0 && (
-        <div className={shellStyles.card}>
-          <h2 style={{ fontSize: 16, marginBottom: 12 }}>{t('logs.trace.relatedSessions')}</h2>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {relatedSessions.map((session) => (
-              <div
-                key={session.linkCode}
-                className={shellStyles.card}
-                style={{ padding: 12, minWidth: 200, cursor: 'pointer' }}
-                onClick={() => {
-                  setTraceType('linkCode');
-                  setTraceValue(session.linkCode);
-                }}
-              >
-                <div style={{ fontFamily: 'monospace', fontWeight: 600 }}>{session.linkCode}</div>
-                <div className={formStyles.muted} style={{ fontSize: 12, marginTop: 4 }}>
-                  {t('common.events')}: {session.eventCount}
+      <AnimatePresence>
+        {relatedSessions.length > 0 && (
+          <motion.div variants={staggerItem} initial="hidden" animate="visible" exit="hidden">
+            <Card className="glass">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-4 h-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    {t('logs.trace.relatedSessions')}
+                  </CardTitle>
                 </div>
-                {session.startTimeMs && session.endTimeMs && (
-                  <div className={formStyles.muted} style={{ fontSize: 11, marginTop: 2 }}>
-                    {new Date(session.startTimeMs).toLocaleString(localeTag)} ~ {new Date(session.endTimeMs).toLocaleString(localeTag)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {relationLoading && (
-        <div className={shellStyles.card}>
-          <div className={formStyles.muted}>{t('common.loading')}</div>
-        </div>
-      )}
-
-      {result && result.items.length > 0 && (
-        <div className={shellStyles.card}>
-          <h2 style={{ fontSize: 16, marginBottom: 16 }}>Timeline</h2>
-          <div style={{ position: 'relative', paddingLeft: 24 }}>
-            {/* Timeline line */}
-            <div
-              style={{
-                position: 'absolute',
-                left: 8,
-                top: 0,
-                bottom: 0,
-                width: 2,
-                backgroundColor: '#e5e7eb',
-              }}
-            />
-
-            {result.items.map((item, index) => (
-              <div
-                key={item.id}
-                style={{
-                  position: 'relative',
-                  paddingBottom: index === result.items.length - 1 ? 0 : 16,
-                  paddingLeft: 16,
-                }}
-              >
-                {/* Timeline dot */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: -16,
-                    top: 4,
-                    width: 12,
-                    height: 12,
-                    borderRadius: '50%',
-                    backgroundColor: getLevelColor(item.level),
-                    border: '2px solid white',
-                    boxShadow: '0 0 0 2px ' + getLevelColor(item.level) + '40',
-                  }}
-                />
-
-                <div
-                  style={{
-                    backgroundColor: item.level >= 3 ? '#fef2f2' : '#f9fafb',
-                    borderRadius: 8,
-                    padding: '12px 16px',
-                    border: `1px solid ${item.level >= 4 ? '#fecaca' : item.level >= 3 ? '#fde68a' : '#e5e7eb'}`,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        padding: '2px 6px',
-                        borderRadius: 4,
-                        backgroundColor: getLevelColor(item.level),
-                        color: 'white',
-                      }}
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {relatedSessions.map((session, index) => (
+                    <motion.div
+                      key={session.linkCode}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: 0.05 * index }}
                     >
-                      {getLevelLabel(item.level)}
-                    </span>
-                    <span style={{ fontWeight: 600 }}>{item.eventName}</span>
-                    <span className={formStyles.muted} style={{ fontSize: 12 }}>
-                      {new Date(item.timestampMs).toLocaleString(localeTag)}
-                    </span>
-                  </div>
+                      <button
+                        onClick={() => {
+                          setTraceType('linkCode');
+                          setTraceValue(session.linkCode);
+                        }}
+                        className="w-full p-4 rounded-xl bg-card/50 border border-white/10 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all text-left group"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-foreground/90">
+                            {session.linkCode}
+                          </code>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-violet-400 transition-colors" />
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            {session.eventCount} events
+                          </span>
+                        </div>
+                        {session.startTimeMs && session.endTimeMs && (
+                          <div className="mt-2 text-xs text-muted-foreground/70 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(session.startTimeMs).toLocaleString(localeTag)} ~{' '}
+                            {new Date(session.endTimeMs).toLocaleString(localeTag)}
+                          </div>
+                        )}
+                      </button>
+                    </motion.div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                  {item.msg && (
-                    <div className={formStyles.muted} style={{ marginBottom: 8 }}>
-                      {item.msg}
-                    </div>
-                  )}
+      {/* Relation Loading */}
+      <AnimatePresence>
+        {relationLoading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <Card className="glass">
+              <CardContent className="py-8 text-center text-muted-foreground">
+                {t('common.loading')}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
-                    {item.deviceMac && (
-                      <span>
-                        <strong>Device:</strong> {item.deviceMac}
-                      </span>
-                    )}
-                    {item.requestId && (
-                      <span>
-                        <strong>ReqID:</strong> {item.requestId}
-                      </span>
-                    )}
-                    {item.errorCode && (
-                      <span style={{ color: '#ef4444' }}>
-                        <strong>Error:</strong> {item.errorCode}
-                      </span>
-                    )}
-                    {item.threadName && (
-                      <span className={formStyles.muted}>
-                        Thread: {item.threadName}
-                      </span>
-                    )}
+      {/* Timeline */}
+      <AnimatePresence>
+        {result && result.items.length > 0 && (
+          <motion.div variants={staggerItem} initial="hidden" animate="visible" exit="hidden">
+            <Card className="glass">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Timeline
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="relative pl-6">
+                  {/* Timeline line */}
+                  <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gradient-to-b from-cyan-500/50 via-violet-500/50 to-transparent rounded-full" />
+
+                  <div className="space-y-4">
+                    {result.items.map((item, index) => {
+                      const config = getLevelConfig(item.level);
+                      return (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.4, delay: 0.05 * index }}
+                          className="relative"
+                        >
+                          {/* Timeline dot */}
+                          <div
+                            className={`absolute -left-6 top-4 w-3 h-3 rounded-full ${config.dotClass} ring-2 ring-background shadow-lg`}
+                            style={{ boxShadow: `0 0 8px ${config.dotClass.includes('red') ? 'rgba(239,68,68,0.4)' : config.dotClass.includes('amber') ? 'rgba(245,158,11,0.4)' : 'transparent'}` }}
+                          />
+
+                          <div
+                            className={`p-4 rounded-xl ${config.bgClass} border ${config.borderClass} hover:scale-[1.01] transition-transform`}
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <Badge
+                                variant="outline"
+                                className={`${config.color} border-current text-xs`}
+                              >
+                                {config.label}
+                              </Badge>
+                              <span className="font-semibold text-foreground/90">
+                                {item.eventName}
+                              </span>
+                              <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
+                                <Clock className="w-3 h-3" />
+                                {new Date(item.timestampMs).toLocaleString(localeTag)}
+                              </span>
+                            </div>
+
+                            {item.msg && (
+                              <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                                {item.msg}
+                              </p>
+                            )}
+
+                            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                              {item.deviceMac && (
+                                <span className="flex items-center gap-1.5 text-foreground/70">
+                                  <Bluetooth className="w-3 h-3" />
+                                  <span className="font-medium">Device:</span> {item.deviceMac}
+                                </span>
+                              )}
+                              {item.requestId && (
+                                <span className="flex items-center gap-1.5 text-foreground/70">
+                                  <Hash className="w-3 h-3" />
+                                  <span className="font-medium">ReqID:</span> {item.requestId}
+                                </span>
+                              )}
+                              {item.errorCode && (
+                                <span className="flex items-center gap-1.5 text-red-400">
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span className="font-medium">Error:</span> {item.errorCode}
+                                </span>
+                              )}
+                              {item.threadName && (
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <Server className="w-3 h-3" />
+                                  Thread: {item.threadName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {result && result.items.length === 0 && (
-        <div className={shellStyles.card}>
-          <div className={formStyles.muted}>{t('logs.empty')}</div>
-        </div>
-      )}
-    </div>
+      {/* Empty State */}
+      <AnimatePresence>
+        {result && result.items.length === 0 && (
+          <motion.div variants={fadeIn} initial="hidden" animate="visible" exit="hidden">
+            <Card className="glass">
+              <CardContent className="py-12 text-center">
+                <Search className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                <p className="text-muted-foreground">{t('logs.empty')}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

@@ -1,16 +1,72 @@
+@import "tailwindcss";
+
+/* Import tailwind config for theme definitions */
+@config "../../tailwind.config.ts";
+
+/* Theme variables */
+@theme {
+  --color-background: hsl(230 60% 4%);
+  --color-foreground: hsl(210 40% 98%);
+  --color-card: hsl(230 50% 6%);
+  --color-card-foreground: hsl(210 40% 98%);
+  --color-popover: hsl(230 50% 6%);
+  --color-popover-foreground: hsl(210 40% 98%);
+  --color-primary: hsl(258 70% 66%);
+  --color-primary-foreground: hsl(210 40% 98%);
+  --color-secondary: hsl(217 33% 17%);
+  --color-secondary-foreground: hsl(210 40% 98%);
+  --color-muted: hsl(217 33% 17%);
+  --color-muted-foreground: hsl(215 20% 65%);
+  --color-accent: hsl(188 100% 50%);
+  --color-accent-foreground: hsl(210 40% 98%);
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-border: hsl(217 33% 17%);
+  --color-input: hsl(217 33% 17%);
+  --color-ring: hsl(258 70% 66%);
+  --radius: 0.75rem;
+}
+
+/* Original custom properties */
 :root {
   --bg: #070912;
   --fg: rgba(255, 255, 255, 0.92);
-  --muted: rgba(233, 236, 241, 0.72);
+  --muted-text: rgba(233, 236, 241, 0.72);
   --surface: rgba(255, 255, 255, 0.06);
   --surface-2: rgba(255, 255, 255, 0.09);
-  --border: rgba(255, 255, 255, 0.12);
+  --border-color: rgba(255, 255, 255, 0.12);
   --border-2: rgba(255, 255, 255, 0.18);
-  --accent: #7c5cff;
+  --accent-color: #7c5cff;
   --accent-2: #00d0ff;
   --shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 18px 60px rgba(0, 0, 0, 0.4);
-  --ring: rgba(124, 92, 255, 0.45);
+  --ring-color: rgba(124, 92, 255, 0.45);
+
+  /* CSS variables for Shadcn (HSL format without hsl()) */
+  --background: 230 60% 4%;
+  --foreground: 210 40% 98%;
+  --card: 230 50% 6%;
+  --card-foreground: 210 40% 98%;
+  --popover: 230 50% 6%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 258 70% 66%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217 33% 17%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 188 100% 50%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217 33% 17%;
+  --input: 217 33% 17%;
+  --ring: 258 70% 66%;
+}
+
+/* Base styles */
+* {
+  border-color: var(--color-border);
 }
 
 html,
@@ -20,19 +76,15 @@ body {
 }
 
 body {
-  color: var(--fg);
-  background: radial-gradient(
-      1200px 900px at 10% -10%,
-      rgba(124, 92, 255, 0.35),
-      transparent 55%
-    ),
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  background-image:
+    radial-gradient(1200px 900px at 10% -10%, rgba(124, 92, 255, 0.35), transparent 55%),
     radial-gradient(900px 700px at 95% 0%, rgba(0, 208, 255, 0.22), transparent 60%),
-    radial-gradient(800px 700px at 60% 110%, rgba(255, 107, 107, 0.1), transparent 55%),
-    var(--bg);
+    radial-gradient(800px 700px at 60% 110%, rgba(255, 107, 107, 0.1), transparent 55%);
   background-attachment: fixed;
   position: relative;
-  font-family: var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
-    sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -63,6 +115,19 @@ body::after {
   animation: auroraFloat2 22s ease-in-out infinite;
 }
 
+html {
+  color-scheme: dark;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(124, 92, 255, 0.35);
+}
+
 @keyframes auroraFloat1 {
   0%,
   100% {
@@ -83,39 +148,64 @@ body::after {
   }
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-::selection {
-  background: rgba(124, 92, 255, 0.35);
-}
-html {
-  color-scheme: dark;
-}
-
 @media (prefers-reduced-motion: reduce) {
   body::before,
   body::after {
     animation: none;
   }
+}
+
+/* Custom utility classes */
+@utility glass {
+  background-color: color-mix(in srgb, var(--color-card) 80%, transparent);
+  backdrop-filter: blur(24px);
+  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+@utility glass-hover {
+  &:hover {
+    background-color: color-mix(in srgb, var(--color-card) 90%, transparent);
+    border-color: color-mix(in srgb, var(--color-border) 80%, transparent);
+    transition: all 0.3s;
+  }
+}
+
+@utility gradient-text {
+  background-image: linear-gradient(to right, var(--color-primary), var(--color-accent));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+@utility glow {
+  box-shadow: 0 0 20px rgba(124, 92, 255, 0.3);
+}
+
+@utility glow-hover {
+  &:hover {
+    box-shadow: 0 0 30px rgba(124, 92, 255, 0.4);
+  }
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
 }
