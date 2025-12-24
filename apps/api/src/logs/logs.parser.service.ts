@@ -156,6 +156,12 @@ export class LogsParserService {
           if (!outer.f) throw new Error('missing outer.f');
           if (!outer.l) throw new Error('missing outer.l');
 
+          // Skip clogan header line - it's not a real log event
+          // Header format: {"c":"clogan header","f":1,"l":...,"n":"clogan","i":1,"m":true}
+          if (outer.c === 'clogan header' || outer.n === 'clogan') {
+            continue;
+          }
+
           const innerRaw = JSON.parse(outer.c) as unknown;
           const innerObj = asRecord(innerRaw);
           if (!innerObj) throw new Error('inner is not an object');
