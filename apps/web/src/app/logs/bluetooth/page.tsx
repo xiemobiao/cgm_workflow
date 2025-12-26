@@ -61,31 +61,25 @@ type BluetoothSession = {
 };
 
 type SessionsResponse = {
-  sessions: BluetoothSession[];
-  total: number;
+  items: BluetoothSession[];
+  hasMore: boolean;
 };
 
-type AnomalyPattern = {
-  id: string;
-  patternType: string;
-  deviceMac: string | null;
-  sdkVersion: string | null;
-  startTimeMs: number;
-  endTimeMs: number;
-  occurrenceCount: number;
-  avgIntervalMs: number | null;
-  affectedSessions: number;
-  severity: number;
-  description: string | null;
-};
+type CommandChainStatus = 'success' | 'pending' | 'error' | 'timeout';
 
-type AnomalyResponse = {
-  anomalies: AnomalyPattern[];
-  summary: {
-    totalPatterns: number;
-    highSeverityCount: number;
-    affectedDevices: number;
-  };
+type CommandChain = {
+  requestId: string;
+  startMs: number;
+  endMs: number | null;
+  durationMs: number | null;
+  status: CommandChainStatus;
+  eventCount: number;
+  events: Array<{
+    id: string;
+    eventName: string;
+    timestampMs: number;
+    level: number;
+  }>;
 };
 
 type ErrorDistribution = {
@@ -95,25 +89,69 @@ type ErrorDistribution = {
 };
 
 type ErrorDistributionResponse = {
-  distribution: ErrorDistribution[];
-  totalErrors: number;
+  total: number;
+  byErrorCode: Array<{
+    code: string;
+    count: number;
+    lastSeen: number;
+  }>;
 };
 
-type CommandAnalysis = {
-  eventName: string;
-  count: number;
-  avgDurationMs: number;
-  p50Ms: number;
-  p90Ms: number;
-  p99Ms: number;
-  minMs: number;
-  maxMs: number;
-  successRate: number;
+type AnomalySummary = {
+  totalPatterns: number;
+  highSeverityCount: number;
+  affectedDevices: number;
+};
+
+type AnomalyResponse = {
+  patterns: Array<{
+    patternType: string;
+    description: string;
+    severity: number;
+    occurrenceCount: number;
+    affectedSessions: number;
+    sampleEventIds: string[];
+    deviceMac: string | null;
+    sdkVersion: string | null;
+  }>;
+  summary: {
+    totalEvents: number;
+    errorEvents: number;
+    disconnectEvents: number;
+    timeoutEvents: number;
+  };
+};
+
+type AnomalyPattern = {
+  id: string;
+  patternType: string;
+  deviceMac: string | null;
+  sdkVersion: string | null;
+  occurrenceCount: number;
+  avgIntervalMs: number | null;
+  affectedSessions: number;
+  severity: number;
+  description: string | null;
 };
 
 type CommandAnalysisResponse = {
-  commands: CommandAnalysis[];
-  totalCommands: number;
+  chains: CommandChain[];
+  stats: {
+    total: number;
+    success: number;
+    timeout: number;
+    error: number;
+    pending: number;
+    avgDurationMs: number | null;
+    p50: number | null;
+    p90: number | null;
+    p99: number | null;
+    slowest: Array<{
+      requestId: string;
+      durationMs: number | null;
+      status: CommandChainStatus;
+    }>;
+  };
 };
 
 function formatDatetimeLocal(d: Date) {
@@ -148,6 +186,21 @@ function getStatusBadge(status: SessionStatus) {
     case 'pairing':
     case 'connecting':
       return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">{status}</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
+
+function getChainStatusBadge(status: CommandChainStatus) {
+  switch (status) {
+    case 'success':
+      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{status}</Badge>;
+    case 'pending':
+      return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">{status}</Badge>;
+    case 'timeout':
+      return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">{status}</Badge>;
+    case 'error':
+      return <Badge variant="destructive">{status}</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -199,18 +252,19 @@ export default function BluetoothDebugPage() {
   // Sessions data
   const [sessions, setSessions] = useState<BluetoothSession[]>([]);
   const [sessionsTotal, setSessionsTotal] = useState(0);
+  const [sessionsHasMore, setSessionsHasMore] = useState(false);
 
   // Anomalies data
   const [anomalies, setAnomalies] = useState<AnomalyPattern[]>([]);
-  const [anomalySummary, setAnomalySummary] = useState<AnomalyResponse['summary'] | null>(null);
+  const [anomalySummary, setAnomalySummary] = useState<AnomalySummary | null>(null);
 
   // Error distribution data
   const [errorDistribution, setErrorDistribution] = useState<ErrorDistribution[]>([]);
   const [totalErrors, setTotalErrors] = useState(0);
 
-  // Command analysis data
-  const [commands, setCommands] = useState<CommandAnalysis[]>([]);
-  const [totalCommands, setTotalCommands] = useState(0);
+  // Command chain analysis data
+  const [commandChains, setCommandChains] = useState<CommandChain[]>([]);
+  const [commandStats, setCommandStats] = useState<CommandAnalysisResponse['stats'] | null>(null);
 
   // Aggregation state
   const [aggregating, setAggregating] = useState(false);
@@ -250,8 +304,10 @@ export default function BluetoothDebugPage() {
       qs.set('limit', '100');
 
       const data = await apiFetch<SessionsResponse>(`/api/logs/bluetooth/sessions?${qs.toString()}`);
-      setSessions(data.sessions);
-      setSessionsTotal(data.total);
+      const items = Array.isArray(data.items) ? data.items : [];
+      setSessions(items);
+      setSessionsTotal(items.length);
+      setSessionsHasMore(Boolean(data.hasMore));
     } catch (e: unknown) {
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
       setError(msg);
@@ -273,8 +329,29 @@ export default function BluetoothDebugPage() {
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
 
       const data = await apiFetch<AnomalyResponse>(`/api/logs/bluetooth/anomalies?${qs.toString()}`);
-      setAnomalies(data.anomalies);
-      setAnomalySummary(data.summary);
+      const patterns = Array.isArray(data.patterns) ? data.patterns : [];
+      const normalized = patterns.map((p, idx) => ({
+        id: `${p.patternType ?? 'unknown'}:${p.deviceMac ?? 'all'}:${idx}`,
+        patternType: p.patternType ?? 'unknown',
+        deviceMac: p.deviceMac ?? null,
+        sdkVersion: p.sdkVersion ?? null,
+        occurrenceCount: Number.isFinite(p.occurrenceCount) ? p.occurrenceCount : 0,
+        avgIntervalMs: null,
+        affectedSessions: Number.isFinite(p.affectedSessions) ? p.affectedSessions : 0,
+        severity: Number.isFinite(p.severity) ? p.severity : 0,
+        description: p.description ?? null,
+      }));
+      const affectedDevices = new Set(
+        normalized
+          .map((p) => p.deviceMac)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0),
+      ).size;
+      setAnomalies(normalized);
+      setAnomalySummary({
+        totalPatterns: normalized.length,
+        highSeverityCount: normalized.filter((p) => p.severity >= 4).length,
+        affectedDevices,
+      });
     } catch (e: unknown) {
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
       setError(msg);
@@ -296,8 +373,18 @@ export default function BluetoothDebugPage() {
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
 
       const data = await apiFetch<ErrorDistributionResponse>(`/api/logs/bluetooth/errors/distribution?${qs.toString()}`);
-      setErrorDistribution(data.distribution);
-      setTotalErrors(data.totalErrors);
+      const total = Number.isFinite(data.total) ? data.total : 0;
+      const byErrorCode = Array.isArray(data.byErrorCode) ? data.byErrorCode : [];
+      const distribution = byErrorCode
+        .map((e) => ({
+          errorCode: e.code ?? 'UNKNOWN',
+          count: Number.isFinite(e.count) ? e.count : 0,
+          percentage: total > 0 ? ((Number.isFinite(e.count) ? e.count : 0) / total) * 100 : 0,
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      setErrorDistribution(distribution);
+      setTotalErrors(total);
     } catch (e: unknown) {
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
       setError(msg);
@@ -320,8 +407,8 @@ export default function BluetoothDebugPage() {
       qs.set('limit', '500');
 
       const data = await apiFetch<CommandAnalysisResponse>(`/api/logs/bluetooth/commands/analysis?${qs.toString()}`);
-      setCommands(data.commands);
-      setTotalCommands(data.totalCommands);
+      setCommandChains(Array.isArray(data.chains) ? data.chains : []);
+      setCommandStats(data.stats ?? null);
     } catch (e: unknown) {
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
       setError(msg);
@@ -336,7 +423,7 @@ export default function BluetoothDebugPage() {
     setAggregateResult(null);
     setError('');
     try {
-      const data = await apiFetch<{ created: number; updated: number }>('/api/logs/bluetooth/sessions/aggregate', {
+      const data = await apiFetch<{ count: number }>('/api/logs/bluetooth/sessions/aggregate', {
         method: 'POST',
         body: JSON.stringify({
           projectId,
@@ -345,7 +432,7 @@ export default function BluetoothDebugPage() {
           forceRefresh: true,
         }),
       });
-      setAggregateResult(`Created: ${data.created}, Updated: ${data.updated}`);
+      setAggregateResult(`Aggregated sessions: ${data.count}`);
       await fetchSessions();
     } catch (e: unknown) {
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
@@ -372,6 +459,14 @@ export default function BluetoothDebugPage() {
     }
   }
 
+  const sessionItems = Array.isArray(sessions) ? sessions : [];
+  const commandItems = Array.isArray(commandChains) ? commandChains : [];
+  const anomalyItems = Array.isArray(anomalies) ? anomalies : [];
+  const errorItems = Array.isArray(errorDistribution) ? errorDistribution : [];
+
+  const sessionsCountLabel = sessionsHasMore ? `${sessionsTotal}+` : `${sessionsTotal}`;
+  const commandsCount = commandStats?.total ?? commandItems.length;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -388,7 +483,7 @@ export default function BluetoothDebugPage() {
           <div>
             <h1 className="text-2xl font-bold gradient-text">Bluetooth Debug Center</h1>
             <p className="text-sm text-muted-foreground">
-              {loading ? t('common.loading') : `${sessionsTotal} sessions`}
+              {loading ? t('common.loading') : `${sessionsCountLabel} sessions`}
             </p>
           </div>
         </div>
@@ -571,29 +666,29 @@ export default function BluetoothDebugPage() {
           >
             <Card className="glass border-border/50">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Wifi size={18} />
-                  Sessions
-                  <Badge variant="secondary" className="ml-2">{sessionsTotal}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {loading && sessions.length === 0 ? (
-                  <div className="p-4 space-y-3">
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                  </div>
-                ) : sessions.length === 0 ? (
-                  <div className="p-8 text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
-                      <WifiOff size={24} className="text-muted-foreground" />
-                    </div>
-                    <p className="text-muted-foreground">No sessions found. Try clicking &quot;Aggregate Sessions&quot; first.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+	                <CardTitle className="text-base flex items-center gap-2">
+	                  <Wifi size={18} />
+	                  Sessions
+	                  <Badge variant="secondary" className="ml-2">{sessionsCountLabel}</Badge>
+	                </CardTitle>
+	              </CardHeader>
+	              <CardContent className="p-0">
+	                {loading && sessionItems.length === 0 ? (
+	                  <div className="p-4 space-y-3">
+	                    <Skeleton className="h-12 w-full" />
+	                    <Skeleton className="h-12 w-full" />
+	                    <Skeleton className="h-12 w-full" />
+	                  </div>
+	                ) : sessionItems.length === 0 ? (
+	                  <div className="p-8 text-center">
+	                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
+	                      <WifiOff size={24} className="text-muted-foreground" />
+	                    </div>
+	                    <p className="text-muted-foreground">No sessions found. Try clicking &quot;Aggregate Sessions&quot; first.</p>
+	                  </div>
+	                ) : (
+	                  <div className="overflow-x-auto">
+	                    <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border/50">
                           <th className="text-left p-3 text-muted-foreground font-medium">Link Code</th>
@@ -606,14 +701,14 @@ export default function BluetoothDebugPage() {
                           <th className="text-right p-3 text-muted-foreground font-medium">Commands</th>
                           <th className="text-left p-3 text-muted-foreground font-medium">SDK</th>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {sessions.map((session, index) => (
-                          <motion.tr
-                            key={session.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.02 }}
+	                      </thead>
+	                      <tbody>
+	                        {sessionItems.map((session, index) => (
+	                          <motion.tr
+	                            key={session.id}
+	                            initial={{ opacity: 0, y: 10 }}
+	                            animate={{ opacity: 1, y: 0 }}
+	                            transition={{ delay: index * 0.02 }}
                             className="border-b border-border/30 hover:bg-primary/5 transition-colors"
                           >
                             <td className="p-3">
@@ -658,75 +753,61 @@ export default function BluetoothDebugPage() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            <Card className="glass border-border/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Zap size={18} />
-                  Command Analysis
-                  <Badge variant="secondary" className="ml-2">{totalCommands}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {loading && commands.length === 0 ? (
-                  <div className="p-4 space-y-3">
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                  </div>
-                ) : commands.length === 0 ? (
-                  <div className="p-8 text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
-                      <Zap size={24} className="text-muted-foreground" />
-                    </div>
-                    <p className="text-muted-foreground">No command data found. Try adjusting the time range.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border/50">
-                          <th className="text-left p-3 text-muted-foreground font-medium">Command</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Count</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Avg</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">P50</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">P90</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">P99</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Min</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Max</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Success</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {commands.map((cmd, index) => (
-                          <motion.tr
-                            key={cmd.eventName}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.02 }}
-                            className="border-b border-border/30 hover:bg-primary/5 transition-colors"
-                          >
-                            <td className="p-3 font-medium">{cmd.eventName}</td>
-                            <td className="p-3 text-right">{cmd.count}</td>
-                            <td className="p-3 text-right">{formatDuration(cmd.avgDurationMs)}</td>
-                            <td className="p-3 text-right">{formatDuration(cmd.p50Ms)}</td>
-                            <td className="p-3 text-right">{formatDuration(cmd.p90Ms)}</td>
-                            <td className={cn('p-3 text-right', cmd.p99Ms > 5000 && 'text-destructive font-medium')}>
-                              {formatDuration(cmd.p99Ms)}
-                            </td>
-                            <td className="p-3 text-right text-muted-foreground">{formatDuration(cmd.minMs)}</td>
-                            <td className={cn('p-3 text-right', cmd.maxMs > 10000 && 'text-destructive font-medium')}>
-                              {formatDuration(cmd.maxMs)}
-                            </td>
-                            <td className="p-3 text-right">
-                              <span className={cmd.successRate < 0.9 ? 'text-destructive' : 'text-emerald-400'}>
-                                {(cmd.successRate * 100).toFixed(1)}%
-                              </span>
-                            </td>
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+	            <Card className="glass border-border/50">
+	              <CardHeader className="pb-3">
+	                <CardTitle className="text-base flex items-center gap-2">
+	                  <Zap size={18} />
+	                  Command Chains
+	                  <Badge variant="secondary" className="ml-2">{commandsCount}</Badge>
+	                </CardTitle>
+	              </CardHeader>
+	              <CardContent className="p-0">
+	                {loading && commandItems.length === 0 ? (
+	                  <div className="p-4 space-y-3">
+	                    <Skeleton className="h-12 w-full" />
+	                    <Skeleton className="h-12 w-full" />
+	                    <Skeleton className="h-12 w-full" />
+	                  </div>
+	                ) : commandItems.length === 0 ? (
+	                  <div className="p-8 text-center">
+	                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
+	                      <Zap size={24} className="text-muted-foreground" />
+	                    </div>
+	                    <p className="text-muted-foreground">No command chains found. Try adjusting the time range.</p>
+	                  </div>
+	                ) : (
+	                  <div className="overflow-x-auto">
+	                    <table className="w-full text-sm">
+	                      <thead>
+	                        <tr className="border-b border-border/50">
+	                          <th className="text-left p-3 text-muted-foreground font-medium">Request ID</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">Events</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">Duration</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">Start Time</th>
+	                        </tr>
+	                      </thead>
+	                      <tbody>
+	                        {commandItems.map((chain, index) => (
+	                          <motion.tr
+	                            key={chain.requestId}
+	                            initial={{ opacity: 0, y: 10 }}
+	                            animate={{ opacity: 1, y: 0 }}
+	                            transition={{ delay: index * 0.02 }}
+	                            className="border-b border-border/30 hover:bg-primary/5 transition-colors"
+	                          >
+	                            <td className="p-3 font-mono text-xs">{chain.requestId}</td>
+	                            <td className="p-3 text-right">{chain.eventCount}</td>
+	                            <td className="p-3 text-right">{formatDuration(chain.durationMs)}</td>
+	                            <td className="p-3">{getChainStatusBadge(chain.status)}</td>
+	                            <td className="p-3 whitespace-nowrap text-muted-foreground">
+	                              {new Date(chain.startMs).toLocaleString(localeTag)}
+	                            </td>
+	                          </motion.tr>
+	                        ))}
+	                      </tbody>
+	                    </table>
+	                  </div>
                 )}
               </CardContent>
             </Card>
@@ -796,12 +877,12 @@ export default function BluetoothDebugPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {loading && anomalies.length === 0 ? (
+                {loading && anomalyItems.length === 0 ? (
                   <div className="p-4 space-y-3">
                     <Skeleton className="h-12 w-full" />
                     <Skeleton className="h-12 w-full" />
                   </div>
-                ) : anomalies.length === 0 ? (
+                ) : anomalyItems.length === 0 ? (
                   <div className="p-8 text-center">
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
                       <CheckCircle2 size={24} className="text-emerald-400" />
@@ -823,7 +904,7 @@ export default function BluetoothDebugPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {anomalies.map((anomaly, index) => (
+                        {anomalyItems.map((anomaly, index) => (
                           <motion.tr
                             key={anomaly.id}
                             initial={{ opacity: 0, y: 10 }}
@@ -867,12 +948,12 @@ export default function BluetoothDebugPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {loading && errorDistribution.length === 0 ? (
+                {loading && errorItems.length === 0 ? (
                   <div className="p-4 space-y-3">
                     <Skeleton className="h-12 w-full" />
                     <Skeleton className="h-12 w-full" />
                   </div>
-                ) : errorDistribution.length === 0 ? (
+                ) : errorItems.length === 0 ? (
                   <div className="p-8 text-center">
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
                       <CheckCircle2 size={24} className="text-emerald-400" />
@@ -891,7 +972,7 @@ export default function BluetoothDebugPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {errorDistribution.map((err, index) => (
+                        {errorItems.map((err, index) => (
                           <motion.tr
                             key={err.errorCode}
                             initial={{ opacity: 0, y: 10 }}

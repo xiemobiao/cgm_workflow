@@ -28,10 +28,11 @@ type CommandChain = {
     level: number;
     msg: string | null;
   }>;
-  startTimeMs: number;
-  endTimeMs: number | null;
+  startMs: number;
+  endMs: number | null;
   durationMs: number | null;
   status: 'success' | 'pending' | 'error' | 'timeout';
+  eventCount: number;
 };
 
 type SessionDetail = {
@@ -377,7 +378,7 @@ export default function SessionDetailPage() {
                           {formatDuration(chain.durationMs)}
                         </span>
                         <span className={formStyles.muted} style={{ marginLeft: 'auto' }}>
-                          {new Date(chain.startTimeMs).toLocaleTimeString(localeTag)}
+                          {new Date(chain.startMs).toLocaleTimeString(localeTag)}
                         </span>
                         <span style={{ fontSize: 12 }}>
                           {expandedCommands.has(chain.requestId) ? '\u25BC' : '\u25B6'}
