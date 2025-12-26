@@ -393,12 +393,12 @@ export default function BluetoothDebugPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link href="/logs">
-            <Button variant="outline" size="sm">{t('logs.title')}</Button>
-          </Link>
-          <Link href="/logs/trace">
-            <Button variant="outline" size="sm">{t('logs.trace')}</Button>
-          </Link>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/logs">{t('logs.title')}</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/logs/trace">{t('logs.trace')}</Link>
+          </Button>
         </div>
       </motion.div>
 
@@ -420,6 +420,7 @@ export default function BluetoothDebugPage() {
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
                       'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
@@ -495,16 +496,17 @@ export default function BluetoothDebugPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(1)}>
+              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(1)}>
                 {t('logs.preset.1h')}
               </Button>
-              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24)}>
+              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24)}>
                 {t('logs.preset.24h')}
               </Button>
-              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
+              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
                 {t('logs.preset.7d')}
               </Button>
               <Button
+                type="button"
                 size="sm"
                 disabled={!projectId || loading}
                 onClick={handleSearch}
@@ -515,6 +517,7 @@ export default function BluetoothDebugPage() {
               </Button>
               {activeTab === 'sessions' && (
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
                   disabled={!projectId || aggregating}

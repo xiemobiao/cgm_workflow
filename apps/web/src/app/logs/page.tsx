@@ -522,12 +522,12 @@ export default function LogsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {quickLinks.map((link) => (
-            <Link key={link.href} href={link.href}>
-              <Button variant="outline" size="sm" className="gap-2">
+            <Button key={link.href} asChild variant="outline" size="sm" className="gap-2">
+              <Link href={link.href}>
                 <link.icon size={16} />
                 <span className="hidden sm:inline">{link.label}</span>
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           ))}
         </div>
       </motion.div>
@@ -1083,88 +1083,88 @@ export default function LogsPage() {
 	                    <div className="flex flex-wrap items-center gap-2">
 	                      {detail.linkCode && projectId && (
 	                        <>
-	                          <Link
-	                            href={`/logs/trace?${new URLSearchParams({
-	                              projectId,
-	                              type: 'linkCode',
-	                              value: detail.linkCode,
-	                              auto: '1',
-	                            }).toString()}`}
-	                          >
-	                            <Button variant="outline" size="sm">
+	                          <Button asChild variant="outline" size="sm">
+	                            <Link
+	                              href={`/logs/trace?${new URLSearchParams({
+	                                projectId,
+	                                type: 'linkCode',
+	                                value: detail.linkCode,
+	                                auto: '1',
+	                              }).toString()}`}
+	                            >
 	                              Trace linkCode
-	                            </Button>
-	                          </Link>
-	                          <Link
-	                            href={`/logs/bluetooth/session/${encodeURIComponent(detail.linkCode)}?projectId=${encodeURIComponent(projectId)}`}
-	                          >
-	                            <Button variant="outline" size="sm">
+	                            </Link>
+	                          </Button>
+	                          <Button asChild variant="outline" size="sm">
+	                            <Link
+	                              href={`/logs/bluetooth/session/${encodeURIComponent(detail.linkCode)}?projectId=${encodeURIComponent(projectId)}`}
+	                            >
 	                              Bluetooth Session
-	                            </Button>
-	                          </Link>
+	                            </Link>
+	                          </Button>
 	                        </>
 	                      )}
 	                      {detail.requestId && projectId && (
-	                        <Link
-	                          href={`/logs/trace?${new URLSearchParams({
-	                            projectId,
-	                            type: 'requestId',
-	                            value: detail.requestId,
-	                            auto: '1',
-	                          }).toString()}`}
-	                        >
-	                          <Button variant="outline" size="sm">
-	                            Trace requestId
-	                          </Button>
-	                        </Link>
-	                      )}
-	                      {detail.deviceMac && projectId && (
-	                        <>
+	                        <Button asChild variant="outline" size="sm">
 	                          <Link
 	                            href={`/logs/trace?${new URLSearchParams({
 	                              projectId,
-	                              type: 'deviceMac',
-	                              value: detail.deviceMac,
-	                              startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
-	                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                              type: 'requestId',
+	                              value: detail.requestId,
 	                              auto: '1',
 	                            }).toString()}`}
 	                          >
-	                            <Button variant="outline" size="sm">
+	                            Trace requestId
+	                          </Link>
+	                        </Button>
+	                      )}
+	                      {detail.deviceMac && projectId && (
+	                        <>
+	                          <Button asChild variant="outline" size="sm">
+	                            <Link
+	                              href={`/logs/trace?${new URLSearchParams({
+	                                projectId,
+	                                type: 'deviceMac',
+	                                value: detail.deviceMac,
+	                                startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                                endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                                auto: '1',
+	                              }).toString()}`}
+	                            >
 	                              Trace deviceMac
-	                            </Button>
-	                          </Link>
-	                          <Link
-	                            href={`/logs/commands?${new URLSearchParams({
-	                              projectId,
-	                              deviceMac: detail.deviceMac,
-	                              startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
-	                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
-	                              limit: '100',
-	                              auto: '1',
-	                            }).toString()}`}
-	                          >
-	                            <Button variant="outline" size="sm">
+	                            </Link>
+	                          </Button>
+	                          <Button asChild variant="outline" size="sm">
+	                            <Link
+	                              href={`/logs/commands?${new URLSearchParams({
+	                                projectId,
+	                                deviceMac: detail.deviceMac,
+	                                startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                                endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                                limit: '100',
+	                                auto: '1',
+	                              }).toString()}`}
+	                            >
 	                              Commands
-	                            </Button>
-	                          </Link>
+	                            </Link>
+	                          </Button>
 	                        </>
 	                      )}
 	                      {detail.deviceSn && projectId && (
-	                        <Link
-	                          href={`/logs/trace?${new URLSearchParams({
-	                            projectId,
-	                            type: 'deviceSn',
-	                            value: detail.deviceSn,
-	                            startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
-	                            endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
-	                            auto: '1',
-	                          }).toString()}`}
-	                        >
-	                          <Button variant="outline" size="sm">
+	                        <Button asChild variant="outline" size="sm">
+	                          <Link
+	                            href={`/logs/trace?${new URLSearchParams({
+	                              projectId,
+	                              type: 'deviceSn',
+	                              value: detail.deviceSn,
+	                              startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                              auto: '1',
+	                            }).toString()}`}
+	                          >
 	                            Trace deviceSn
-	                          </Button>
-	                        </Link>
+	                          </Link>
+	                        </Button>
 	                      )}
 	                    </div>
 

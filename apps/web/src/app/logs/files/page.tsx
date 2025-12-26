@@ -159,12 +159,12 @@ export default function LogFilesPage() {
                 </div>
                 <CardTitle className="text-xl">{t('logs.files.title')}</CardTitle>
               </div>
-              <Link href="/logs">
-                <Button variant="outline" size="sm" className="gap-2">
+              <Button asChild variant="outline" size="sm" className="gap-2">
+                <Link href="/logs">
                   <ArrowLeft className="w-4 h-4" />
                   {t('logs.files.backToLogs')}
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">

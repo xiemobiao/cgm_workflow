@@ -221,12 +221,12 @@ export default function CommandsPage() {
             </p>
           </div>
         </div>
-        <Link href="/logs">
-          <Button variant="outline" size="sm" className="gap-2">
+        <Button asChild variant="outline" size="sm" className="gap-2">
+          <Link href="/logs">
             <ArrowLeft size={16} />
             {t('common.back')}
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </motion.div>
 
       {/* Description */}
@@ -511,16 +511,20 @@ export default function CommandsPage() {
                                       </p>
                                     )}
                                   </div>
-                                  <Link
-                                    href={`/logs?q=${encodeURIComponent(event.eventName)}&startMs=${event.timestampMs - 60000}&endMs=${event.timestampMs + 60000}`}
-                                    className="flex-shrink-0"
-                                    onClick={(e) => e.stopPropagation()}
+                                  <Button
+                                    asChild
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs gap-1 flex-shrink-0"
                                   >
-                                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                                    <Link
+                                      href={`/logs?q=${encodeURIComponent(event.eventName)}&startMs=${event.timestampMs - 60000}&endMs=${event.timestampMs + 60000}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
                                       <ExternalLink size={12} />
                                       {t('common.view')}
-                                    </Button>
-                                  </Link>
+                                    </Link>
+                                  </Button>
                                 </motion.div>
                               ))}
                             </div>

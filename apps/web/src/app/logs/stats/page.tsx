@@ -149,12 +149,12 @@ export default function StatsPage() {
                 </div>
                 <CardTitle className="text-xl">{t('logs.stats')}</CardTitle>
               </div>
-              <Link href="/logs">
-                <Button variant="outline" size="sm" className="gap-2">
+              <Button asChild variant="outline" size="sm" className="gap-2">
+                <Link href="/logs">
                   <ArrowLeft className="w-4 h-4" />
                   {t('common.back')}
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
