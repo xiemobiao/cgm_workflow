@@ -44,48 +44,370 @@ function asBoolean(x: unknown): boolean | undefined {
   return undefined;
 }
 
-// Extract tracking fields from msg object for flow tracing
-function extractTrackingFields(msg: unknown): {
+function asStringOrNumber(x: unknown): string | undefined {
+  if (typeof x === 'string') return x;
+  if (typeof x === 'number' && Number.isFinite(x)) return String(Math.trunc(x));
+  if (typeof x === 'bigint') return x.toString();
+  return undefined;
+}
+
+function pickFirstString(
+  obj: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const raw = asStringOrNumber(obj[key]);
+    if (raw === undefined) continue;
+    const value = raw.trim();
+    if (value.length === 0) continue;
+    return value;
+  }
+  return null;
+}
+
+function looksLikeMac(value: string): boolean {
+  // Support common formats:
+  // - AA:BB:CC:DD:EE:FF
+  // - AA-BB-CC-DD-EE-FF
+  // - AABBCCDDEEFF
+  return (
+    /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(value) ||
+    /^[0-9A-Fa-f]{12}$/.test(value)
+  );
+}
+
+function parseKeyValueTokens(text: string): Record<string, string> {
+  const tokens: Record<string, string> = {};
+  const re = /(?:^|[\s,;])([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*([^\s,;]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const key = m[1] ?? '';
+    const raw = m[2] ?? '';
+    if (!key || !raw) continue;
+    const value = raw.trim();
+    if (!value) continue;
+    tokens[key] = value;
+  }
+  return tokens;
+}
+
+function extractTrackingFieldsFromText(text: string): {
   linkCode: string | null;
   requestId: string | null;
   deviceMac: string | null;
+  deviceSn: string | null;
   errorCode: string | null;
 } {
   const result = {
     linkCode: null as string | null,
     requestId: null as string | null,
     deviceMac: null as string | null,
+    deviceSn: null as string | null,
     errorCode: null as string | null,
   };
 
-  if (!msg || typeof msg !== 'object') return result;
+  const tokens = parseKeyValueTokens(text);
 
-  const obj = msg as Record<string, unknown>;
+  result.linkCode = pickFirstString(tokens, ['linkCode', 'link_code', 'LinkCode']);
+  result.requestId = pickFirstString(tokens, [
+    'requestId',
+    'request_id',
+    'RequestId',
+    'reqId',
+    'msgId',
+    'messageId',
+    'msg_id',
+  ]);
 
-  // Extract linkCode (APP session identifier)
-  result.linkCode =
-    asString(obj.linkCode) || asString(obj.link_code) || null;
+  const macCandidate =
+    pickFirstString(tokens, [
+      'deviceMac',
+      'device_mac',
+      'mac',
+      'DeviceMac',
+      'macAddress',
+    ]) ?? null;
 
-  // Extract requestId (command chain identifier)
-  result.requestId =
-    asString(obj.requestId) || asString(obj.request_id) || null;
-
-  // Extract deviceMac (device identifier)
-  result.deviceMac =
-    asString(obj.deviceMac) ||
-    asString(obj.mac) ||
-    asString(obj.device_mac) ||
-    asString(obj.deviceId) ||
-    null;
-
-  // Extract errorCode
-  const errorObj = obj.error;
-  if (errorObj && typeof errorObj === 'object') {
-    result.errorCode = asString((errorObj as Record<string, unknown>).code) || null;
+  if (macCandidate) {
+    result.deviceMac = macCandidate;
   }
-  if (!result.errorCode) {
-    result.errorCode =
-      asString(obj.errorCode) || asString(obj.error_code) || null;
+
+  const tokenDevice = pickFirstString(tokens, ['device']);
+  if (tokenDevice && looksLikeMac(tokenDevice)) {
+    result.deviceMac = result.deviceMac ?? tokenDevice;
+  }
+
+  const deviceIdMaybeMac = pickFirstString(tokens, ['deviceId', 'device_id']);
+  if (deviceIdMaybeMac && looksLikeMac(deviceIdMaybeMac)) {
+    result.deviceMac = result.deviceMac ?? deviceIdMaybeMac;
+  }
+
+  result.deviceSn = pickFirstString(tokens, [
+    'deviceSn',
+    'device_sn',
+    'sn',
+    'SN',
+    'serialNumber',
+    'serial_number',
+    'SerialNumber',
+    'serial',
+    'DeviceSn',
+  ]);
+
+  if (!result.deviceSn) {
+    const topic = pickFirstString(tokens, ['topic', 'expectedTopic', 'topicFilter']);
+    if (topic) {
+      const t = topic.trim();
+      const prefixes = ['data/', 'data_reply/'];
+      for (const p of prefixes) {
+        if (!t.startsWith(p)) continue;
+        const sn = t.slice(p.length).trim();
+        if (sn.length > 0) {
+          result.deviceSn = sn;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!result.deviceSn) {
+    const url = pickFirstString(tokens, ['url', 'requestUrl']);
+    if (url) {
+      try {
+        const u = new URL(url);
+        const sn = u.searchParams.get('sn')?.trim();
+        if (sn) result.deviceSn = sn;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (!result.deviceSn && tokenDevice && !looksLikeMac(tokenDevice)) {
+    result.deviceSn = tokenDevice;
+  }
+
+  const deviceIdMaybeSn = pickFirstString(tokens, ['deviceId', 'device_id']);
+  if (!result.deviceSn && deviceIdMaybeSn && !looksLikeMac(deviceIdMaybeSn)) {
+    result.deviceSn = deviceIdMaybeSn;
+  }
+
+  result.errorCode = pickFirstString(tokens, [
+    'errorCode',
+    'error_code',
+    'code',
+    'ErrorCode',
+  ]);
+
+  return result;
+}
+
+function firstUniqueString(values: Array<string | null | undefined>): string | null {
+  const set = new Set<string>();
+  for (const v of values) {
+    if (!v || typeof v !== 'string') continue;
+    const t = v.trim();
+    if (!t) continue;
+    set.add(t);
+    if (set.size > 1) return null;
+  }
+  return set.size === 1 ? Array.from(set.values())[0] : null;
+}
+
+function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
+  const snByLinkCode = new Map<string, Set<string>>();
+  const snByDeviceMac = new Map<string, Set<string>>();
+  const macBySn = new Map<string, Set<string>>();
+
+  const addToMap = (map: Map<string, Set<string>>, key: string, value: string) => {
+    const set = map.get(key) ?? new Set<string>();
+    set.add(value);
+    map.set(key, set);
+  };
+
+  for (const e of events) {
+    if (e.eventName === 'PARSER_ERROR') continue;
+    const linkCode = typeof e.linkCode === 'string' ? e.linkCode.trim() : '';
+    const deviceMac = typeof e.deviceMac === 'string' ? e.deviceMac.trim() : '';
+    const deviceSn = typeof e.deviceSn === 'string' ? e.deviceSn.trim() : '';
+    if (linkCode && deviceSn) addToMap(snByLinkCode, linkCode, deviceSn);
+    if (deviceMac && deviceSn) addToMap(snByDeviceMac, deviceMac, deviceSn);
+    if (deviceSn && deviceMac) addToMap(macBySn, deviceSn, deviceMac);
+  }
+
+  const resolveUnique = (map: Map<string, Set<string>>, key: string): string | null => {
+    const set = map.get(key);
+    if (!set || set.size !== 1) return null;
+    return Array.from(set.values())[0] ?? null;
+  };
+
+  const uniqueSn = firstUniqueString(events.map((e) => e.deviceSn as string | null));
+  const uniqueMac = firstUniqueString(events.map((e) => e.deviceMac as string | null));
+
+  for (const e of events) {
+    if (e.eventName === 'PARSER_ERROR') continue;
+
+    const hasSn = typeof e.deviceSn === 'string' && e.deviceSn.trim().length > 0;
+    const hasMac = typeof e.deviceMac === 'string' && e.deviceMac.trim().length > 0;
+
+    if (!hasSn) {
+      const linkCode = typeof e.linkCode === 'string' ? e.linkCode.trim() : '';
+      const deviceMac = typeof e.deviceMac === 'string' ? e.deviceMac.trim() : '';
+      const fromLink = linkCode ? resolveUnique(snByLinkCode, linkCode) : null;
+      const fromMac = deviceMac ? resolveUnique(snByDeviceMac, deviceMac) : null;
+      e.deviceSn = fromLink ?? fromMac ?? uniqueSn;
+    }
+
+    if (!hasMac) {
+      const deviceSn = typeof e.deviceSn === 'string' ? e.deviceSn.trim() : '';
+      const fromSn = deviceSn ? resolveUnique(macBySn, deviceSn) : null;
+      e.deviceMac = fromSn ?? uniqueMac;
+    }
+  }
+}
+
+// Extract tracking fields from msg object for flow tracing
+export function extractTrackingFields(msg: unknown): {
+  linkCode: string | null;
+  requestId: string | null;
+  deviceMac: string | null;
+  deviceSn: string | null;
+  errorCode: string | null;
+} {
+  const result = {
+    linkCode: null as string | null,
+    requestId: null as string | null,
+    deviceMac: null as string | null,
+    deviceSn: null as string | null,
+    errorCode: null as string | null,
+  };
+
+  const msgString = asString(msg);
+  if (msgString !== undefined) {
+    const trimmed = msgString.trim();
+    if (trimmed.length === 0) return result;
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        return extractTrackingFields(parsed);
+      } catch {
+        // ignore
+      }
+    }
+    return extractTrackingFieldsFromText(trimmed);
+  }
+
+  const root = asRecord(msg);
+  if (!root) return result;
+
+  const candidates: Record<string, unknown>[] = [root];
+  const nestedData = asRecord(root.data);
+  if (nestedData) candidates.push(nestedData);
+
+  for (const obj of candidates) {
+    if (!result.linkCode) {
+      result.linkCode =
+        pickFirstString(obj, ['linkCode', 'link_code', 'LinkCode']) ?? null;
+    }
+
+    if (!result.requestId) {
+      result.requestId =
+        pickFirstString(obj, [
+          'requestId',
+          'request_id',
+          'RequestId',
+          'reqId',
+          'msgId',
+          'messageId',
+          'msg_id',
+        ]) ?? null;
+    }
+
+    if (!result.deviceMac) {
+      const macCandidate =
+        pickFirstString(obj, [
+          'deviceMac',
+          'device_mac',
+          'mac',
+          'DeviceMac',
+          'macAddress',
+        ]) ?? null;
+
+      if (macCandidate) {
+        result.deviceMac = macCandidate;
+      } else {
+        const deviceIdMaybeMac =
+          pickFirstString(obj, ['deviceId', 'device_id']) ?? null;
+        result.deviceMac =
+          deviceIdMaybeMac && looksLikeMac(deviceIdMaybeMac)
+            ? deviceIdMaybeMac
+            : null;
+      }
+    }
+
+    if (!result.deviceSn) {
+      result.deviceSn =
+        pickFirstString(obj, [
+          'deviceSn',
+          'device_sn',
+          'sn',
+          'SN',
+          'serialNumber',
+          'serial_number',
+          'SerialNumber',
+          'serial',
+          'DeviceSn',
+        ]) ?? null;
+
+      if (!result.deviceSn) {
+        const topic =
+          pickFirstString(obj, ['topic', 'expectedTopic', 'topicFilter']) ??
+          null;
+        if (topic) {
+          const prefixes = ['data/', 'data_reply/'];
+          for (const p of prefixes) {
+            if (!topic.startsWith(p)) continue;
+            const sn = topic.slice(p.length).trim();
+            if (sn.length > 0) {
+              result.deviceSn = sn;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!result.deviceSn) {
+        const url = pickFirstString(obj, ['url', 'requestUrl']) ?? null;
+        if (url) {
+          try {
+            const u = new URL(url);
+            const sn = u.searchParams.get('sn')?.trim();
+            if (sn) result.deviceSn = sn;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!result.deviceSn) {
+        const deviceIdMaybeSn =
+          pickFirstString(obj, ['deviceId', 'device_id']) ?? null;
+        result.deviceSn =
+          deviceIdMaybeSn && !looksLikeMac(deviceIdMaybeSn)
+            ? deviceIdMaybeSn
+            : null;
+      }
+    }
+
+    if (!result.errorCode) {
+      const errorObj = asRecord(obj.error);
+      result.errorCode =
+        (errorObj
+          ? pickFirstString(errorObj, ['code', 'errorCode', 'error_code'])
+          : null) ??
+        pickFirstString(obj, ['errorCode', 'error_code', 'code']) ??
+        null;
+    }
   }
 
   return result;
@@ -124,9 +446,19 @@ export class LogsParserService {
       const buf = await this.storage.getObjectBuffer(logFile.storageKey);
 
       // Auto-detect and decrypt Logan encrypted binary files
+      const isLoganEncrypted = this.loganDecrypt.isLoganEncrypted(buf);
       let text: string;
-      if (this.loganDecrypt.isLoganEncrypted(buf)) {
-        text = this.loganDecrypt.decrypt(buf);
+      let loganStats:
+        | { blocksTotal: number; blocksSucceeded: number; blocksFailed: number }
+        | null = null;
+      if (isLoganEncrypted) {
+        const decrypted = this.loganDecrypt.decrypt(buf);
+        text = decrypted.text;
+        loganStats = {
+          blocksTotal: decrypted.blocksTotal,
+          blocksSucceeded: decrypted.blocksSucceeded,
+          blocksFailed: decrypted.blocksFailed,
+        };
       } else {
         text = buf.toString('utf8');
       }
@@ -137,6 +469,42 @@ export class LogsParserService {
       const parserErrorEventName = 'PARSER_ERROR';
 
       const events: Prisma.LogEventCreateManyInput[] = [];
+
+      if (isLoganEncrypted && loganStats) {
+        // If all blocks failed to decrypt, surface a clear error so users can fix LOGAN_DECRYPT_KEY/IV.
+        if (loganStats.blocksTotal > 0 && loganStats.blocksSucceeded === 0) {
+          hadError = true;
+          events.push({
+            projectId: logFile.projectId,
+            logFileId: logFile.id,
+            timestampMs: nowMs,
+            level: 4,
+            eventName: parserErrorEventName,
+            msgJson: {
+              message:
+                'Failed to decrypt Logan log file. Please check LOGAN_DECRYPT_KEY / LOGAN_DECRYPT_IV.',
+              logan: loganStats,
+            } as unknown as Prisma.InputJsonValue,
+            rawLine: null,
+          });
+        } else if (loganStats.blocksFailed > 0) {
+          // Partial decryption failures usually indicate data corruption; keep it visible for debugging.
+          hadError = true;
+          events.push({
+            projectId: logFile.projectId,
+            logFileId: logFile.id,
+            timestampMs: nowMs,
+            level: 3,
+            eventName: parserErrorEventName,
+            msgJson: {
+              message: `Logan decrypt partially failed (${loganStats.blocksFailed}/${loganStats.blocksTotal} blocks). Parsed output may be incomplete.`,
+              logan: loganStats,
+            } as unknown as Prisma.InputJsonValue,
+            rawLine: null,
+          });
+        }
+      }
+
       for (const line of lines) {
         try {
           const outerRaw = JSON.parse(line) as unknown;
@@ -202,6 +570,7 @@ export class LogsParserService {
             linkCode: tracking.linkCode,
             requestId: tracking.requestId,
             deviceMac: tracking.deviceMac,
+            deviceSn: tracking.deviceSn,
             errorCode: tracking.errorCode,
           });
         } catch (e) {
@@ -218,6 +587,8 @@ export class LogsParserService {
           });
         }
       }
+
+      applyTrackingFallback(events);
 
       const isGoneError = (e: unknown) =>
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -288,7 +659,10 @@ export class LogsParserService {
         action: hadError ? 'logs.parse.partial_failed' : 'logs.parse.success',
         targetType: 'LogFile',
         targetId: logFile.id,
-        metadata: { lineCount: lines.length },
+        metadata: {
+          lineCount: lines.length,
+          logan: loganStats ?? undefined,
+        },
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

@@ -42,6 +42,11 @@ type SearchItem = {
   appId: string | null;
   logFileId: string;
   msg: string | null;
+  linkCode: string | null;
+  requestId: string | null;
+  deviceMac: string | null;
+  deviceSn: string | null;
+  errorCode: string | null;
 };
 type SearchResponse = { items: SearchItem[]; nextCursor: string | null };
 type EventContextResponse = {
@@ -77,6 +82,11 @@ type LogEventDetail = {
   msg: string | null;
   msgJson: unknown | null;
   rawLine: string | null;
+  linkCode: string | null;
+  requestId: string | null;
+  deviceMac: string | null;
+  deviceSn: string | null;
+  errorCode: string | null;
   createdAt: string;
 };
 
@@ -171,6 +181,7 @@ export default function LogsPage() {
   const [linkCode, setLinkCode] = useState('');
   const [requestId, setRequestId] = useState('');
   const [deviceMac, setDeviceMac] = useState('');
+  const [deviceSn, setDeviceSn] = useState('');
   const [errorCode, setErrorCode] = useState('');
   const [msgContains, setMsgContains] = useState('');
   const [limit, setLimit] = useState(50);
@@ -453,6 +464,7 @@ export default function LogsPage() {
       if (linkCode.trim()) qs.set('linkCode', linkCode.trim());
       if (requestId.trim()) qs.set('requestId', requestId.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
+      if (deviceSn.trim()) qs.set('deviceSn', deviceSn.trim());
       if (errorCode.trim()) qs.set('errorCode', errorCode.trim());
       if (msgContains.trim()) qs.set('msgContains', msgContains.trim());
       qs.set('limit', String(limit));
@@ -747,6 +759,15 @@ export default function LogsPage() {
                       />
                     </div>
                     <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">deviceSn</label>
+                      <Input
+                        value={deviceSn}
+                        onChange={(e) => setDeviceSn(e.target.value)}
+                        placeholder="SN12345678"
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
                       <label className="text-xs text-muted-foreground mb-1 block">errorCode</label>
                       <Input
                         value={errorCode}
@@ -908,6 +929,35 @@ export default function LogsPage() {
                               )}
                               <span className="font-medium">{renderHighlighted(e.eventName, keyword)}</span>
                             </div>
+                            {(e.linkCode || e.requestId || e.deviceMac || e.deviceSn || e.errorCode) && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {e.linkCode && (
+                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                    LC:{e.linkCode}
+                                  </Badge>
+                                )}
+                                {e.requestId && (
+                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                    RID:{e.requestId}
+                                  </Badge>
+                                )}
+                                {e.deviceMac && (
+                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                    MAC:{e.deviceMac}
+                                  </Badge>
+                                )}
+                                {e.deviceSn && (
+                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                    SN:{e.deviceSn}
+                                  </Badge>
+                                )}
+                                {e.errorCode && (
+                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                    ERR:{e.errorCode}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
                             {e.msg && (
                               <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
                                 {renderHighlighted(shortenText(e.msg, 140), keyword)}
@@ -974,11 +1024,11 @@ export default function LogsPage() {
                 {detail && (
                   <>
                     {/* Key-Value Grid */}
-                    <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
-                      <span className="text-muted-foreground">eventName</span>
-                      <span className="font-medium">{detail.eventName}</span>
-                      <span className="text-muted-foreground">msg</span>
-                      <span>{detail.msg ? renderHighlighted(detail.msg, keyword) : '-'}</span>
+	                    <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
+	                      <span className="text-muted-foreground">eventName</span>
+	                      <span className="font-medium">{detail.eventName}</span>
+	                      <span className="text-muted-foreground">msg</span>
+	                      <span>{detail.msg ? renderHighlighted(detail.msg, keyword) : '-'}</span>
                       <span className="text-muted-foreground">timestamp</span>
                       <span>{new Date(detail.timestampMs).toLocaleString(localeTag)}</span>
                       <span className="text-muted-foreground">level</span>
@@ -995,15 +1045,25 @@ export default function LogsPage() {
                         {detail.threadId !== null ? ` (#${detail.threadId})` : ''}
                         {detail.isMainThread === null ? '' : detail.isMainThread ? ' main' : ' bg'}
                       </span>
-                      <span className="text-muted-foreground">logFileId</span>
-                      <span className="font-mono text-xs truncate">{detail.logFileId}</span>
-                      <span className="text-muted-foreground">eventId</span>
-                      <span className="font-mono text-xs truncate">{detail.id}</span>
-                    </div>
+	                      <span className="text-muted-foreground">logFileId</span>
+	                      <span className="font-mono text-xs truncate">{detail.logFileId}</span>
+	                      <span className="text-muted-foreground">eventId</span>
+	                      <span className="font-mono text-xs truncate">{detail.id}</span>
+	                      <span className="text-muted-foreground">linkCode</span>
+	                      <span className="font-mono text-xs truncate">{detail.linkCode ?? '-'}</span>
+	                      <span className="text-muted-foreground">requestId</span>
+	                      <span className="font-mono text-xs truncate">{detail.requestId ?? '-'}</span>
+	                      <span className="text-muted-foreground">deviceMac</span>
+	                      <span className="font-mono text-xs truncate">{detail.deviceMac ?? '-'}</span>
+	                      <span className="text-muted-foreground">deviceSn</span>
+	                      <span className="font-mono text-xs truncate">{detail.deviceSn ?? '-'}</span>
+	                      <span className="text-muted-foreground">errorCode</span>
+	                      <span className="font-mono text-xs truncate">{detail.errorCode ?? '-'}</span>
+	                    </div>
 
-                    {/* Copy buttons */}
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void copyText(detail.id)} className="gap-2">
+	                    {/* Copy buttons */}
+	                    <div className="flex items-center gap-2">
+	                      <Button variant="outline" size="sm" onClick={() => void copyText(detail.id)} className="gap-2">
                         <Copy size={14} />
                         {t('logs.detail.copyEventId')}
                       </Button>
@@ -1016,12 +1076,101 @@ export default function LogsPage() {
                           <Check size={14} />
                           {copyHint}
                         </span>
-                      )}
-                    </div>
+	                      )}
+	                    </div>
 
-                    {/* Context */}
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium">{t('logs.detail.context')}</h3>
+	                    {/* Quick jump */}
+	                    <div className="flex flex-wrap items-center gap-2">
+	                      {detail.linkCode && projectId && (
+	                        <>
+	                          <Link
+	                            href={`/logs/trace?${new URLSearchParams({
+	                              projectId,
+	                              type: 'linkCode',
+	                              value: detail.linkCode,
+	                              auto: '1',
+	                            }).toString()}`}
+	                          >
+	                            <Button variant="outline" size="sm">
+	                              Trace linkCode
+	                            </Button>
+	                          </Link>
+	                          <Link
+	                            href={`/logs/bluetooth/session/${encodeURIComponent(detail.linkCode)}?projectId=${encodeURIComponent(projectId)}`}
+	                          >
+	                            <Button variant="outline" size="sm">
+	                              Bluetooth Session
+	                            </Button>
+	                          </Link>
+	                        </>
+	                      )}
+	                      {detail.requestId && projectId && (
+	                        <Link
+	                          href={`/logs/trace?${new URLSearchParams({
+	                            projectId,
+	                            type: 'requestId',
+	                            value: detail.requestId,
+	                            auto: '1',
+	                          }).toString()}`}
+	                        >
+	                          <Button variant="outline" size="sm">
+	                            Trace requestId
+	                          </Button>
+	                        </Link>
+	                      )}
+	                      {detail.deviceMac && projectId && (
+	                        <>
+	                          <Link
+	                            href={`/logs/trace?${new URLSearchParams({
+	                              projectId,
+	                              type: 'deviceMac',
+	                              value: detail.deviceMac,
+	                              startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                              auto: '1',
+	                            }).toString()}`}
+	                          >
+	                            <Button variant="outline" size="sm">
+	                              Trace deviceMac
+	                            </Button>
+	                          </Link>
+	                          <Link
+	                            href={`/logs/commands?${new URLSearchParams({
+	                              projectId,
+	                              deviceMac: detail.deviceMac,
+	                              startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                              limit: '100',
+	                              auto: '1',
+	                            }).toString()}`}
+	                          >
+	                            <Button variant="outline" size="sm">
+	                              Commands
+	                            </Button>
+	                          </Link>
+	                        </>
+	                      )}
+	                      {detail.deviceSn && projectId && (
+	                        <Link
+	                          href={`/logs/trace?${new URLSearchParams({
+	                            projectId,
+	                            type: 'deviceSn',
+	                            value: detail.deviceSn,
+	                            startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                            endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                            auto: '1',
+	                          }).toString()}`}
+	                        >
+	                          <Button variant="outline" size="sm">
+	                            Trace deviceSn
+	                          </Button>
+	                        </Link>
+	                      )}
+	                    </div>
+
+	                    {/* Context */}
+	                    <div className="space-y-2">
+	                      <h3 className="text-sm font-medium">{t('logs.detail.context')}</h3>
                       {contextLoading && <Skeleton className="h-20 w-full" />}
                       {contextError && <div className="text-sm text-destructive">{contextError}</div>}
                       {context && (

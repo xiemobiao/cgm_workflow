@@ -156,6 +156,7 @@ model LogEvent {
   linkCode    String?   // APP session identifier for tracing device connection flow
   requestId   String?   // Request ID for tracing command send-response chain
   deviceMac   String?   // Device MAC address for filtering device-specific events
+  deviceSn    String?   // Device SN / serial number for filtering device-specific events
   errorCode   String?   // Error code for quick error filtering
 
   project Project @relation(fields: [projectId], references: [id])
@@ -170,6 +171,7 @@ model LogEvent {
   @@index([linkCode, timestampMs])
   @@index([requestId, timestampMs])
   @@index([deviceMac, timestampMs])
+  @@index([deviceSn, timestampMs])
   @@index([errorCode])
 }
 

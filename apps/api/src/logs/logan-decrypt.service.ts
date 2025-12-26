@@ -16,6 +16,13 @@ const LOGAN_IV = Buffer.from(
 const HEADER_BYTE = 0x01;
 const TAIL_BYTE = 0x00;
 
+export type LoganDecryptResult = {
+  text: string;
+  blocksTotal: number;
+  blocksSucceeded: number;
+  blocksFailed: number;
+};
+
 @Injectable()
 export class LoganDecryptService {
   /**
@@ -54,11 +61,14 @@ export class LoganDecryptService {
    * The encrypted data, after decryption, is gzip/zlib compressed JSONL.
    *
    * @param buffer The encrypted binary buffer
-   * @returns Decrypted JSONL text
+   * @returns Decrypted JSONL text + stats
    */
-  decrypt(buffer: Buffer): string {
+  decrypt(buffer: Buffer): LoganDecryptResult {
     const lines: string[] = [];
     let offset = 0;
+    let blocksTotal = 0;
+    let blocksSucceeded = 0;
+    let blocksFailed = 0;
 
     while (offset < buffer.length) {
       // Skip non-HEADER_BYTE bytes
@@ -86,6 +96,8 @@ export class LoganDecryptService {
       if (cipherEnd > buffer.length) break;
 
       const ciphertext = buffer.subarray(cipherStart, cipherEnd);
+
+      blocksTotal++;
 
       try {
         // AES-128-CBC decryption
@@ -116,9 +128,11 @@ export class LoganDecryptService {
         const text = decompressed.toString('utf8');
         const blockLines = text.split(/\r?\n/).filter((l) => l.trim());
         lines.push(...blockLines);
+        blocksSucceeded++;
       } catch {
         // Decryption or decompression failed for this block, skip it
         // This can happen with corrupted data
+        blocksFailed++;
       }
 
       // Move to next block (skip TAIL_BYTE if present)
@@ -128,6 +142,11 @@ export class LoganDecryptService {
       }
     }
 
-    return lines.join('\n');
+    return {
+      text: lines.join('\n'),
+      blocksTotal,
+      blocksSucceeded,
+      blocksFailed,
+    };
   }
 }

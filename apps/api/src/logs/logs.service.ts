@@ -5,6 +5,8 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
 import { StorageService } from '../storage/storage.service';
+import { buildBackendQualityReport } from './backend-quality';
+import { buildBleQualityReport, type LoganDecryptStats } from './ble-quality';
 import { LogsParserService } from './logs.parser.service';
 
 @Injectable()
@@ -16,6 +18,31 @@ export class LogsService {
     private readonly storage: StorageService,
     private readonly parser: LogsParserService,
   ) {}
+
+  private extractLoganDecryptStatsFromMsgJson(
+    msgJson: unknown,
+  ): LoganDecryptStats | null {
+    if (!msgJson || typeof msgJson !== 'object') return null;
+    const record = msgJson as Record<string, unknown>;
+    const logan = record.logan;
+    if (!logan || typeof logan !== 'object') return null;
+    const loganRecord = logan as Record<string, unknown>;
+
+    const blocksTotal =
+      typeof loganRecord.blocksTotal === 'number' ? loganRecord.blocksTotal : null;
+    const blocksSucceeded =
+      typeof loganRecord.blocksSucceeded === 'number'
+        ? loganRecord.blocksSucceeded
+        : null;
+    const blocksFailed =
+      typeof loganRecord.blocksFailed === 'number' ? loganRecord.blocksFailed : null;
+
+    if (blocksTotal === null || blocksSucceeded === null || blocksFailed === null) {
+      return null;
+    }
+
+    return { blocksTotal, blocksSucceeded, blocksFailed };
+  }
 
   async upload(params: {
     actorUserId: string;
@@ -224,6 +251,7 @@ export class LogsService {
     linkCode?: string;
     requestId?: string;
     deviceMac?: string;
+    deviceSn?: string;
     errorCode?: string;
     // Content search
     msgContains?: string;
@@ -267,6 +295,7 @@ export class LogsService {
     if (params.linkCode) andFilters.push({ linkCode: params.linkCode });
     if (params.requestId) andFilters.push({ requestId: params.requestId });
     if (params.deviceMac) andFilters.push({ deviceMac: params.deviceMac });
+    if (params.deviceSn) andFilters.push({ deviceSn: params.deviceSn });
     if (params.errorCode) andFilters.push({ errorCode: params.errorCode });
 
     // msgJson content search (case-insensitive full-text search in JSON)
@@ -331,6 +360,11 @@ export class LogsService {
         appId: true,
         logFileId: true,
         msgJson: true,
+        linkCode: true,
+        requestId: true,
+        deviceMac: true,
+        deviceSn: true,
+        errorCode: true,
       },
     });
 
@@ -354,6 +388,11 @@ export class LogsService {
         appId: e.appId,
         logFileId: e.logFileId,
         msg: this.msgPreviewFromJson(e.msgJson),
+        linkCode: e.linkCode,
+        requestId: e.requestId,
+        deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
+        errorCode: e.errorCode,
       })),
       nextCursor,
     };
@@ -481,8 +520,10 @@ export class LogsService {
       await tx.incidentLogLink.deleteMany({
         where: { logEvent: { logFileId: logFile.id } },
       });
+      await tx.logEventStats.deleteMany({ where: { logFileId: logFile.id } });
       await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
-      await tx.logFile.delete({ where: { id: logFile.id } });
+      // Use deleteMany to avoid P2025 when the file is deleted concurrently.
+      await tx.logFile.deleteMany({ where: { id: logFile.id } });
     });
 
     if (logFile.storageKey) {
@@ -523,6 +564,11 @@ export class LogsService {
         isMainThread: true,
         msgJson: true,
         rawLine: true,
+        linkCode: true,
+        requestId: true,
+        deviceMac: true,
+        deviceSn: true,
+        errorCode: true,
         createdAt: true,
       },
     });
@@ -556,6 +602,11 @@ export class LogsService {
       msg: this.msgPreviewFromJson(event.msgJson),
       msgJson: event.msgJson,
       rawLine: event.rawLine,
+      linkCode: event.linkCode,
+      requestId: event.requestId,
+      deviceMac: event.deviceMac,
+      deviceSn: event.deviceSn,
+      errorCode: event.errorCode,
       createdAt: event.createdAt,
     };
   }
@@ -597,6 +648,11 @@ export class LogsService {
       sdkVersion: true,
       appId: true,
       msgJson: true,
+      linkCode: true,
+      requestId: true,
+      deviceMac: true,
+      deviceSn: true,
+      errorCode: true,
     } as const;
 
     const [beforeRows, afterRows] = await Promise.all([
@@ -649,6 +705,11 @@ export class LogsService {
       sdkVersion: string | null;
       appId: string | null;
       msgJson: unknown;
+      linkCode: string | null;
+      requestId: string | null;
+      deviceMac: string | null;
+      deviceSn: string | null;
+      errorCode: string | null;
     }) => ({
       id: e.id,
       logFileId: e.logFileId,
@@ -658,6 +719,11 @@ export class LogsService {
       sdkVersion: e.sdkVersion,
       appId: e.appId,
       msg: this.msgPreviewFromJson(e.msgJson),
+      linkCode: e.linkCode,
+      requestId: e.requestId,
+      deviceMac: e.deviceMac,
+      deviceSn: e.deviceSn,
+      errorCode: e.errorCode,
     });
 
     return {
@@ -716,6 +782,40 @@ export class LogsService {
         ? Number(range._max.timestampMs)
         : null;
 
+    const [deviceSnGroups, deviceMacGroups, linkCodeGroups] = await Promise.all([
+      this.prisma.logEvent.groupBy({
+        by: ['deviceSn'],
+        where: { logFileId: logFile.id, deviceSn: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.logEvent.groupBy({
+        by: ['deviceMac'],
+        where: { logFileId: logFile.id, deviceMac: { not: null } },
+        _count: { _all: true },
+      }),
+      this.prisma.logEvent.groupBy({
+        by: ['linkCode'],
+        where: { logFileId: logFile.id, linkCode: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const toTopList = (rows: Array<{ value: string; count: number }>) =>
+      rows.sort((a, b) => b.count - a.count).slice(0, 5);
+
+    const deviceSnAgg = deviceSnGroups
+      .filter((r) => typeof r.deviceSn === 'string' && r.deviceSn.trim().length > 0)
+      .map((r) => ({ value: r.deviceSn as string, count: r._count._all }));
+    const deviceMacAgg = deviceMacGroups
+      .filter((r) => typeof r.deviceMac === 'string' && r.deviceMac.trim().length > 0)
+      .map((r) => ({ value: r.deviceMac as string, count: r._count._all }));
+    const linkCodeAgg = linkCodeGroups
+      .filter((r) => typeof r.linkCode === 'string' && r.linkCode.trim().length > 0)
+      .map((r) => ({ value: r.linkCode as string, count: r._count._all }));
+
+    const sumCounts = (rows: Array<{ count: number }>) =>
+      rows.reduce((sum, r) => sum + r.count, 0);
+
     return {
       id: logFile.id,
       projectId: logFile.projectId,
@@ -727,7 +827,155 @@ export class LogsService {
       errorCount,
       minTimestampMs,
       maxTimestampMs,
+      tracking: {
+        deviceSn: {
+          eventCount: sumCounts(deviceSnAgg),
+          distinctCount: deviceSnAgg.length,
+          top: toTopList(deviceSnAgg),
+        },
+        deviceMac: {
+          eventCount: sumCounts(deviceMacAgg),
+          distinctCount: deviceMacAgg.length,
+          top: toTopList(deviceMacAgg),
+        },
+        linkCode: {
+          eventCount: sumCounts(linkCodeAgg),
+          distinctCount: linkCodeAgg.length,
+          top: toTopList(linkCodeAgg),
+        },
+      },
     };
+  }
+
+  async getBleQualityReport(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const [statsRows, parserErrorCount, lastParserError] = await Promise.all([
+      this.prisma.logEventStats.findMany({
+        where: { logFileId: logFile.id },
+        select: { eventName: true, level: true, count: true },
+      }),
+      this.prisma.logEvent.count({
+        where: { logFileId: logFile.id, eventName: 'PARSER_ERROR' },
+      }),
+      this.prisma.logEvent.findFirst({
+        where: { logFileId: logFile.id, eventName: 'PARSER_ERROR' },
+        orderBy: [{ timestampMs: 'desc' }, { id: 'desc' }],
+        select: { msgJson: true },
+      }),
+    ]);
+
+    const loganStats = this.extractLoganDecryptStatsFromMsgJson(
+      lastParserError?.msgJson,
+    );
+
+    const report = buildBleQualityReport({
+      stats: statsRows,
+      parserErrorCount,
+      logan: loganStats,
+    });
+
+    return { logFileId: logFile.id, ...report };
+  }
+
+  async getBackendQualityReport(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const [httpRows, mqttRows] = await Promise.all([
+      this.prisma.logEvent.findMany({
+        where: {
+          logFileId: logFile.id,
+          eventName: {
+            in: [
+              'network_request_start',
+              'network_request_success',
+              'network_request_failed',
+            ],
+          },
+        },
+        select: {
+          timestampMs: true,
+          eventName: true,
+          requestId: true,
+          msgJson: true,
+        },
+        orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.logEvent.findMany({
+        where: {
+          logFileId: logFile.id,
+          eventName: { in: ['info', 'warning', 'error_occurred', 'COMMON', 'error'] },
+          OR: [
+            { msgJson: { string_contains: '[Upload]' } },
+            { msgJson: { string_contains: '[Ack]' } },
+            { msgJson: { string_contains: '[MQTT]' } },
+            { msgJson: { string_contains: 'MQTT_' } },
+          ],
+        },
+        select: {
+          timestampMs: true,
+          eventName: true,
+          deviceSn: true,
+          requestId: true,
+          errorCode: true,
+          msgJson: true,
+        },
+        orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+
+    const report = buildBackendQualityReport({
+      httpEvents: httpRows.map((e) => ({
+        timestampMs: Number(e.timestampMs),
+        eventName: e.eventName,
+        requestId: e.requestId,
+        msgJson: e.msgJson,
+      })),
+      mqttEvents: mqttRows.map((e) => ({
+        timestampMs: Number(e.timestampMs),
+        eventName: e.eventName,
+        deviceSn: e.deviceSn,
+        requestId: e.requestId,
+        errorCode: e.errorCode,
+        msgJson: e.msgJson,
+      })),
+    });
+
+    return { logFileId: logFile.id, ...report };
   }
 
   // ========== Tracing Methods ==========
@@ -764,6 +1012,7 @@ export class LogsService {
         msgJson: true,
         threadName: true,
         deviceMac: true,
+        deviceSn: true,
         requestId: true,
         errorCode: true,
       },
@@ -782,6 +1031,7 @@ export class LogsService {
         logFileId: e.logFileId,
         threadName: e.threadName,
         deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
         requestId: e.requestId,
         errorCode: e.errorCode,
         msg: this.msgPreviewFromJson(e.msgJson),
@@ -817,6 +1067,7 @@ export class LogsService {
         msgJson: true,
         threadName: true,
         deviceMac: true,
+        deviceSn: true,
         errorCode: true,
       },
     });
@@ -833,6 +1084,7 @@ export class LogsService {
         logFileId: e.logFileId,
         threadName: e.threadName,
         deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
         errorCode: e.errorCode,
         msg: this.msgPreviewFromJson(e.msgJson),
       })),
@@ -876,6 +1128,7 @@ export class LogsService {
         threadName: true,
         linkCode: true,
         requestId: true,
+        deviceSn: true,
         errorCode: true,
       },
     });
@@ -893,6 +1146,70 @@ export class LogsService {
         threadName: e.threadName,
         linkCode: e.linkCode,
         requestId: e.requestId,
+        deviceSn: e.deviceSn,
+        errorCode: e.errorCode,
+        msg: this.msgPreviewFromJson(e.msgJson),
+      })),
+    };
+  }
+
+  async traceByDeviceSn(params: {
+    actorUserId: string;
+    projectId: string;
+    deviceSn: string;
+    startTime: string;
+    endTime: string;
+    limit?: number;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const startMs = BigInt(new Date(params.startTime).getTime());
+    const endMs = BigInt(new Date(params.endTime).getTime());
+    const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
+
+    const events = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        deviceSn: params.deviceSn,
+        timestampMs: { gte: startMs, lte: endMs },
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      take: limit,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        logFileId: true,
+        msgJson: true,
+        threadName: true,
+        linkCode: true,
+        requestId: true,
+        deviceMac: true,
+        errorCode: true,
+      },
+    });
+
+    return {
+      deviceSn: params.deviceSn,
+      count: events.length,
+      items: events.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        sdkVersion: e.sdkVersion,
+        logFileId: e.logFileId,
+        threadName: e.threadName,
+        linkCode: e.linkCode,
+        requestId: e.requestId,
+        deviceMac: e.deviceMac,
+        deviceSn: params.deviceSn,
         errorCode: e.errorCode,
         msg: this.msgPreviewFromJson(e.msgJson),
       })),
@@ -1055,6 +1372,7 @@ export class LogsService {
         timestampMs: true,
         threadName: true,
         deviceMac: true,
+        deviceSn: true,
         linkCode: true,
         requestId: true,
         errorCode: true,
@@ -1071,6 +1389,7 @@ export class LogsService {
         timestampMs: Number(e.timestampMs),
         threadName: e.threadName,
         deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
         linkCode: e.linkCode,
         requestId: e.requestId,
         errorCode: e.errorCode,
@@ -1109,6 +1428,7 @@ export class LogsService {
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
+    const maxScanEvents = Math.min(limit * 200, 50000);
 
     // First try to find events with requestId
     const requestIdEvents = await this.prisma.logEvent.findMany({
@@ -1118,7 +1438,8 @@ export class LogsService {
         timestampMs: { gte: startMs, lte: endMs },
         ...(params.deviceMac ? { deviceMac: params.deviceMac } : {}),
       },
-      orderBy: [{ timestampMs: 'asc' }],
+      orderBy: [{ timestampMs: 'desc' }],
+      take: maxScanEvents,
       select: {
         id: true,
         eventName: true,
@@ -1164,7 +1485,8 @@ export class LogsService {
         timestampMs: { gte: startMs, lte: endMs },
         ...(params.deviceMac ? { deviceMac: params.deviceMac } : {}),
       },
-      orderBy: [{ timestampMs: 'asc' }],
+      orderBy: [{ timestampMs: 'desc' }],
+      take: maxScanEvents,
       select: {
         id: true,
         eventName: true,
@@ -1178,7 +1500,7 @@ export class LogsService {
     });
 
     // Group commands by commandName extracted from msgJson
-    return this.buildCommandChainsFromEvents(commandEvents, limit);
+    return this.buildCommandChainsFromEvents(commandEvents.slice().reverse(), limit);
   }
 
   private buildCommandChainsFromRequestId(

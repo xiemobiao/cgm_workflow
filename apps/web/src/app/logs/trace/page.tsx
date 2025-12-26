@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle, Tag } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ type TraceItem = {
   logFileId: string;
   threadName: string | null;
   deviceMac: string | null;
+  deviceSn: string | null;
   linkCode?: string | null;
   requestId: string | null;
   errorCode: string | null;
@@ -34,6 +36,7 @@ type TraceResponse = {
   linkCode?: string;
   requestId?: string;
   deviceMac?: string;
+  deviceSn?: string;
   count: number;
   items: TraceItem[];
 };
@@ -139,12 +142,14 @@ const traceTypeOptions = [
   { value: 'linkCode', label: 'Link Code', icon: Link2, placeholder: 'e.g. abc123' },
   { value: 'requestId', label: 'Request ID', icon: Hash, placeholder: 'e.g. req-001' },
   { value: 'deviceMac', label: 'Device MAC', icon: Bluetooth, placeholder: 'e.g. AA:BB:CC:DD:EE:FF' },
+  { value: 'deviceSn', label: 'Device SN', icon: Tag, placeholder: 'e.g. SN12345678' },
 ] as const;
 
 export default function TracePage() {
   const { localeTag, t } = useI18n();
+  const searchParams = useSearchParams();
   const [projectId, setProjectId] = useState('');
-  const [traceType, setTraceType] = useState<'linkCode' | 'requestId' | 'deviceMac'>('linkCode');
+  const [traceType, setTraceType] = useState<'linkCode' | 'requestId' | 'deviceMac' | 'deviceSn'>('linkCode');
   const [traceValue, setTraceValue] = useState('');
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
@@ -154,19 +159,48 @@ export default function TracePage() {
   const [relatedDevices, setRelatedDevices] = useState<RelatedDevice[]>([]);
   const [relatedSessions, setRelatedSessions] = useState<RelatedSession[]>([]);
   const [relationLoading, setRelationLoading] = useState(false);
+  const [autoTrace, setAutoTrace] = useState(false);
+  const [autoTraceDone, setAutoTraceDone] = useState(false);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setProjectId(getProjectId() ?? '');
+      const qpProjectId = searchParams.get('projectId');
+      setProjectId(qpProjectId?.trim() || (getProjectId() ?? ''));
+
+      const qpType = searchParams.get('type');
+      if (qpType === 'linkCode' || qpType === 'requestId' || qpType === 'deviceMac' || qpType === 'deviceSn') {
+        setTraceType(qpType);
+      }
+
+      const qpValue = searchParams.get('value');
+      if (qpValue?.trim()) {
+        setTraceValue(qpValue.trim());
+      }
+
+      const qpStart = searchParams.get('startTime');
+      const qpEnd = searchParams.get('endTime');
+      const startDate = qpStart ? new Date(qpStart) : null;
+      const endDate = qpEnd ? new Date(qpEnd) : null;
+      const hasValidRange =
+        startDate &&
+        endDate &&
+        Number.isFinite(startDate.getTime()) &&
+        Number.isFinite(endDate.getTime());
+
+      if (hasValidRange) {
+        setStartLocal(formatDatetimeLocal(startDate));
+        setEndLocal(formatDatetimeLocal(endDate));
+      } else {
+        const now = new Date();
+        setEndLocal(formatDatetimeLocal(now));
+        setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)));
+      }
+
+      const qpAuto = searchParams.get('auto');
+      setAutoTrace(qpAuto === '1' || qpAuto === 'true');
     }, 0);
     return () => window.clearTimeout(id);
-  }, []);
-
-  useEffect(() => {
-    const now = new Date();
-    setEndLocal(formatDatetimeLocal(now));
-    setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)));
-  }, []);
+  }, [searchParams]);
 
   async function trace() {
     if (!projectId || !traceValue.trim()) return;
@@ -186,6 +220,12 @@ export default function TracePage() {
         url = `/api/logs/trace/request-id/${encodeURIComponent(traceValue.trim())}`;
       } else if (traceType === 'deviceMac') {
         url = `/api/logs/trace/device/${encodeURIComponent(traceValue.trim())}`;
+        if (startLocal && endLocal) {
+          qs.set('startTime', toIsoFromDatetimeLocal(startLocal));
+          qs.set('endTime', toIsoFromDatetimeLocal(endLocal));
+        }
+      } else if (traceType === 'deviceSn') {
+        url = `/api/logs/trace/device-sn/${encodeURIComponent(traceValue.trim())}`;
         if (startLocal && endLocal) {
           qs.set('startTime', toIsoFromDatetimeLocal(startLocal));
           qs.set('endTime', toIsoFromDatetimeLocal(endLocal));
@@ -226,6 +266,14 @@ export default function TracePage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!autoTrace || autoTraceDone) return;
+    if (!projectId || !traceValue.trim()) return;
+    if ((traceType === 'deviceMac' || traceType === 'deviceSn') && (!startLocal || !endLocal)) return;
+    setAutoTraceDone(true);
+    void trace();
+  }, [autoTrace, autoTraceDone, projectId, traceType, traceValue, startLocal, endLocal]);
 
   const selectedTypeOption = traceTypeOptions.find((o) => o.value === traceType) ?? traceTypeOptions[0];
 
@@ -303,7 +351,7 @@ export default function TracePage() {
                 </div>
               </div>
 
-              {traceType === 'deviceMac' && (
+              {(traceType === 'deviceMac' || traceType === 'deviceSn') && (
                 <>
                   <div className="flex-1 min-w-[180px]">
                     <label className="block text-sm text-muted-foreground mb-1.5">
@@ -587,6 +635,18 @@ export default function TracePage() {
                                 <span className="flex items-center gap-1.5 text-foreground/70">
                                   <Bluetooth className="w-3 h-3" />
                                   <span className="font-medium">Device:</span> {item.deviceMac}
+                                </span>
+                              )}
+                              {item.deviceSn && (
+                                <span className="flex items-center gap-1.5 text-foreground/70">
+                                  <Tag className="w-3 h-3" />
+                                  <span className="font-medium">SN:</span> {item.deviceSn}
+                                </span>
+                              )}
+                              {item.linkCode && (
+                                <span className="flex items-center gap-1.5 text-foreground/70">
+                                  <Link2 className="w-3 h-3" />
+                                  <span className="font-medium">Link:</span> {item.linkCode}
                                 </span>
                               )}
                               {item.requestId && (

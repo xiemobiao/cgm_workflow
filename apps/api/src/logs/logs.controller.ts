@@ -43,6 +43,7 @@ const searchSchema = z.object({
   linkCode: z.string().min(1).optional(),
   requestId: z.string().min(1).optional(),
   deviceMac: z.string().min(1).optional(),
+  deviceSn: z.string().min(1).optional(),
   errorCode: z.string().min(1).optional(),
   // Content search
   msgContains: z.string().min(1).optional(),
@@ -74,6 +75,13 @@ const traceRequestIdSchema = z.object({
 });
 
 const traceDeviceMacSchema = z.object({
+  projectId: z.string().uuid(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  limit: z.coerce.number().int().min(1).max(2000).optional(),
+});
+
+const traceDeviceSnSchema = z.object({
   projectId: z.string().uuid(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
@@ -265,6 +273,24 @@ export class LogsController {
     return this.logs.getLogFileDetail({ actorUserId: user.userId, id: fileId });
   }
 
+  @Get('files/:id/ble-quality')
+  async getBleQualityReport(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.getBleQualityReport({ actorUserId: user.userId, id: fileId });
+  }
+
+  @Get('files/:id/backend-quality')
+  async getBackendQualityReport(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.getBackendQualityReport({ actorUserId: user.userId, id: fileId });
+  }
+
   @Delete('files/:id')
   async deleteLogFile(
     @CurrentUser() user: CurrentUserPayload,
@@ -316,6 +342,23 @@ export class LogsController {
       actorUserId: user.userId,
       projectId: dto.projectId,
       deviceMac,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      limit: dto.limit,
+    });
+  }
+
+  @Get('trace/device-sn/:deviceSn')
+  async traceByDeviceSn(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('deviceSn') deviceSn: string,
+    @Query() query: unknown,
+  ) {
+    const dto = traceDeviceSnSchema.parse(query);
+    return this.logs.traceByDeviceSn({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      deviceSn,
       startTime: dto.startTime,
       endTime: dto.endTime,
       limit: dto.limit,

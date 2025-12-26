@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -95,6 +96,7 @@ function getLevelColor(level: number): string {
 
 export default function CommandsPage() {
   const { localeTag, t } = useI18n();
+  const searchParams = useSearchParams();
   const [projectId, setProjectId] = useState('');
   const [deviceMac, setDeviceMac] = useState('');
   const [startLocal, setStartLocal] = useState('');
@@ -104,19 +106,51 @@ export default function CommandsPage() {
   const [error, setError] = useState('');
   const [chains, setChains] = useState<CommandChain[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [autoSearch, setAutoSearch] = useState(false);
+  const [autoSearchDone, setAutoSearchDone] = useState(false);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setProjectId(getProjectId() ?? '');
+      const qpProjectId = searchParams.get('projectId');
+      setProjectId(qpProjectId?.trim() || (getProjectId() ?? ''));
+
+      const qpDeviceMac = searchParams.get('deviceMac');
+      if (qpDeviceMac?.trim()) {
+        setDeviceMac(qpDeviceMac.trim());
+      }
+
+      const qpLimit = searchParams.get('limit');
+      if (qpLimit) {
+        const n = Number(qpLimit);
+        if (Number.isFinite(n)) {
+          setLimit(Math.min(Math.max(Math.trunc(n), 1), 500));
+        }
+      }
+
+      const qpStart = searchParams.get('startTime');
+      const qpEnd = searchParams.get('endTime');
+      const startDate = qpStart ? new Date(qpStart) : null;
+      const endDate = qpEnd ? new Date(qpEnd) : null;
+      const hasValidRange =
+        startDate &&
+        endDate &&
+        Number.isFinite(startDate.getTime()) &&
+        Number.isFinite(endDate.getTime());
+
+      if (hasValidRange) {
+        setStartLocal(formatDatetimeLocal(startDate));
+        setEndLocal(formatDatetimeLocal(endDate));
+      } else {
+        const now = new Date();
+        setEndLocal(formatDatetimeLocal(now));
+        setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
+      }
+
+      const qpAuto = searchParams.get('auto');
+      setAutoSearch(qpAuto === '1' || qpAuto === 'true');
     }, 0);
     return () => window.clearTimeout(id);
-  }, []);
-
-  useEffect(() => {
-    const now = new Date();
-    setEndLocal(formatDatetimeLocal(now));
-    setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
-  }, []);
+  }, [searchParams]);
 
   const canSearch = useMemo(() => Boolean(projectId && startLocal && endLocal), [projectId, startLocal, endLocal]);
 
@@ -148,6 +182,13 @@ export default function CommandsPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!autoSearch || autoSearchDone) return;
+    if (!projectId || !startLocal || !endLocal) return;
+    setAutoSearchDone(true);
+    void search();
+  }, [autoSearch, autoSearchDone, projectId, startLocal, endLocal, deviceMac, limit]);
 
   // Statistics
   const stats = useMemo(() => {
