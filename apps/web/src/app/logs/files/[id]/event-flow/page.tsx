@@ -167,9 +167,15 @@ export default function EventFlowAnalysisPage() {
 
         setMainFlow(data.mainFlowAnalysis);
         setCoverage(data.eventCoverageAnalysis);
-      } catch (err) {
+      } catch (err: any) {
         console.error('=== Fetch Error ===', err);
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        // If analysis not found (404), don't set error - show "no data" UI instead
+        if (err?.status === 404 || err?.message?.includes('not found')) {
+          // Leave mainFlow and coverage as null to trigger "no data" UI
+          console.log('Analysis not found - showing trigger button');
+        } else {
+          setError(err instanceof Error ? err.message : 'Unknown error');
+        }
       } finally {
         setLoading(false);
       }

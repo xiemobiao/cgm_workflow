@@ -154,11 +154,17 @@ export default function AnalysisPage() {
         setAnalysis(data);
       } catch (e: unknown) {
         if (cancelled) return;
-        const msg =
-          e instanceof ApiClientError
-            ? `${e.code}: ${e.message}`
-            : String(e);
-        setError(msg);
+        // If analysis not found (404), don't set error - show trigger button instead
+        if (e instanceof ApiClientError && (e.status === 404 || e.code === 'ANALYSIS_NOT_FOUND')) {
+          // Leave analysis as null to show "No analysis yet" UI
+          console.log('Analysis not found - showing trigger button');
+        } else {
+          const msg =
+            e instanceof ApiClientError
+              ? `${e.code}: ${e.message}`
+              : String(e);
+          setError(msg);
+        }
       } finally {
         if (cancelled) return;
         setLoading(false);
@@ -287,6 +293,31 @@ export default function AnalysisPage() {
                   className="mt-4"
                 >
                   Retry Analysis
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No Analysis State */}
+      {!analysis && !loading && !error && (
+        <Card className="glass border-blue-500/50">
+          <CardContent className="p-8 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <BarChart3 size={48} className="text-blue-400" />
+              <div>
+                <h3 className="font-semibold text-lg mb-2">尚未分析</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  该日志文件尚未进行自动化质量分析
+                </p>
+                <Button
+                  onClick={() => void triggerAnalysis()}
+                  disabled={retrying}
+                  className="gap-2"
+                >
+                  <RefreshCw size={16} className={retrying ? 'animate-spin' : ''} />
+                  立即分析
                 </Button>
               </div>
             </div>
