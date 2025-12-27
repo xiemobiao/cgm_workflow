@@ -274,6 +274,18 @@ export function extractTrackingFields(msg: unknown): {
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
+  // 数据质量字段
+  dataPointCount: number | null;
+  timeSpanHours: number | null;
+  valueMin: number | null;
+  valueMax: number | null;
+  valueAvg: number | null;
+  timestampJumps: number | null;
+  outlierCount: number | null;
+  // 蓝牙参数字段
+  actualMtu: number | null;
+  rssi: number | null;
+  signalQuality: string | null;
 } {
   const result = {
     linkCode: null as string | null,
@@ -281,6 +293,18 @@ export function extractTrackingFields(msg: unknown): {
     deviceMac: null as string | null,
     deviceSn: null as string | null,
     errorCode: null as string | null,
+    // 数据质量字段
+    dataPointCount: null as number | null,
+    timeSpanHours: null as number | null,
+    valueMin: null as number | null,
+    valueMax: null as number | null,
+    valueAvg: null as number | null,
+    timestampJumps: null as number | null,
+    outlierCount: null as number | null,
+    // 蓝牙参数字段
+    actualMtu: null as number | null,
+    rssi: null as number | null,
+    signalQuality: null as string | null,
   };
 
   const msgString = asString(msg);
@@ -408,6 +432,40 @@ export function extractTrackingFields(msg: unknown): {
           : null) ??
         pickFirstString(obj, ['errorCode', 'error_code', 'code']) ??
         null;
+    }
+
+    // 数据质量字段
+    if (result.dataPointCount === null) {
+      result.dataPointCount = pickFirstNumber(obj, ['dataPointCount', 'data_point_count']);
+    }
+    if (result.timeSpanHours === null) {
+      result.timeSpanHours = pickFirstNumber(obj, ['timeSpanHours', 'time_span_hours']);
+    }
+    if (result.valueMin === null) {
+      result.valueMin = pickFirstNumber(obj, ['valueMin', 'value_min']);
+    }
+    if (result.valueMax === null) {
+      result.valueMax = pickFirstNumber(obj, ['valueMax', 'value_max']);
+    }
+    if (result.valueAvg === null) {
+      result.valueAvg = pickFirstNumber(obj, ['valueAvg', 'value_avg']);
+    }
+    if (result.timestampJumps === null) {
+      result.timestampJumps = pickFirstNumber(obj, ['timestampJumps', 'timestamp_jumps']);
+    }
+    if (result.outlierCount === null) {
+      result.outlierCount = pickFirstNumber(obj, ['outlierCount', 'outlier_count']);
+    }
+
+    // 蓝牙参数字段
+    if (result.actualMtu === null) {
+      result.actualMtu = pickFirstNumber(obj, ['actualMtu', 'actual_mtu']);
+    }
+    if (result.rssi === null) {
+      result.rssi = pickFirstNumber(obj, ['rssi', 'RSSI']);
+    }
+    if (result.signalQuality === null) {
+      result.signalQuality = pickFirstString(obj, ['signalQuality', 'signal_quality']);
     }
   }
 
