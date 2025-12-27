@@ -102,5 +102,7 @@ docs/
 - `/reports` - 分析报告
 - `/settings` - 设置
 
+提示：`/logs`、`/logs/trace`、`/logs/commands` 支持通过 `logFileId` 仅针对单个日志文件进行过滤（可从 `/logs/files` 获取文件 ID）。
+
 ## 文档
 - `docs/logging/cgm_log_format_spec.md` - 日志格式规范

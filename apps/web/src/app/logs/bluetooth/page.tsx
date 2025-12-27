@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bluetooth,
@@ -27,6 +28,7 @@ import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { getActiveLogFileId, setActiveLogFileId } from '@/lib/log-file-scope';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -236,6 +238,8 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
 
 export default function BluetoothDebugPage() {
   const { localeTag, t } = useI18n();
+  const searchParams = useSearchParams();
+  const lastProjectIdRef = useRef<string | null>(null);
   const [projectId, setProjectId] = useState('');
   const [activeTab, setActiveTab] = useState<TabId>('sessions');
   const [loading, setLoading] = useState(false);
@@ -246,6 +250,7 @@ export default function BluetoothDebugPage() {
   const [endLocal, setEndLocal] = useState('');
 
   // Filters
+  const [logFileId, setLogFileId] = useState('');
   const [deviceMac, setDeviceMac] = useState('');
   const [statusFilter, setStatusFilter] = useState<SessionStatus | ''>('');
 
@@ -272,16 +277,56 @@ export default function BluetoothDebugPage() {
 
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setProjectId(getProjectId() ?? '');
+      const qpProjectId = searchParams.get('projectId');
+      setProjectId(qpProjectId?.trim() || (getProjectId() ?? ''));
+
+      setLogFileId(searchParams.get('logFileId')?.trim() ?? '');
+
+      const qpStart = searchParams.get('startTime');
+      const qpEnd = searchParams.get('endTime');
+      const startDate = qpStart ? new Date(qpStart) : null;
+      const endDate = qpEnd ? new Date(qpEnd) : null;
+      const hasValidRange =
+        startDate &&
+        endDate &&
+        Number.isFinite(startDate.getTime()) &&
+        Number.isFinite(endDate.getTime());
+
+      if (hasValidRange) {
+        setStartLocal(formatDatetimeLocal(startDate));
+        setEndLocal(formatDatetimeLocal(endDate));
+      } else {
+        const now = new Date();
+        setEndLocal(formatDatetimeLocal(now));
+        setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
+      }
     }, 0);
     return () => window.clearTimeout(id);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
-    const now = new Date();
-    setEndLocal(formatDatetimeLocal(now));
-    setStartLocal(formatDatetimeLocal(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
-  }, []);
+    if (!projectId) return;
+    const previousProjectId = lastProjectIdRef.current;
+    if (previousProjectId === projectId) return;
+    lastProjectIdRef.current = projectId;
+
+    const stored = getActiveLogFileId(projectId);
+    const nextLogFileId = stored ?? '';
+
+    if (previousProjectId && previousProjectId !== projectId) {
+      setLogFileId(nextLogFileId);
+      return;
+    }
+
+    if (!logFileId.trim() && nextLogFileId) {
+      setLogFileId(nextLogFileId);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setActiveLogFileId(projectId, logFileId.trim() || null);
+  }, [projectId, logFileId]);
 
   function setPresetRange(hours: number) {
     const now = new Date();
@@ -299,6 +344,7 @@ export default function BluetoothDebugPage() {
         startTime: toIsoFromDatetimeLocal(startLocal),
         endTime: toIsoFromDatetimeLocal(endLocal),
       });
+      if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
       if (statusFilter) qs.set('status', statusFilter);
       qs.set('limit', '100');
@@ -326,6 +372,7 @@ export default function BluetoothDebugPage() {
         startTime: toIsoFromDatetimeLocal(startLocal),
         endTime: toIsoFromDatetimeLocal(endLocal),
       });
+      if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
 
       const data = await apiFetch<AnomalyResponse>(`/api/logs/bluetooth/anomalies?${qs.toString()}`);
@@ -370,6 +417,7 @@ export default function BluetoothDebugPage() {
         startTime: toIsoFromDatetimeLocal(startLocal),
         endTime: toIsoFromDatetimeLocal(endLocal),
       });
+      if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
 
       const data = await apiFetch<ErrorDistributionResponse>(`/api/logs/bluetooth/errors/distribution?${qs.toString()}`);
@@ -403,6 +451,7 @@ export default function BluetoothDebugPage() {
         startTime: toIsoFromDatetimeLocal(startLocal),
         endTime: toIsoFromDatetimeLocal(endLocal),
       });
+      if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
       qs.set('limit', '500');
 
@@ -467,6 +516,17 @@ export default function BluetoothDebugPage() {
   const sessionsCountLabel = sessionsHasMore ? `${sessionsTotal}+` : `${sessionsTotal}`;
   const commandsCount = commandStats?.total ?? commandItems.length;
 
+  const headerQs = new URLSearchParams();
+  if (projectId) headerQs.set('projectId', projectId);
+  if (logFileId.trim()) headerQs.set('logFileId', logFileId.trim());
+  if (startLocal && endLocal) {
+    headerQs.set('startTime', toIsoFromDatetimeLocal(startLocal));
+    headerQs.set('endTime', toIsoFromDatetimeLocal(endLocal));
+  }
+  const headerQuery = headerQs.toString();
+  const logsHref = headerQuery ? `/logs?${headerQuery}` : '/logs';
+  const traceHref = headerQuery ? `/logs/trace?${headerQuery}` : '/logs/trace';
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -489,10 +549,10 @@ export default function BluetoothDebugPage() {
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href="/logs">{t('logs.title')}</Link>
+            <Link href={logsHref}>{t('logs.title')}</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/logs/trace">{t('logs.trace')}</Link>
+            <Link href={traceHref}>{t('logs.trace')}</Link>
           </Button>
         </div>
       </motion.div>
@@ -543,7 +603,7 @@ export default function BluetoothDebugPage() {
       >
         <Card className="glass border-border/50">
           <CardContent className="p-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">{t('logs.startTime')}</label>
                 <Input
@@ -558,6 +618,16 @@ export default function BluetoothDebugPage() {
                   type="datetime-local"
                   value={endLocal}
                   onChange={(e) => setEndLocal(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  {t('logs.logFileIdOptional')}
+                </label>
+                <Input
+                  value={logFileId}
+                  onChange={(e) => setLogFileId(e.target.value)}
+                  placeholder="Filter by logFileId (optional)"
                 />
               </div>
               <div>
@@ -615,7 +685,7 @@ export default function BluetoothDebugPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!projectId || aggregating}
+                  disabled={!projectId || aggregating || Boolean(logFileId.trim())}
                   onClick={() => void triggerAggregate()}
                   className="gap-2"
                 >
@@ -684,7 +754,11 @@ export default function BluetoothDebugPage() {
 	                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
 	                      <WifiOff size={24} className="text-muted-foreground" />
 	                    </div>
-	                    <p className="text-muted-foreground">No sessions found. Try clicking &quot;Aggregate Sessions&quot; first.</p>
+	                    <p className="text-muted-foreground">
+	                      {logFileId.trim()
+	                        ? 'No sessions found for this log file. Try adjusting the time range or clearing filters.'
+	                        : 'No sessions found. Try clicking \"Aggregate Sessions\" first.'}
+	                    </p>
 	                  </div>
 	                ) : (
 	                  <div className="overflow-x-auto">
@@ -713,7 +787,7 @@ export default function BluetoothDebugPage() {
                           >
                             <td className="p-3">
                               <Link
-                                href={`/logs/bluetooth/session/${encodeURIComponent(session.linkCode)}?projectId=${projectId}`}
+                                href={`/logs/bluetooth/session/${encodeURIComponent(session.linkCode)}?projectId=${projectId}${logFileId.trim() ? `&logFileId=${encodeURIComponent(logFileId.trim())}` : ''}`}
                                 className="text-primary hover:underline font-medium"
                               >
                                 {session.linkCode}

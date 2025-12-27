@@ -180,6 +180,20 @@ export class LogsService {
     return Buffer.from(payload, 'utf8').toString('base64');
   }
 
+  private async assertLogFileInProject(params: { projectId: string; logFileId: string }) {
+    const found = await this.prisma.logFile.findFirst({
+      where: { id: params.logFileId, projectId: params.projectId },
+      select: { id: true },
+    });
+    if (!found) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+  }
+
   private truncateText(value: string, maxLen: number) {
     const normalized = value.replace(/\s+/g, ' ').trim();
     if (normalized.length <= maxLen) return normalized;
@@ -263,6 +277,13 @@ export class LogsService {
       projectId: params.projectId,
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
+
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
 
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
@@ -437,6 +458,12 @@ export class LogsService {
         status: true,
         parserVersion: true,
         uploadedAt: true,
+        analysis: {
+          select: {
+            qualityScore: true,
+            status: true,
+          },
+        },
       },
     });
 
@@ -486,6 +513,8 @@ export class LogsService {
         uploadedAt: f.uploadedAt,
         eventCount: eventCountByFile.get(f.id) ?? 0,
         errorCount: errorCountByFile.get(f.id) ?? 0,
+        qualityScore: f.analysis?.qualityScore ?? null,
+        analysisStatus: f.analysis?.status ?? null,
       })),
       nextCursor,
     };
@@ -978,11 +1007,68 @@ export class LogsService {
     return { logFileId: logFile.id, ...report };
   }
 
+  async getLogFileAnalysis(params: { actorUserId: string; logFileId: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.logFileId },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const analysis = await this.prisma.logFileAnalysis.findUnique({
+      where: { logFileId: logFile.id },
+      select: {
+        id: true,
+        logFileId: true,
+        qualityScore: true,
+        bleQuality: true,
+        backendQuality: true,
+        anomalies: true,
+        knownIssueMatches: true,
+        mainFlowAnalysis: true,
+        eventCoverageAnalysis: true,
+        totalEvents: true,
+        errorEvents: true,
+        warningEvents: true,
+        sessionCount: true,
+        deviceCount: true,
+        status: true,
+        errorMessage: true,
+        analyzedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!analysis) {
+      throw new ApiException({
+        code: 'ANALYSIS_NOT_FOUND',
+        message: 'Analysis not found for this log file',
+        status: 404,
+      });
+    }
+
+    return analysis;
+  }
+
   // ========== Tracing Methods ==========
 
   async traceByLinkCode(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     linkCode: string;
     limit?: number;
   }) {
@@ -992,11 +1078,19 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
 
     const events = await this.prisma.logEvent.findMany({
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         linkCode: params.linkCode,
       },
       orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
@@ -1042,6 +1136,7 @@ export class LogsService {
   async traceByRequestId(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     requestId: string;
   }) {
     await this.rbac.requireProjectRoles({
@@ -1050,9 +1145,17 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const events = await this.prisma.logEvent.findMany({
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         requestId: params.requestId,
       },
       orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
@@ -1094,6 +1197,7 @@ export class LogsService {
   async traceByDeviceMac(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     deviceMac: string;
     startTime: string;
     endTime: string;
@@ -1105,6 +1209,13 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
@@ -1112,6 +1223,7 @@ export class LogsService {
     const events = await this.prisma.logEvent.findMany({
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         deviceMac: params.deviceMac,
         timestampMs: { gte: startMs, lte: endMs },
       },
@@ -1156,6 +1268,7 @@ export class LogsService {
   async traceByDeviceSn(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     deviceSn: string;
     startTime: string;
     endTime: string;
@@ -1167,6 +1280,13 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
@@ -1174,6 +1294,7 @@ export class LogsService {
     const events = await this.prisma.logEvent.findMany({
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         deviceSn: params.deviceSn,
         timestampMs: { gte: startMs, lte: endMs },
       },
@@ -1231,6 +1352,13 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const whereClause: Prisma.LogEventStatsWhereInput = {
       projectId: params.projectId,
     };
@@ -1284,6 +1412,7 @@ export class LogsService {
   async getErrorHotspots(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     startTime: string;
     endTime: string;
     limit?: number;
@@ -1294,6 +1423,13 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
@@ -1303,6 +1439,7 @@ export class LogsService {
       by: ['eventName', 'errorCode'],
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         timestampMs: { gte: startMs, lte: endMs },
         level: { gte: 3 }, // WARN and ERROR
       },
@@ -1340,6 +1477,13 @@ export class LogsService {
       projectId: params.projectId,
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
+
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
 
     const limit = Math.min(Math.max(params.limit ?? 200, 1), 1000);
 
@@ -1414,6 +1558,7 @@ export class LogsService {
   async getCommandChains(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     deviceMac?: string;
     startTime: string;
     endTime: string;
@@ -1425,6 +1570,13 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
@@ -1434,6 +1586,7 @@ export class LogsService {
     const requestIdEvents = await this.prisma.logEvent.findMany({
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         requestId: { not: null },
         timestampMs: { gte: startMs, lte: endMs },
         ...(params.deviceMac ? { deviceMac: params.deviceMac } : {}),
@@ -1481,6 +1634,7 @@ export class LogsService {
     const commandEvents = await this.prisma.logEvent.findMany({
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         eventName: { in: commandEventNames },
         timestampMs: { gte: startMs, lte: endMs },
         ...(params.deviceMac ? { deviceMac: params.deviceMac } : {}),
@@ -1683,6 +1837,7 @@ export class LogsService {
   async getLinkCodeDevices(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     linkCode: string;
   }) {
     await this.rbac.requireProjectRoles({
@@ -1691,11 +1846,19 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     // Get all distinct deviceMac values for this linkCode
     const devices = await this.prisma.logEvent.groupBy({
       by: ['deviceMac'],
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         linkCode: params.linkCode,
         deviceMac: { not: null },
       },
@@ -1718,6 +1881,7 @@ export class LogsService {
   async getDeviceSessions(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     deviceMac: string;
     startTime: string;
     endTime: string;
@@ -1728,6 +1892,13 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
 
@@ -1736,6 +1907,7 @@ export class LogsService {
       by: ['linkCode'],
       where: {
         projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
         deviceMac: params.deviceMac,
         linkCode: { not: null },
         timestampMs: { gte: startMs, lte: endMs },

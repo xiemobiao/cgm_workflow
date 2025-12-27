@@ -20,6 +20,7 @@ import type { CurrentUserPayload } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BluetoothService } from './bluetooth.service';
 import { LogsService } from './logs.service';
+import { LogsAnalyzerService } from './logs-analyzer.service';
 
 const uploadSchema = z.object({
   projectId: z.string().uuid(),
@@ -67,15 +68,18 @@ const idSchema = z.string().uuid();
 // Tracing schemas
 const traceLinkCodeSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(2000).optional(),
 });
 
 const traceRequestIdSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
 });
 
 const traceDeviceMacSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   limit: z.coerce.number().int().min(1).max(2000).optional(),
@@ -83,6 +87,7 @@ const traceDeviceMacSchema = z.object({
 
 const traceDeviceSnSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   limit: z.coerce.number().int().min(1).max(2000).optional(),
@@ -98,6 +103,7 @@ const statsSchema = z.object({
 
 const errorHotspotsSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -116,6 +122,7 @@ const timelineSchema = z.object({
 // Command chain schema
 const commandChainsSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   deviceMac: z.string().min(1).optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
@@ -125,10 +132,12 @@ const commandChainsSchema = z.object({
 // Relation discovery schemas
 const linkCodeDevicesSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
 });
 
 const deviceSessionsSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
 });
@@ -136,6 +145,7 @@ const deviceSessionsSchema = z.object({
 // Bluetooth debugging schemas
 const bluetoothSessionsSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
   deviceMac: z.string().min(1).optional(),
@@ -152,10 +162,12 @@ const bluetoothAggregateSchema = z.object({
 
 const bluetoothSessionDetailSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
 });
 
 const bluetoothCommandAnalysisSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   deviceMac: z.string().min(1).optional(),
@@ -164,6 +176,7 @@ const bluetoothCommandAnalysisSchema = z.object({
 
 const bluetoothAnomaliesSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   deviceMac: z.string().min(1).optional(),
@@ -171,6 +184,7 @@ const bluetoothAnomaliesSchema = z.object({
 
 const bluetoothErrorsSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   deviceMac: z.string().min(1).optional(),
@@ -183,6 +197,7 @@ const bluetoothErrorContextSchema = z.object({
 
 const bluetoothAnomaliesEnhancedSchema = z.object({
   projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   deviceMac: z.string().min(1).optional(),
@@ -194,6 +209,7 @@ export class LogsController {
   constructor(
     private readonly logs: LogsService,
     private readonly bluetooth: BluetoothService,
+    private readonly analyzer: LogsAnalyzerService,
   ) {}
 
   @Post('upload')
@@ -291,6 +307,65 @@ export class LogsController {
     return this.logs.getBackendQualityReport({ actorUserId: user.userId, id: fileId });
   }
 
+  @Get('files/:id/analysis')
+  async getLogFileAnalysis(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.getLogFileAnalysis({ actorUserId: user.userId, logFileId: fileId });
+  }
+
+  @Get('files/:id/event-flow-analysis')
+  async getEventFlowAnalysis(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    const analysis = await this.logs.getLogFileAnalysis({
+      actorUserId: user.userId,
+      logFileId: fileId,
+    });
+
+    if (!analysis) {
+      throw new ApiException({
+        code: 'LOG_FILE_ANALYSIS_NOT_FOUND',
+        message: 'Log file analysis not found',
+        status: 404,
+      });
+    }
+
+    console.log('=== Event Flow Analysis API ===');
+    console.log('File ID:', fileId);
+    console.log('Analysis ID:', (analysis as any).id);
+    console.log('mainFlowAnalysis exists:', !!(analysis as any).mainFlowAnalysis);
+    console.log('eventCoverageAnalysis exists:', !!(analysis as any).eventCoverageAnalysis);
+
+    if ((analysis as any).mainFlowAnalysis) {
+      console.log('mainFlowAnalysis preview:', JSON.stringify((analysis as any).mainFlowAnalysis).substring(0, 200));
+    }
+    if ((analysis as any).eventCoverageAnalysis) {
+      console.log('eventCoverageAnalysis preview:', JSON.stringify((analysis as any).eventCoverageAnalysis).substring(0, 200));
+    }
+
+    return {
+      mainFlowAnalysis: (analysis as any).mainFlowAnalysis,
+      eventCoverageAnalysis: (analysis as any).eventCoverageAnalysis,
+    };
+  }
+
+  @Post('files/:id/analyze')
+  @HttpCode(200)
+  async triggerLogFileAnalysis(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    // Trigger analysis asynchronously
+    void this.analyzer.analyzeLogFile(fileId);
+    return { message: 'Analysis triggered', logFileId: fileId };
+  }
+
   @Delete('files/:id')
   async deleteLogFile(
     @CurrentUser() user: CurrentUserPayload,
@@ -312,6 +387,7 @@ export class LogsController {
     return this.logs.traceByLinkCode({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       linkCode,
       limit: dto.limit,
     });
@@ -327,6 +403,7 @@ export class LogsController {
     return this.logs.traceByRequestId({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       requestId,
     });
   }
@@ -341,6 +418,7 @@ export class LogsController {
     return this.logs.traceByDeviceMac({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       deviceMac,
       startTime: dto.startTime,
       endTime: dto.endTime,
@@ -358,6 +436,7 @@ export class LogsController {
     return this.logs.traceByDeviceSn({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       deviceSn,
       startTime: dto.startTime,
       endTime: dto.endTime,
@@ -391,6 +470,7 @@ export class LogsController {
     return this.logs.getErrorHotspots({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       startTime: dto.startTime,
       endTime: dto.endTime,
       limit: dto.limit,
@@ -426,6 +506,7 @@ export class LogsController {
     return this.logs.getCommandChains({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       deviceMac: dto.deviceMac,
       startTime: dto.startTime,
       endTime: dto.endTime,
@@ -445,6 +526,7 @@ export class LogsController {
     return this.logs.getLinkCodeDevices({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       linkCode,
     });
   }
@@ -459,6 +541,7 @@ export class LogsController {
     return this.logs.getDeviceSessions({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       deviceMac,
       startTime: dto.startTime,
       endTime: dto.endTime,
@@ -476,6 +559,7 @@ export class LogsController {
     return this.bluetooth.getSessions({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       startTime: dto.startTime,
       endTime: dto.endTime,
       deviceMac: dto.deviceMac,
@@ -510,6 +594,7 @@ export class LogsController {
     const result = await this.bluetooth.getSessionDetail({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       linkCode,
     });
     if (!result) {
@@ -531,6 +616,7 @@ export class LogsController {
     return this.bluetooth.analyzeCommandChains({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       startTime: dto.startTime,
       endTime: dto.endTime,
       deviceMac: dto.deviceMac,
@@ -547,6 +633,7 @@ export class LogsController {
     return this.bluetooth.detectAnomalies({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       startTime: dto.startTime,
       endTime: dto.endTime,
       deviceMac: dto.deviceMac,
@@ -562,6 +649,7 @@ export class LogsController {
     return this.bluetooth.getErrorDistribution({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       startTime: dto.startTime,
       endTime: dto.endTime,
       deviceMac: dto.deviceMac,
@@ -601,6 +689,7 @@ export class LogsController {
     return this.bluetooth.detectAnomaliesEnhanced({
       actorUserId: user.userId,
       projectId: dto.projectId,
+      logFileId: dto.logFileId,
       startTime: dto.startTime,
       endTime: dto.endTime,
       deviceMac: dto.deviceMac,

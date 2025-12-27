@@ -38,6 +38,14 @@ enum LogFileStatus {
   failed
 }
 
+// Analysis status for log file analysis
+enum AnalysisStatus {
+  pending
+  analyzing
+  completed
+  failed
+}
+
 
 // Bluetooth session status
 enum SessionStatus {
@@ -99,6 +107,7 @@ model Project {
   anomalyPatterns AnomalyPattern[]
   knownIssues     KnownIssue[]
   analysisReports AnalysisReport[]
+  logFileAnalyses LogFileAnalysis[]
 }
 
 model ProjectMember {
@@ -131,6 +140,7 @@ model LogFile {
   project Project @relation(fields: [projectId], references: [id])
   events  LogEvent[]
   stats   LogEventStats[]
+  analysis LogFileAnalysis?
 
   @@index([projectId, uploadedAt])
 }
@@ -367,4 +377,43 @@ model AnalysisReport {
 
   @@index([projectId, createdAt])
   @@index([reportType])
+}
+
+// Automated log file analysis results
+model LogFileAnalysis {
+  id              String         @id @default(uuid()) @db.Uuid
+  logFileId       String         @unique @db.Uuid
+  projectId       String         @db.Uuid
+
+  // Analysis results
+  qualityScore    Int            // 0-100 overall quality score
+  bleQuality      Json?          // BLE quality report
+  backendQuality  Json?          // Backend quality report (HTTP, MQTT)
+  anomalies       Json           @default("[]") // Detected anomaly patterns array
+  knownIssueMatches Json         @default("[]") // Matched known issues array
+
+  // Quick metrics for dashboard
+  totalEvents     Int            @default(0)
+  errorEvents     Int            @default(0)
+  warningEvents   Int            @default(0)
+  sessionCount    Int            @default(0)
+  deviceCount     Int            @default(0)
+
+  // Event flow analysis
+  mainFlowAnalysis     Json?     // Main flow analysis result (startup to real-time data)
+  eventCoverageAnalysis Json?    // Event coverage statistics for all known events
+
+  // Analysis status
+  status          AnalysisStatus @default(pending)
+  errorMessage    String?        // Error message if analysis failed
+  analyzedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  logFile         LogFile        @relation(fields: [logFileId], references: [id], onDelete: Cascade)
+  project         Project        @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([status])
+  @@index([qualityScore])
 }

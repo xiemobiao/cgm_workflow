@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, BarChart3, AlertTriangle, Activity, Layers, RefreshCw, TrendingUp, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { getActiveLogFileId, setActiveLogFileId } from '@/lib/log-file-scope';
 
 type StatsResponse = {
   totalEvents: number;
@@ -77,6 +78,7 @@ function getLevelConfig(level: number): { label: string; color: string; bgClass:
 
 export default function StatsPage() {
   const { localeTag, t } = useI18n();
+  const lastProjectIdRef = useRef<string | null>(null);
   const [projectId, setProjectId] = useState('');
   const [logFileId, setLogFileId] = useState('');
   const [startLocal, setStartLocal] = useState('');
@@ -92,6 +94,30 @@ export default function StatsPage() {
     }, 0);
     return () => window.clearTimeout(id);
   }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const previousProjectId = lastProjectIdRef.current;
+    if (previousProjectId === projectId) return;
+    lastProjectIdRef.current = projectId;
+
+    const stored = getActiveLogFileId(projectId);
+    const nextLogFileId = stored ?? '';
+
+    if (previousProjectId && previousProjectId !== projectId) {
+      setLogFileId(nextLogFileId);
+      return;
+    }
+
+    if (!logFileId.trim() && nextLogFileId) {
+      setLogFileId(nextLogFileId);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setActiveLogFileId(projectId, logFileId.trim() || null);
+  }, [projectId, logFileId]);
 
   useEffect(() => {
     const now = new Date();
@@ -114,7 +140,12 @@ export default function StatsPage() {
         apiFetch<StatsResponse>(`/api/logs/stats?${qs.toString()}`),
         startLocal && endLocal
           ? apiFetch<ErrorHotspotsResponse>(
-              `/api/logs/stats/errors?projectId=${projectId}&startTime=${toIsoFromDatetimeLocal(startLocal)}&endTime=${toIsoFromDatetimeLocal(endLocal)}`
+              `/api/logs/stats/errors?${new URLSearchParams({
+                projectId,
+                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                startTime: toIsoFromDatetimeLocal(startLocal),
+                endTime: toIsoFromDatetimeLocal(endLocal),
+              }).toString()}`
             )
           : Promise.resolve({ items: [] }),
       ]);

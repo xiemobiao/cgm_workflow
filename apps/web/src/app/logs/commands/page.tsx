@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap,
@@ -24,6 +24,7 @@ import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { getActiveLogFileId, setActiveLogFileId } from '@/lib/log-file-scope';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,7 +98,9 @@ function getLevelColor(level: number): string {
 export default function CommandsPage() {
   const { localeTag, t } = useI18n();
   const searchParams = useSearchParams();
+  const lastProjectIdRef = useRef<string | null>(null);
   const [projectId, setProjectId] = useState('');
+  const [logFileId, setLogFileId] = useState('');
   const [deviceMac, setDeviceMac] = useState('');
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
@@ -113,6 +116,8 @@ export default function CommandsPage() {
     const id = window.setTimeout(() => {
       const qpProjectId = searchParams.get('projectId');
       setProjectId(qpProjectId?.trim() || (getProjectId() ?? ''));
+
+      setLogFileId(searchParams.get('logFileId')?.trim() ?? '');
 
       const qpDeviceMac = searchParams.get('deviceMac');
       if (qpDeviceMac?.trim()) {
@@ -152,6 +157,30 @@ export default function CommandsPage() {
     return () => window.clearTimeout(id);
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    const previousProjectId = lastProjectIdRef.current;
+    if (previousProjectId === projectId) return;
+    lastProjectIdRef.current = projectId;
+
+    const stored = getActiveLogFileId(projectId);
+    const nextLogFileId = stored ?? '';
+
+    if (previousProjectId && previousProjectId !== projectId) {
+      setLogFileId(nextLogFileId);
+      return;
+    }
+
+    if (!logFileId.trim() && nextLogFileId) {
+      setLogFileId(nextLogFileId);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setActiveLogFileId(projectId, logFileId.trim() || null);
+  }, [projectId, logFileId]);
+
   const canSearch = useMemo(() => Boolean(projectId && startLocal && endLocal), [projectId, startLocal, endLocal]);
 
   function setPresetRange(hours: number) {
@@ -171,6 +200,7 @@ export default function CommandsPage() {
         endTime: toIsoFromDatetimeLocal(endLocal),
         limit: String(limit),
       });
+      if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
 
       const data = await apiFetch<CommandChainsResponse>(`/api/logs/commands?${qs.toString()}`);
@@ -188,7 +218,7 @@ export default function CommandsPage() {
     if (!projectId || !startLocal || !endLocal) return;
     setAutoSearchDone(true);
     void search();
-  }, [autoSearch, autoSearchDone, projectId, startLocal, endLocal, deviceMac, limit]);
+  }, [autoSearch, autoSearchDone, projectId, logFileId, startLocal, endLocal, deviceMac, limit]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -250,15 +280,26 @@ export default function CommandsPage() {
         animate="animate"
         transition={{ delay: 0.1 }}
       >
-        <Card className="glass border-border/50">
-          <CardContent className="p-4 space-y-4">
-            <ProjectPicker projectId={projectId} onChange={setProjectId} />
+          <Card className="glass border-border/50">
+            <CardContent className="p-4 space-y-4">
+              <ProjectPicker projectId={projectId} onChange={setProjectId} />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">
-                  deviceMac ({t('common.optional')})
+                  {t('logs.logFileIdOptional')}
                 </label>
+                <Input
+                  value={logFileId}
+                  onChange={(e) => setLogFileId(e.target.value)}
+                  placeholder="Filter by logFileId (optional)"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    deviceMac ({t('common.optional')})
+                  </label>
                 <Input
                   value={deviceMac}
                   onChange={(e) => setDeviceMac(e.target.value)}

@@ -3,10 +3,17 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, type CSSProperties } from 'react';
-import shellStyles from '@/components/AppShell.module.css';
-import formStyles from '@/components/Form.module.css';
+import { motion } from 'framer-motion';
+import { Activity, AlertTriangle, BarChart3, FileText, Clock, Database, Bluetooth, TrendingUp } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
+import { setActiveLogFileId } from '@/lib/log-file-scope';
 
 type LogFileDetail = {
   id: string;
@@ -179,6 +186,7 @@ export default function LogFileDetailPage() {
         .then((data) => {
           if (cancelled) return;
           setDetail(data);
+          setActiveLogFileId(data.projectId, fileId);
         })
         .catch((e: unknown) => {
           if (cancelled) return;
@@ -250,9 +258,10 @@ export default function LogFileDetailPage() {
   };
 
   const makeTraceHref = (type: 'deviceSn' | 'deviceMac' | 'linkCode', value: string) => {
-    if (!detail?.projectId || !value.trim()) return '/logs/trace';
+    if (!fileId || !detail?.projectId || !value.trim()) return '/logs/trace';
     const qs = new URLSearchParams({
       projectId: detail.projectId,
+      logFileId: fileId,
       type,
       value: value.trim(),
       auto: '1',
@@ -263,6 +272,19 @@ export default function LogFileDetailPage() {
     }
     return `/logs/trace?${qs.toString()}`;
   };
+
+  const traceOverviewHref = (() => {
+    if (!fileId || !detail?.projectId) return '/logs/trace';
+    const qs = new URLSearchParams({
+      projectId: detail.projectId,
+      logFileId: fileId,
+    });
+    if (detail.minTimestampMs !== null && detail.maxTimestampMs !== null) {
+      qs.set('startTime', new Date(detail.minTimestampMs).toISOString());
+      qs.set('endTime', new Date(detail.maxTimestampMs).toISOString());
+    }
+    return `/logs/trace?${qs.toString()}`;
+  })();
 
   const trackingCoveragePercent = (hitCount: number) => {
     const total = detail?.eventCount ?? 0;
@@ -314,486 +336,549 @@ export default function LogFileDetailPage() {
   }, [bleQuality, bleTabInitialized, bleAdvanced]);
 
   const levelBadge = (label: BleQualityItem['expectedLevelLabel']) => {
-    const base: CSSProperties = {
-      borderColor: undefined,
-      background: undefined,
-      color: undefined,
-    };
-
-    if (label === 'ERROR') return <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>{label}</span>;
-
-    if (label === 'WARN') {
-      base.borderColor = 'rgba(245, 158, 11, 0.35)';
-      base.background = 'rgba(245, 158, 11, 0.12)';
-      base.color = 'rgba(255, 242, 204, 0.95)';
-    } else if (label === 'INFO') {
-      base.borderColor = 'rgba(59, 130, 246, 0.35)';
-      base.background = 'rgba(59, 130, 246, 0.12)';
-      base.color = 'rgba(208, 230, 255, 0.95)';
-    } else {
-      base.borderColor = 'rgba(34, 197, 94, 0.35)';
-      base.background = 'rgba(34, 197, 94, 0.12)';
-      base.color = 'rgba(200, 255, 220, 0.95)';
+    if (label === 'ERROR') {
+      return <Badge variant="destructive">{label}</Badge>;
     }
 
-    return (
-      <span className={shellStyles.badge} style={base}>
-        {label}
-      </span>
-    );
+    if (label === 'WARN') {
+      return <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20">{label}</Badge>;
+    }
+
+    if (label === 'INFO') {
+      return <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20">{label}</Badge>;
+    }
+
+    return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">{label}</Badge>;
   };
 
   return (
-    <div className={`${shellStyles.grid} ${shellStyles.grid2}`}>
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <h1 style={{ fontSize: 20, marginBottom: 0 }}>{t('logs.files.detail.title')}</h1>
-          <div className={formStyles.row}>
-            <Link href="/logs/files" className={shellStyles.button}>
-              {t('common.back')}
-            </Link>
-            <Link href={`/logs/files/${fileId}/viewer`} className={shellStyles.button}>
-              {t('logs.files.viewContent')}
-            </Link>
-            <Link href={logsHref} className={shellStyles.button}>
-              {t('logs.files.openInLogs')}
-            </Link>
-            <button
-              className={`${shellStyles.button} ${shellStyles.buttonDanger}`}
-              type="button"
-              disabled={deleting || loading || !fileId}
-              onClick={() => {
-                const name = detail?.fileName ?? fileId;
-                const ok = window.confirm(t('logs.files.deleteConfirm', { fileName: name }));
-                if (!ok) return;
-                setDeleting(true);
-                setDeleteError('');
-                apiFetch<{ deleted: boolean }>(`/api/logs/files/${fileId}`, { method: 'DELETE' })
-                  .then(() => {
-                    router.push('/logs/files');
-                  })
-                  .catch((e: unknown) => {
-                    const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-                    setDeleteError(msg);
-                  })
-                  .finally(() => setDeleting(false));
-              }}
-            >
-              {t('logs.files.delete')}
-            </button>
-          </div>
-        </div>
-
-        {loading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-        {error ? <div className={formStyles.error}>{error}</div> : null}
-        {deleteError ? <div className={formStyles.error}>{deleteError}</div> : null}
-
-        {detail ? (
-          <>
-            <div className={shellStyles.kvGrid} style={{ marginTop: 14 }}>
-              <div className={shellStyles.kvKey}>{t('logs.files.fileName')}</div>
-              <div className={shellStyles.kvValue}>{detail.fileName}</div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.status')}</div>
-              <div className={shellStyles.kvValue}>
-                <span
-                  className={`${shellStyles.badge}${detail.status === 'failed' ? ` ${shellStyles.badgeDanger}` : ''}`}
-                >
-                  {t(`logs.fileStatus.${detail.status}`)}
-                </span>
-              </div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.uploadedAt')}</div>
-              <div className={shellStyles.kvValue}>
-                {new Date(detail.uploadedAt).toLocaleString(localeTag)}
-              </div>
-
-              <div className={shellStyles.kvKey}>parserVersion</div>
-              <div className={shellStyles.kvValue}>{detail.parserVersion ?? '-'}</div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.events')}</div>
-              <div className={shellStyles.kvValue}>{detail.eventCount}</div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.errors')}</div>
-              <div className={shellStyles.kvValue}>{detail.errorCount}</div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.timeRange')}</div>
-              <div className={shellStyles.kvValue}>
-                {detail.minTimestampMs !== null && detail.maxTimestampMs !== null
-                  ? `${new Date(detail.minTimestampMs).toLocaleString(localeTag)} ~ ${new Date(detail.maxTimestampMs).toLocaleString(localeTag)}`
-                  : t('logs.files.timeRangeUnknown')}
-              </div>
-
-              <div className={shellStyles.kvKey}>{t('table.id')}</div>
-              <div className={shellStyles.kvValue}>{detail.id}</div>
+    <div className="space-y-6 p-6">
+      {/* 页面头部 */}
+      <Card className="glass">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-2xl font-bold">{t('logs.files.detail.title')}</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/logs/files">{t('common.back')}</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/logs/files/${fileId}/viewer`}>{t('logs.files.viewContent')}</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/logs/files/${fileId}/event-flow`}>事件流分析</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={logsHref}>{t('logs.files.openInLogs')}</Link>
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleting || loading || !fileId}
+                onClick={() => {
+                  const name = detail?.fileName ?? fileId;
+                  const ok = window.confirm(t('logs.files.deleteConfirm', { fileName: name }));
+                  if (!ok) return;
+                  setDeleting(true);
+                  setDeleteError('');
+                  apiFetch<{ deleted: boolean }>(`/api/logs/files/${fileId}`, { method: 'DELETE' })
+                    .then(() => {
+                      router.push('/logs/files');
+                    })
+                    .catch((e: unknown) => {
+                      const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+                      setDeleteError(msg);
+                    })
+                    .finally(() => setDeleting(false));
+                }}
+              >
+                {t('logs.files.delete')}
+              </Button>
             </div>
+          </div>
+        </CardHeader>
+        {loading && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          </CardContent>
+        )}
+        {error && (
+          <CardContent>
+            <p className="text-sm text-red-400">{error}</p>
+          </CardContent>
+        )}
+        {deleteError && (
+          <CardContent>
+            <p className="text-sm text-red-400">{deleteError}</p>
+          </CardContent>
+        )}
+      </Card>
 
-            <div style={{ marginTop: 14 }}>
-              <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-                <div className={formStyles.muted}>{t('logs.files.tracking.title')}</div>
-                <Link href="/logs/trace" className={shellStyles.button}>
-                  {t('logs.trace')}
-                </Link>
+      {detail ? (
+        <>
+          {/* 概览仪表盘 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 事件总数卡片 */}
+            <Card className="glass">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30">
+                    <Activity className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-muted-foreground">事件总数</p>
+                    <p className="text-3xl font-semibold tabular-nums">{detail.eventCount.toLocaleString()}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 错误数量卡片 */}
+            <Card className="glass">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30">
+                    <AlertTriangle className="w-6 h-6 text-red-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-muted-foreground">错误数量</p>
+                    <p className="text-3xl font-semibold tabular-nums">{detail.errorCount.toLocaleString()}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 质量评分卡片 */}
+            <Card className="glass">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
+                    <BarChart3 className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-muted-foreground">BLE 质量覆盖率</p>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {bleQuality ? `${Math.round(bleQuality.summary.coverageRatio * 100)}%` : '-'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 文件基本信息卡片 */}
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+                文件信息
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('logs.files.fileName')}</TableCell>
+                    <TableCell>{detail.fileName}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('logs.files.status')}</TableCell>
+                    <TableCell>
+                      <Badge variant={detail.status === 'failed' ? 'destructive' : 'secondary'}>
+                        {t(`logs.fileStatus.${detail.status}`)}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('logs.files.uploadedAt')}</TableCell>
+                    <TableCell>{new Date(detail.uploadedAt).toLocaleString(localeTag)}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">parserVersion</TableCell>
+                    <TableCell>{detail.parserVersion ?? '-'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('logs.files.events')}</TableCell>
+                    <TableCell className="font-semibold tabular-nums">{detail.eventCount.toLocaleString()}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('logs.files.errors')}</TableCell>
+                    <TableCell className="font-semibold tabular-nums">{detail.errorCount.toLocaleString()}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('logs.files.timeRange')}</TableCell>
+                    <TableCell>
+                      {detail.minTimestampMs !== null && detail.maxTimestampMs !== null
+                        ? `${new Date(detail.minTimestampMs).toLocaleString(localeTag)} ~ ${new Date(detail.maxTimestampMs).toLocaleString(localeTag)}`
+                        : t('logs.files.timeRangeUnknown')}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground w-1/3">{t('table.id')}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{detail.id}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Tracking 数据卡片 */}
+          <Card className="glass">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+                  {t('logs.files.tracking.title')}
+                </CardTitle>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={traceOverviewHref}>{t('logs.trace')}</Link>
+                </Button>
               </div>
-
-              <div className={shellStyles.kvGrid} style={{ marginTop: 10 }}>
-                <div className={shellStyles.kvKey}>{t('logs.files.tracking.deviceSn')}</div>
-                <div className={shellStyles.kvValue}>
-                  <span className={formStyles.muted}>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Device SN */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">{t('logs.files.tracking.deviceSn')}</h4>
+                  <span className="text-xs text-muted-foreground">
                     {t('logs.files.tracking.stats', {
                       events: String(detail.tracking.deviceSn.eventCount),
                       distinct: String(detail.tracking.deviceSn.distinctCount),
-                    })}{' '}
-                    ·{' '}
-                    {t('logs.files.tracking.coverage', {
-                      percent: String(
-                        trackingCoveragePercent(detail.tracking.deviceSn.eventCount),
-                      ),
                     })}
                   </span>
-                  {detail.tracking.deviceSn.top.length ? (
-                    <div className={formStyles.row} style={{ marginTop: 6, flexWrap: 'wrap' }}>
-                      {detail.tracking.deviceSn.top.map((item) => (
-                        <Link
-                          key={`sn:${item.value}`}
-                          href={makeTraceHref('deviceSn', item.value)}
-                          className={shellStyles.badge}
-                          style={{ textDecoration: 'none' }}
-                        >
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">覆盖率</span>
+                    <span className="font-semibold tabular-nums">
+                      {trackingCoveragePercent(detail.tracking.deviceSn.eventCount)}%
+                    </span>
+                  </div>
+                  <Progress value={trackingCoveragePercent(detail.tracking.deviceSn.eventCount)} className="h-2" />
+                </div>
+                {detail.tracking.deviceSn.top.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {detail.tracking.deviceSn.top.map((item) => (
+                      <Badge key={`sn:${item.value}`} variant="secondary">
+                        <Link href={makeTraceHref('deviceSn', item.value)} className="cursor-pointer hover:bg-secondary/80">
                           SN:{item.value} ({item.count})
                         </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                <div className={shellStyles.kvKey}>{t('logs.files.tracking.deviceMac')}</div>
-                <div className={shellStyles.kvValue}>
-                  <span className={formStyles.muted}>
+              {/* Device MAC */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">{t('logs.files.tracking.deviceMac')}</h4>
+                  <span className="text-xs text-muted-foreground">
                     {t('logs.files.tracking.stats', {
                       events: String(detail.tracking.deviceMac.eventCount),
                       distinct: String(detail.tracking.deviceMac.distinctCount),
-                    })}{' '}
-                    ·{' '}
-                    {t('logs.files.tracking.coverage', {
-                      percent: String(
-                        trackingCoveragePercent(detail.tracking.deviceMac.eventCount),
-                      ),
                     })}
                   </span>
-                  {detail.tracking.deviceMac.top.length ? (
-                    <div className={formStyles.row} style={{ marginTop: 6, flexWrap: 'wrap' }}>
-                      {detail.tracking.deviceMac.top.map((item) => (
-                        <Link
-                          key={`mac:${item.value}`}
-                          href={makeTraceHref('deviceMac', item.value)}
-                          className={shellStyles.badge}
-                          style={{ textDecoration: 'none' }}
-                        >
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">覆盖率</span>
+                    <span className="font-semibold tabular-nums">
+                      {trackingCoveragePercent(detail.tracking.deviceMac.eventCount)}%
+                    </span>
+                  </div>
+                  <Progress value={trackingCoveragePercent(detail.tracking.deviceMac.eventCount)} className="h-2" />
+                </div>
+                {detail.tracking.deviceMac.top.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {detail.tracking.deviceMac.top.map((item) => (
+                      <Badge key={`mac:${item.value}`} variant="secondary">
+                        <Link href={makeTraceHref('deviceMac', item.value)} className="cursor-pointer hover:bg-secondary/80">
                           MAC:{item.value} ({item.count})
                         </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                <div className={shellStyles.kvKey}>{t('logs.files.tracking.linkCode')}</div>
-                <div className={shellStyles.kvValue}>
-                  <span className={formStyles.muted}>
+              {/* Link Code */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">{t('logs.files.tracking.linkCode')}</h4>
+                  <span className="text-xs text-muted-foreground">
                     {t('logs.files.tracking.stats', {
                       events: String(detail.tracking.linkCode.eventCount),
                       distinct: String(detail.tracking.linkCode.distinctCount),
-                    })}{' '}
-                    ·{' '}
-                    {t('logs.files.tracking.coverage', {
-                      percent: String(
-                        trackingCoveragePercent(detail.tracking.linkCode.eventCount),
-                      ),
                     })}
                   </span>
-                  {detail.tracking.linkCode.top.length ? (
-                    <div className={formStyles.row} style={{ marginTop: 6, flexWrap: 'wrap' }}>
-                      {detail.tracking.linkCode.top.map((item) => (
-                        <Link
-                          key={`lc:${item.value}`}
-                          href={makeTraceHref('linkCode', item.value)}
-                          className={shellStyles.badge}
-                          style={{ textDecoration: 'none' }}
-                        >
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">覆盖率</span>
+                    <span className="font-semibold tabular-nums">
+                      {trackingCoveragePercent(detail.tracking.linkCode.eventCount)}%
+                    </span>
+                  </div>
+                  <Progress value={trackingCoveragePercent(detail.tracking.linkCode.eventCount)} className="h-2" />
+                </div>
+                {detail.tracking.linkCode.top.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {detail.tracking.linkCode.top.map((item) => (
+                      <Badge key={`lc:${item.value}`} variant="secondary">
+                        <Link href={makeTraceHref('linkCode', item.value)} className="cursor-pointer hover:bg-secondary/80">
                           {item.value} ({item.count})
                         </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+
+      {/* 后端质量报告卡片 */}
+      <Card className="glass">
+        <CardHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+                {t('logs.files.backendQuality.title')}
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ eventName: 'network_request_failed' })}>
+                    {t('logs.files.backendQuality.viewHttpFailed')}
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ msgContains: 'ACK超时' })}>
+                    {t('logs.files.backendQuality.viewAckTimeouts')}
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ msgContains: 'MQTT_PUBLISH_FAILED' })}>
+                    {t('logs.files.backendQuality.viewMqttPublishFailed')}
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBackendDetails((v) => !v)}
+                  title={t('logs.files.backendQuality.hint')}
+                >
+                  {backendDetails
+                    ? t('logs.files.backendQuality.hideDetails')
+                    : t('logs.files.backendQuality.showDetails')}
+                  {!backendDetails && backendIssueCount > 0 ? ` (${backendIssueCount})` : null}
+                </Button>
               </div>
             </div>
-          </>
-        ) : null}
-      </div>
-
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: 16, marginBottom: 0 }}>{t('logs.files.backendQuality.title')}</h2>
-          <div className={formStyles.row}>
-            <Link href={makeLogsHref({})} className={shellStyles.button}>
-              {t('logs.files.openInLogs')}
-            </Link>
-            <Link href={makeLogsHref({ eventName: 'network_request_failed' })} className={shellStyles.button}>
-              {t('logs.files.backendQuality.viewHttpFailed')}
-            </Link>
-            <Link href={makeLogsHref({ msgContains: 'ACK超时' })} className={shellStyles.button}>
-              {t('logs.files.backendQuality.viewAckTimeouts')}
-            </Link>
-            <Link href={makeLogsHref({ msgContains: 'MQTT_PUBLISH_FAILED' })} className={shellStyles.button}>
-              {t('logs.files.backendQuality.viewMqttPublishFailed')}
-            </Link>
-            <button
-              type="button"
-              className={shellStyles.button}
-              onClick={() => setBackendDetails((v) => !v)}
-              title={t('logs.files.backendQuality.hint')}
-            >
-              {backendDetails
-                ? t('logs.files.backendQuality.hideDetails')
-                : t('logs.files.backendQuality.showDetails')}
-              {!backendDetails && backendIssueCount > 0 ? ` (${backendIssueCount})` : null}
-            </button>
+            <p className="text-sm text-muted-foreground">{t('logs.files.backendQuality.hint')}</p>
           </div>
-        </div>
+        </CardHeader>
 
-        <div className={formStyles.muted} style={{ marginTop: 8 }}>
-          {t('logs.files.backendQuality.hint')}
-        </div>
+        {backendLoading && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          </CardContent>
+        )}
+        {backendError && (
+          <CardContent>
+            <p className="text-sm text-red-400">{backendError}</p>
+          </CardContent>
+        )}
 
-        {backendLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-        {backendError ? <div className={formStyles.error}>{backendError}</div> : null}
-
-        {backendQuality ? (
-          <>
-	            <div className={shellStyles.kvGrid} style={{ marginTop: 14 }}>
-	              <div className={shellStyles.kvKey}>HTTP</div>
-	              <div className={shellStyles.kvValue}>
-	                <span className={shellStyles.badge}>
-	                  {t('logs.files.backendQuality.httpTotal')}:{backendQuality.summary.http.total}
-	                </span>{' '}
-	                <span
-	                  className={shellStyles.badge}
-	                  style={
-	                    backendQuality.summary.http.success > 0
-	                      ? { borderColor: 'rgba(34, 197, 94, 0.35)' }
-	                      : undefined
-	                  }
-	                >
-	                  {t('logs.files.backendQuality.httpOk')}:{backendQuality.summary.http.success}
-	                </span>{' '}
-	                <span
-	                  className={`${shellStyles.badge}${backendQuality.summary.http.failed > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
-	                >
-	                  {t('logs.files.backendQuality.httpFail')}:{backendQuality.summary.http.failed}
-	                </span>{' '}
-	                <span
-	                  className={shellStyles.badge}
-	                  style={
-	                    backendQuality.summary.http.missingEnd > 0
-	                      ? {
-	                          borderColor: 'rgba(245, 158, 11, 0.35)',
-	                          background: 'rgba(245, 158, 11, 0.12)',
-	                        }
-	                      : undefined
-	                  }
-	                >
-	                  {t('logs.files.backendQuality.httpOpen')}:{backendQuality.summary.http.missingEnd}
-	                </span>{' '}
-	                <span className={shellStyles.badge}>
-	                  {t('logs.files.backendQuality.httpAvg')}:
-	                  {backendQuality.summary.http.tookMsAvg ? Math.round(backendQuality.summary.http.tookMsAvg) : '-'}ms
-	                </span>{' '}
-	                <span className={shellStyles.badge}>
-	                  {t('logs.files.backendQuality.httpP95')}:
-	                  {backendQuality.summary.http.tookMsP95 ? Math.round(backendQuality.summary.http.tookMsP95) : '-'}ms
-	                </span>
-	              </div>
-
-	              <div className={shellStyles.kvKey}>MQTT</div>
-	              <div className={shellStyles.kvValue}>
-	                <span className={shellStyles.badge}>
-	                  {t('logs.files.backendQuality.uploadBatchSent')}:{backendQuality.summary.mqtt.uploadBatchSent}
-	                </span>{' '}
-	                <span
-	                  className={shellStyles.badge}
-	                  style={
-	                    backendQuality.summary.mqtt.publishSuccess > 0
-	                      ? { borderColor: 'rgba(34, 197, 94, 0.35)' }
-	                      : undefined
-	                  }
-	                >
-	                  {t('logs.files.backendQuality.publishOk')}:{backendQuality.summary.mqtt.publishSuccess}
-	                </span>{' '}
-	                <span
-	                  className={`${shellStyles.badge}${backendQuality.summary.mqtt.publishFailed > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
-	                >
-	                  {t('logs.files.backendQuality.publishFail')}:{backendQuality.summary.mqtt.publishFailed}
-	                </span>{' '}
-	                <span
-	                  className={shellStyles.badge}
-	                  style={
-	                    backendQuality.summary.mqtt.ackSuccess > 0
-	                      ? { borderColor: 'rgba(34, 197, 94, 0.35)' }
-	                      : undefined
-	                  }
-	                >
-	                  {t('logs.files.backendQuality.ackOk')}:{backendQuality.summary.mqtt.ackSuccess}
-	                </span>{' '}
-	                <span
-	                  className={shellStyles.badge}
-	                  style={
-	                    backendQuality.summary.mqtt.ackFailed > 0
-	                      ? {
-	                          borderColor: 'rgba(245, 158, 11, 0.35)',
-	                          background: 'rgba(245, 158, 11, 0.12)',
-	                        }
-	                      : undefined
-	                  }
-	                >
-	                  {t('logs.files.backendQuality.ackFail')}:{backendQuality.summary.mqtt.ackFailed}
-	                </span>{' '}
-	                <span
-	                  className={`${shellStyles.badge}${backendQuality.summary.mqtt.ackTimeout > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
-	                >
-	                  {t('logs.files.backendQuality.ackTimeout')}:{backendQuality.summary.mqtt.ackTimeout}
-	                </span>{' '}
-	                <span
-	                  className={shellStyles.badge}
-	                  style={
-	                    backendQuality.summary.mqtt.uploadSkippedNotConnected > 0
-	                      ? {
-	                          borderColor: 'rgba(245, 158, 11, 0.35)',
-	                          background: 'rgba(245, 158, 11, 0.12)',
-	                        }
-	                      : undefined
-	                  }
-	                >
-	                  {t('logs.files.backendQuality.notConnected')}:{backendQuality.summary.mqtt.uploadSkippedNotConnected}
-	                </span>{' '}
-	                <span
-	                  className={`${shellStyles.badge}${backendQuality.summary.mqtt.subscribeFailed > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
-	                >
-	                  {t('logs.files.backendQuality.subscribeFail')}:{backendQuality.summary.mqtt.subscribeFailed}
-	                </span>{' '}
-	                <span
-	                  className={`${shellStyles.badge}${backendQuality.summary.mqtt.issuesMissingDeviceSn > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
-	                  title={t('logs.files.backendQuality.snMissingHint')}
-	                >
-	                  {t('logs.files.backendQuality.snMissing')}:{backendQuality.summary.mqtt.issuesMissingDeviceSn}
-	                </span>
-	              </div>
-	            </div>
-
-            {backendDetails && backendQuality.http.endpoints.length ? (
-              <div style={{ marginTop: 14 }}>
-                <div className={formStyles.muted} style={{ marginBottom: 8 }}>
-                  {t('logs.files.backendQuality.httpTop')}
-                </div>
-                <div className={shellStyles.tableWrap}>
-                  <table className={shellStyles.table}>
-                    <thead>
-                      <tr>
-                        <th>{t('logs.files.backendQuality.httpPath')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.httpOk')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.httpFail')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.httpTotal')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {backendQuality.http.endpoints.map((row) => (
-                        <tr key={`${row.method ?? 'NA'}:${row.path}`}>
-                          <td className={shellStyles.mono}>
-                            {row.method ? `${row.method} ` : ''}
-                            {row.path}
-                          </td>
-                          <td>{row.success}</td>
-                          <td>{row.failed}</td>
-                          <td>{row.total}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+        {backendQuality && (
+          <CardContent className="space-y-6">
+            {/* HTTP 统计 */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Database className="w-4 h-4" />
+                HTTP
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">
+                  {t('logs.files.backendQuality.httpTotal')}:{backendQuality.summary.http.total}
+                </Badge>
+                <Badge className={backendQuality.summary.http.success > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : ''}>
+                  {t('logs.files.backendQuality.httpOk')}:{backendQuality.summary.http.success}
+                </Badge>
+                <Badge variant={backendQuality.summary.http.failed > 0 ? 'destructive' : 'secondary'}>
+                  {t('logs.files.backendQuality.httpFail')}:{backendQuality.summary.http.failed}
+                </Badge>
+                <Badge className={backendQuality.summary.http.missingEnd > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}>
+                  {t('logs.files.backendQuality.httpOpen')}:{backendQuality.summary.http.missingEnd}
+                </Badge>
+                <Badge variant="secondary">
+                  {t('logs.files.backendQuality.httpAvg')}:
+                  {backendQuality.summary.http.tookMsAvg ? Math.round(backendQuality.summary.http.tookMsAvg) : '-'}ms
+                </Badge>
+                <Badge variant="secondary">
+                  {t('logs.files.backendQuality.httpP95')}:
+                  {backendQuality.summary.http.tookMsP95 ? Math.round(backendQuality.summary.http.tookMsP95) : '-'}ms
+                </Badge>
               </div>
-            ) : null}
+            </div>
 
-            {backendDetails && backendQuality.mqtt.issuesByDevice.length ? (
-              <div style={{ marginTop: 14 }}>
-                <div className={formStyles.muted} style={{ marginBottom: 8 }}>
-                  {t('logs.files.backendQuality.mqttDeviceTop')}
-                </div>
-                <div className={shellStyles.tableWrap}>
-                  <table className={shellStyles.table}>
-                    <thead>
-                      <tr>
-                        <th>{t('logs.files.backendQuality.deviceSn')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.ackTimeout')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.ackFail')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.publishFail')}</th>
-                        <th style={{ width: 120 }}>{t('logs.files.backendQuality.notConnected')}</th>
-                        <th style={{ width: 140 }}>{t('table.actions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {backendQuality.mqtt.issuesByDevice.map((row) => (
-                        <tr key={row.deviceSn}>
-                          <td className={shellStyles.mono}>{row.deviceSn}</td>
-                          <td>{row.ackTimeout}</td>
-                          <td>{row.ackFailed}</td>
-                          <td>{row.publishFailed}</td>
-                          <td>{row.uploadSkippedNotConnected}</td>
-                          <td>
-                            <Link href={makeTraceHref('deviceSn', row.deviceSn)} className={shellStyles.button}>
+            {/* MQTT 统计 */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                MQTT
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">
+                  {t('logs.files.backendQuality.uploadBatchSent')}:{backendQuality.summary.mqtt.uploadBatchSent}
+                </Badge>
+                <Badge className={backendQuality.summary.mqtt.publishSuccess > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : ''}>
+                  {t('logs.files.backendQuality.publishOk')}:{backendQuality.summary.mqtt.publishSuccess}
+                </Badge>
+                <Badge variant={backendQuality.summary.mqtt.publishFailed > 0 ? 'destructive' : 'secondary'}>
+                  {t('logs.files.backendQuality.publishFail')}:{backendQuality.summary.mqtt.publishFailed}
+                </Badge>
+                <Badge className={backendQuality.summary.mqtt.ackSuccess > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : ''}>
+                  {t('logs.files.backendQuality.ackOk')}:{backendQuality.summary.mqtt.ackSuccess}
+                </Badge>
+                <Badge className={backendQuality.summary.mqtt.ackFailed > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}>
+                  {t('logs.files.backendQuality.ackFail')}:{backendQuality.summary.mqtt.ackFailed}
+                </Badge>
+                <Badge variant={backendQuality.summary.mqtt.ackTimeout > 0 ? 'destructive' : 'secondary'}>
+                  {t('logs.files.backendQuality.ackTimeout')}:{backendQuality.summary.mqtt.ackTimeout}
+                </Badge>
+                <Badge className={backendQuality.summary.mqtt.uploadSkippedNotConnected > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}>
+                  {t('logs.files.backendQuality.notConnected')}:{backendQuality.summary.mqtt.uploadSkippedNotConnected}
+                </Badge>
+                <Badge variant={backendQuality.summary.mqtt.subscribeFailed > 0 ? 'destructive' : 'secondary'}>
+                  {t('logs.files.backendQuality.subscribeFail')}:{backendQuality.summary.mqtt.subscribeFailed}
+                </Badge>
+                <Badge
+                  variant={backendQuality.summary.mqtt.issuesMissingDeviceSn > 0 ? 'destructive' : 'secondary'}
+                  title={t('logs.files.backendQuality.snMissingHint')}
+                >
+                  {t('logs.files.backendQuality.snMissing')}:{backendQuality.summary.mqtt.issuesMissingDeviceSn}
+                </Badge>
+              </div>
+            </div>
+
+            {/* HTTP 端点详情表格 */}
+            {backendDetails && backendQuality.http.endpoints.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">{t('logs.files.backendQuality.httpTop')}</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('logs.files.backendQuality.httpPath')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.httpOk')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.httpFail')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.httpTotal')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {backendQuality.http.endpoints.map((row) => (
+                      <TableRow key={`${row.method ?? 'NA'}:${row.path}`}>
+                        <TableCell className="font-mono text-xs">
+                          {row.method ? `${row.method} ` : ''}
+                          {row.path}
+                        </TableCell>
+                        <TableCell>{row.success}</TableCell>
+                        <TableCell>{row.failed}</TableCell>
+                        <TableCell>{row.total}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* MQTT 设备问题详情表格 */}
+            {backendDetails && backendQuality.mqtt.issuesByDevice.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">{t('logs.files.backendQuality.mqttDeviceTop')}</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('logs.files.backendQuality.deviceSn')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.ackTimeout')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.ackFail')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.publishFail')}</TableHead>
+                      <TableHead className="w-32">{t('logs.files.backendQuality.notConnected')}</TableHead>
+                      <TableHead className="w-36">{t('table.actions')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {backendQuality.mqtt.issuesByDevice.map((row) => (
+                      <TableRow key={row.deviceSn}>
+                        <TableCell className="font-mono text-xs">{row.deviceSn}</TableCell>
+                        <TableCell>{row.ackTimeout}</TableCell>
+                        <TableCell>{row.ackFailed}</TableCell>
+                        <TableCell>{row.publishFailed}</TableCell>
+                        <TableCell>{row.uploadSkippedNotConnected}</TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={makeTraceHref('deviceSn', row.deviceSn)}>
                               {t('logs.files.backendQuality.traceSn')}
                             </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-            ) : null}
-          </>
-        ) : null}
-      </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: 16, marginBottom: 0 }}>{t('logs.files.bleQuality.title')}</h2>
-          <div className={formStyles.row}>
-            <Link href={makeLogsHref({})} className={shellStyles.button}>
-              {t('logs.files.openInLogs')}
-            </Link>
-            <Link href={makeLogsHref({ eventName: 'PARSER_ERROR' })} className={shellStyles.button}>
-              {t('logs.files.bleQuality.viewParserErrors')}
-            </Link>
-            <button
-              type="button"
-              className={shellStyles.button}
-              onClick={() => setBleAdvanced((v) => !v)}
-              title={t('logs.files.bleQuality.hint')}
-            >
-              {bleAdvanced
-                ? t('logs.files.bleQuality.hideAdvanced')
-                : t('logs.files.bleQuality.showAdvanced')}
-              {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
-            </button>
+      {/* BLE 质量报告卡片 */}
+      <Card className="glass">
+        <CardHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Bluetooth className="w-4 h-4" />
+                {t('logs.files.bleQuality.title')}
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ eventName: 'PARSER_ERROR' })}>
+                    {t('logs.files.bleQuality.viewParserErrors')}
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBleAdvanced((v) => !v)}
+                  title={t('logs.files.bleQuality.hint')}
+                >
+                  {bleAdvanced
+                    ? t('logs.files.bleQuality.hideAdvanced')
+                    : t('logs.files.bleQuality.showAdvanced')}
+                  {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
+                </Button>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">{t('logs.files.bleQuality.hint')}</p>
           </div>
-        </div>
+        </CardHeader>
 
-        <div className={formStyles.muted} style={{ marginTop: 8 }}>
-          {t('logs.files.bleQuality.hint')}
-        </div>
-
-        {bleLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-        {bleError ? <div className={formStyles.error}>{bleError}</div> : null}
+        {bleLoading && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          </CardContent>
+        )}
+        {bleError && (
+          <CardContent>
+            <p className="text-sm text-red-400">{bleError}</p>
+          </CardContent>
+        )}
 
         {bleQuality ? (
           <>
@@ -832,7 +917,7 @@ export default function LogFileDetailPage() {
                   <button
                     key={tab.key}
                     type="button"
-                    className={shellStyles.badge}
+                    className=""
                     disabled={disabled}
                     onClick={() => setBleTab(tab.key)}
                     style={{
@@ -850,180 +935,158 @@ export default function LogFileDetailPage() {
 
               const renderMissing = () => {
                 if (missingItems.length === 0) {
-                  return <div className={formStyles.muted}>{t('logs.files.bleQuality.emptySection')}</div>;
+                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
                 }
                 return (
-                  <div className={shellStyles.tableWrap}>
-                    <table className={shellStyles.table}>
-                      <thead>
-                        <tr>
-                          <th>{t('logs.files.bleQuality.table.eventName')}</th>
-                          <th>{t('logs.files.bleQuality.table.description')}</th>
-                          <th>{t('logs.files.bleQuality.table.expectedLevel')}</th>
-                          <th>{t('logs.files.bleQuality.table.category')}</th>
-                          <th>{t('logs.files.bleQuality.table.actions')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {missingItems.map((e) => (
-                          <tr key={`${e.category}:${e.eventName}`}>
-                            <td>
-                              <code>{e.eventName}</code>
-                            </td>
-                            <td>{e.description}</td>
-                            <td>{levelBadge(e.expectedLevelLabel)}</td>
-                            <td>{e.category}</td>
-                            <td>
-                              <Link
-                                href={makeLogsHref({ eventName: e.eventName })}
-                                className={shellStyles.badge}
-                                style={{ cursor: 'pointer' }}
-                              >
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('logs.files.bleQuality.table.eventName')}</TableHead>
+                        <TableHead>{t('logs.files.bleQuality.table.description')}</TableHead>
+                        <TableHead className="w-32">{t('logs.files.bleQuality.table.expectedLevel')}</TableHead>
+                        <TableHead className="w-40">{t('logs.files.bleQuality.table.category')}</TableHead>
+                        <TableHead className="w-32">{t('logs.files.bleQuality.table.actions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {missingItems.map((e) => (
+                        <TableRow key={`${e.category}:${e.eventName}`}>
+                          <TableCell className="font-mono text-xs">{e.eventName}</TableCell>
+                          <TableCell>{e.description}</TableCell>
+                          <TableCell>{levelBadge(e.expectedLevelLabel)}</TableCell>
+                          <TableCell>{e.category}</TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={makeLogsHref({ eventName: e.eventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 );
               };
 
               const renderLevelMismatch = () => {
                 if (levelMismatchItems.length === 0) {
-                  return <div className={formStyles.muted}>{t('logs.files.bleQuality.emptySection')}</div>;
+                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
                 }
                 return (
-                  <div className={shellStyles.tableWrap}>
-                    <table className={shellStyles.table}>
-                      <thead>
-                        <tr>
-                          <th>{t('logs.files.bleQuality.table.eventName')}</th>
-                          <th>{t('logs.files.bleQuality.table.description')}</th>
-                          <th>{t('logs.files.bleQuality.table.expectedLevel')}</th>
-                          <th>{t('logs.files.bleQuality.table.counts')}</th>
-                          <th>{t('logs.files.bleQuality.table.actions')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {levelMismatchItems.map((e) => (
-                          <tr key={`${e.category}:${e.eventName}`}>
-                            <td>
-                              <code>{e.eventName}</code>
-                            </td>
-                            <td>{e.description}</td>
-                            <td>{levelBadge(e.expectedLevelLabel)}</td>
-                            <td className={formStyles.muted}>
-                              DEBUG:{e.countsByLevel['1']} INFO:{e.countsByLevel['2']} WARN:
-                              {e.countsByLevel['3']} ERROR:{e.countsByLevel['4']}
-                            </td>
-                            <td>
-                              <Link
-                                href={makeLogsHref({ eventName: e.eventName })}
-                                className={shellStyles.badge}
-                                style={{ cursor: 'pointer' }}
-                              >
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('logs.files.bleQuality.table.eventName')}</TableHead>
+                        <TableHead>{t('logs.files.bleQuality.table.description')}</TableHead>
+                        <TableHead className="w-32">{t('logs.files.bleQuality.table.expectedLevel')}</TableHead>
+                        <TableHead>{t('logs.files.bleQuality.table.counts')}</TableHead>
+                        <TableHead className="w-32">{t('logs.files.bleQuality.table.actions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {levelMismatchItems.map((e) => (
+                        <TableRow key={`${e.category}:${e.eventName}`}>
+                          <TableCell className="font-mono text-xs">{e.eventName}</TableCell>
+                          <TableCell>{e.description}</TableCell>
+                          <TableCell>{levelBadge(e.expectedLevelLabel)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            DEBUG:{e.countsByLevel['1']} INFO:{e.countsByLevel['2']} WARN:
+                            {e.countsByLevel['3']} ERROR:{e.countsByLevel['4']}
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={makeLogsHref({ eventName: e.eventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 );
               };
 
               const renderNameMismatch = () => {
                 if (nameMismatchItems.length === 0) {
-                  return <div className={formStyles.muted}>{t('logs.files.bleQuality.emptySection')}</div>;
+                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
                 }
                 return (
-                  <div className={shellStyles.tableWrap}>
-                    <table className={shellStyles.table}>
-                      <thead>
-                        <tr>
-                          <th>{t('logs.files.bleQuality.table.eventName')}</th>
-                          <th>{t('logs.files.bleQuality.table.description')}</th>
-                          <th>{t('logs.files.bleQuality.table.matchedEventNames')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {nameMismatchItems.map((e) => (
-                          <tr key={`${e.category}:${e.eventName}`}>
-                            <td>
-                              <code>{e.eventName}</code>
-                            </td>
-                            <td>{e.description}</td>
-                            <td>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-48">{t('logs.files.bleQuality.table.eventName')}</TableHead>
+                        <TableHead>{t('logs.files.bleQuality.table.description')}</TableHead>
+                        <TableHead className="w-80">{t('logs.files.bleQuality.table.matchedEventNames')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {nameMismatchItems.map((e) => (
+                        <TableRow key={`${e.category}:${e.eventName}`}>
+                          <TableCell className="font-mono text-xs">{e.eventName}</TableCell>
+                          <TableCell>{e.description}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
                               {(e.matchedEventNames ?? []).map((n) => (
-                                <Link
-                                  key={n}
-                                  href={makeLogsHref({ eventName: n })}
-                                  style={{ marginRight: 10 }}
-                                >
-                                  <code>{n}</code>
-                                </Link>
+                                <Button key={n} variant="ghost" size="sm" asChild>
+                                  <Link href={makeLogsHref({ eventName: n })}>
+                                    <code className="text-xs">{n}</code>
+                                  </Link>
+                                </Button>
                               ))}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 );
               };
 
               const renderPairChecks = () => {
                 if (pendingPairs.length === 0) {
-                  return <div className={formStyles.muted}>{t('logs.files.bleQuality.emptySection')}</div>;
+                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
                 }
                 return (
-                  <div className={shellStyles.tableWrap}>
-                    <table className={shellStyles.table}>
-                      <thead>
-                        <tr>
-                          <th>{t('logs.files.bleQuality.table.flow')}</th>
-                          <th>{t('logs.files.bleQuality.table.eventName')}</th>
-                          <th>{t('logs.files.bleQuality.table.endEventNames')}</th>
-                          <th>{t('logs.files.bleQuality.table.pendingCount')}</th>
-                          <th>{t('logs.files.bleQuality.table.actions')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pendingPairs.map((p) => (
-                          <tr key={`${p.name}:${p.startEventName}`}>
-                            <td>{p.name}</td>
-                            <td>
-                              <code>{p.startEventName}</code>
-                            </td>
-                            <td className={formStyles.muted}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-40">{t('logs.files.bleQuality.table.flow')}</TableHead>
+                        <TableHead className="w-48">{t('logs.files.bleQuality.table.eventName')}</TableHead>
+                        <TableHead>{t('logs.files.bleQuality.table.endEventNames')}</TableHead>
+                        <TableHead className="w-32">{t('logs.files.bleQuality.table.pendingCount')}</TableHead>
+                        <TableHead className="w-32">{t('logs.files.bleQuality.table.actions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingPairs.map((p) => (
+                        <TableRow key={`${p.name}:${p.startEventName}`}>
+                          <TableCell className="font-medium">{p.name}</TableCell>
+                          <TableCell className="font-mono text-xs">{p.startEventName}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
                               {p.endEventNames.map((n) => (
-                                <code key={n} style={{ marginRight: 10 }}>
+                                <code key={n} className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                                   {n}
                                 </code>
                               ))}
-                            </td>
-                            <td>
-                              <span className={`${shellStyles.badge} ${shellStyles.badgeDanger}`}>
-                                {p.pendingCount}
-                              </span>
-                            </td>
-                            <td>
-                              <Link
-                                href={makeLogsHref({ eventName: p.startEventName })}
-                                className={shellStyles.badge}
-                                style={{ cursor: 'pointer' }}
-                              >
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{p.pendingCount}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={makeLogsHref({ eventName: p.startEventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 );
               };
 
@@ -1045,8 +1108,8 @@ export default function LogFileDetailPage() {
               return (
                 <>
                   <div style={{ marginTop: 14 }}>
-                    <div className={formStyles.label}>{t('logs.files.bleQuality.coverage')}</div>
-                    <div className={formStyles.muted} style={{ marginTop: 6 }}>
+                    <div className="text-sm font-medium">{t('logs.files.bleQuality.coverage')}</div>
+                    <div className="text-sm text-muted-foreground" style={{ marginTop: 6 }}>
                       {bleQuality.summary.okTotal}/{bleQuality.summary.requiredTotal} ({coveragePercent}%)
                     </div>
                     <div
@@ -1069,76 +1132,46 @@ export default function LogFileDetailPage() {
                   </div>
 
                   <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <span
-                      className={`${shellStyles.badge}${bleQuality.summary.missingTotal > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
+                    <Badge
+                      variant={bleQuality.summary.missingTotal > 0 ? 'destructive' : 'secondary'}
                       title={t('logs.files.bleQuality.missing')}
                     >
                       {t('logs.files.bleQuality.missing')}: {bleQuality.summary.missingTotal}
-                    </span>
+                    </Badge>
                     {bleAdvanced ? (
                       <>
-                        <span
-                          className={shellStyles.badge}
-                          style={{
-                            borderColor:
-                              bleQuality.summary.levelMismatchTotal > 0
-                                ? 'rgba(245, 158, 11, 0.35)'
-                                : undefined,
-                            background:
-                              bleQuality.summary.levelMismatchTotal > 0
-                                ? 'rgba(245, 158, 11, 0.12)'
-                                : undefined,
-                          }}
+                        <Badge
+                          className={bleQuality.summary.levelMismatchTotal > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}
                           title={t('logs.files.bleQuality.levelMismatch')}
                         >
                           {t('logs.files.bleQuality.levelMismatch')}: {bleQuality.summary.levelMismatchTotal}
-                        </span>
-                        <span
-                          className={shellStyles.badge}
-                          style={{
-                            borderColor:
-                              bleQuality.summary.nameMismatchTotal > 0
-                                ? 'rgba(124, 92, 255, 0.42)'
-                                : undefined,
-                            background:
-                              bleQuality.summary.nameMismatchTotal > 0
-                                ? 'rgba(124, 92, 255, 0.12)'
-                                : undefined,
-                          }}
+                        </Badge>
+                        <Badge
+                          className={bleQuality.summary.nameMismatchTotal > 0 ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : ''}
                           title={t('logs.files.bleQuality.nameMismatch')}
                         >
                           {t('logs.files.bleQuality.nameMismatch')}: {bleQuality.summary.nameMismatchTotal}
-                        </span>
+                        </Badge>
                       </>
                     ) : null}
-                    <span
-                      className={`${shellStyles.badge}${bleQuality.parser.parserErrorCount > 0 ? ` ${shellStyles.badgeDanger}` : ''}`}
+                    <Badge
+                      variant={bleQuality.parser.parserErrorCount > 0 ? 'destructive' : 'secondary'}
                       title={t('logs.files.bleQuality.parserErrors')}
                     >
                       {t('logs.files.bleQuality.parserErrors')}: {bleQuality.parser.parserErrorCount}
-                    </span>
-                    <span
-                      className={shellStyles.badge}
-                      style={{
-                        borderColor:
-                          (bleQuality.parser.logan?.blocksFailed ?? 0) > 0
-                            ? 'rgba(245, 158, 11, 0.35)'
-                            : undefined,
-                        background:
-                          (bleQuality.parser.logan?.blocksFailed ?? 0) > 0
-                            ? 'rgba(245, 158, 11, 0.12)'
-                            : undefined,
-                      }}
+                    </Badge>
+                    <Badge
+                      className={(bleQuality.parser.logan?.blocksFailed ?? 0) > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}
                       title={t('logs.files.bleQuality.logan')}
                     >
                       {t('logs.files.bleQuality.logan')}:{' '}
                       {bleQuality.parser.logan
                         ? `${bleQuality.parser.logan.blocksFailed}/${bleQuality.parser.logan.blocksTotal} ${t('logs.files.bleQuality.loganFailedBlocks')}`
                         : '-'}
-                    </span>
+                    </Badge>
                   </div>
 
-                  <div className={formStyles.row} style={{ marginTop: 14 }}>
+                  <div className="flex items-center gap-2" style={{ marginTop: 14 }}>
                     {tabItems.map(tabButton)}
                   </div>
 
@@ -1148,7 +1181,7 @@ export default function LogFileDetailPage() {
             })()}
           </>
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

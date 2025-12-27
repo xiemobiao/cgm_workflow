@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AnomalyType, Prisma, SessionStatus } from '@prisma/client';
+import { ApiException } from '../common/api-exception';
 import { PrismaService } from '../database/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
 
@@ -325,10 +326,25 @@ export class BluetoothService {
     return patterns.some((p) => upper.includes(p.toUpperCase()));
   }
 
+  private async assertLogFileInProject(params: { projectId: string; logFileId: string }) {
+    const found = await this.prisma.logFile.findFirst({
+      where: { id: params.logFileId, projectId: params.projectId },
+      select: { id: true },
+    });
+    if (!found) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+  }
+
   // Get session list with filtering
   async getSessions(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     startTime?: string;
     endTime?: string;
     deviceMac?: string;
@@ -341,6 +357,19 @@ export class BluetoothService {
       projectId: params.projectId,
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
+
+    if (params.logFileId) {
+      return this.getSessionsFromLogFile({
+        actorUserId: params.actorUserId,
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        deviceMac: params.deviceMac,
+        status: params.status,
+        limit: params.limit,
+      });
+    }
 
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
     const where: Prisma.DeviceSessionWhereInput = {
@@ -384,10 +413,146 @@ export class BluetoothService {
     };
   }
 
+  private async getSessionsFromLogFile(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId: string;
+    startTime?: string;
+    endTime?: string;
+    deviceMac?: string;
+    status?: SessionStatus;
+    limit?: number;
+  }) {
+    await this.assertLogFileInProject({
+      projectId: params.projectId,
+      logFileId: params.logFileId,
+    });
+
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+    const startMs = params.startTime
+      ? BigInt(new Date(params.startTime).getTime())
+      : null;
+    const endMs = params.endTime ? BigInt(new Date(params.endTime).getTime()) : null;
+
+    const sessionGroups = await this.prisma.logEvent.groupBy({
+      by: ['linkCode'],
+      where: {
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+        linkCode: { not: null },
+      },
+      _min: { timestampMs: true },
+      _max: { timestampMs: true },
+    });
+
+    const sortedLinkCodes = sessionGroups
+      .map((g) => ({
+        linkCode: g.linkCode,
+        startTimeMs: g._min.timestampMs,
+        endTimeMs: g._max.timestampMs,
+      }))
+      .filter(
+        (g): g is { linkCode: string; startTimeMs: bigint; endTimeMs: bigint } =>
+          typeof g.linkCode === 'string' && g.startTimeMs !== null && g.endTimeMs !== null,
+      )
+      .filter((g) => {
+        if (startMs !== null && g.startTimeMs < startMs) return false;
+        if (endMs !== null && g.endTimeMs > endMs) return false;
+        return true;
+      })
+      .sort((a, b) => Number(b.startTimeMs) - Number(a.startTimeMs))
+      .map((g) => g.linkCode);
+
+    const batchSize = 50;
+    const matched: Array<{
+      id: string;
+      linkCode: string;
+      deviceMac: string | null;
+      startTimeMs: number;
+      endTimeMs: number | null;
+      durationMs: number | null;
+      status: SessionStatus;
+      eventCount: number;
+      errorCount: number;
+      commandCount: number;
+      sdkVersion: string | null;
+      appId: string | null;
+    }> = [];
+
+    for (let offset = 0; offset < sortedLinkCodes.length; offset += batchSize) {
+      const linkCodes = sortedLinkCodes.slice(offset, offset + batchSize);
+      if (linkCodes.length === 0) break;
+
+      const events = await this.prisma.logEvent.findMany({
+        where: {
+          projectId: params.projectId,
+          logFileId: params.logFileId,
+          linkCode: { in: linkCodes },
+        },
+        orderBy: [{ linkCode: 'asc' }, { timestampMs: 'asc' }, { id: 'asc' }],
+        select: {
+          linkCode: true,
+          id: true,
+          eventName: true,
+          level: true,
+          timestampMs: true,
+          sdkVersion: true,
+          appId: true,
+          terminalInfo: true,
+          deviceMac: true,
+          errorCode: true,
+          requestId: true,
+        },
+      });
+
+      const byLinkCode = new Map<string, typeof events>();
+      for (const e of events) {
+        if (!e.linkCode) continue;
+        const list = byLinkCode.get(e.linkCode);
+        if (list) list.push(e);
+        else byLinkCode.set(e.linkCode, [e]);
+      }
+
+      for (const linkCode of linkCodes) {
+        const list = byLinkCode.get(linkCode);
+        if (!list || list.length === 0) continue;
+
+        const meta = this.analyzeSessionEvents(list);
+        const item = {
+          id: `logFile:${params.logFileId}:${linkCode}`,
+          linkCode,
+          deviceMac: meta.deviceMac,
+          startTimeMs: Number(meta.startTimeMs),
+          endTimeMs: Number(meta.endTimeMs),
+          durationMs: meta.durationMs,
+          status: meta.status,
+          eventCount: meta.eventCount,
+          errorCount: meta.errorCount,
+          commandCount: meta.commandCount,
+          sdkVersion: meta.sdkVersion,
+          appId: meta.appId,
+        };
+
+        if (params.deviceMac && item.deviceMac !== params.deviceMac) continue;
+        if (params.status && item.status !== params.status) continue;
+
+        matched.push(item);
+        if (matched.length > limit) break;
+      }
+
+      if (matched.length > limit) break;
+    }
+
+    const hasMore = matched.length > limit;
+    const items = hasMore ? matched.slice(0, limit) : matched;
+    return { items, hasMore };
+  }
+
   // Get session detail with timeline
   async getSessionDetail(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     linkCode: string;
   }) {
     await this.rbac.requireProjectRoles({
@@ -395,6 +560,93 @@ export class BluetoothService {
       projectId: params.projectId,
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
+
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+
+      const events = await this.prisma.logEvent.findMany({
+        where: {
+          projectId: params.projectId,
+          logFileId: params.logFileId,
+          linkCode: params.linkCode,
+        },
+        orderBy: { timestampMs: 'asc' },
+        select: {
+          id: true,
+          eventName: true,
+          level: true,
+          timestampMs: true,
+          msgJson: true,
+          requestId: true,
+          errorCode: true,
+          threadName: true,
+          sdkVersion: true,
+          appId: true,
+          terminalInfo: true,
+          deviceMac: true,
+        },
+      });
+
+      if (events.length === 0) {
+        return null;
+      }
+
+      const meta = this.analyzeSessionEvents(
+        events.map((e) => ({
+          id: e.id,
+          eventName: e.eventName,
+          level: e.level,
+          timestampMs: e.timestampMs,
+          sdkVersion: e.sdkVersion,
+          appId: e.appId,
+          terminalInfo: e.terminalInfo,
+          deviceMac: e.deviceMac,
+          errorCode: e.errorCode,
+          requestId: e.requestId,
+        })),
+      );
+
+      const timeline = this.buildSessionTimeline(events);
+      const commandChains = this.extractCommandChains(events);
+
+      return {
+        session: {
+          id: `logFile:${params.logFileId}:${params.linkCode}`,
+          linkCode: params.linkCode,
+          deviceMac: meta.deviceMac,
+          startTimeMs: Number(meta.startTimeMs),
+          endTimeMs: Number(meta.endTimeMs),
+          durationMs: meta.durationMs,
+          status: meta.status,
+          eventCount: meta.eventCount,
+          errorCount: meta.errorCount,
+          commandCount: meta.commandCount,
+          scanStartMs: meta.scanStartMs ? Number(meta.scanStartMs) : null,
+          pairStartMs: meta.pairStartMs ? Number(meta.pairStartMs) : null,
+          connectStartMs: meta.connectStartMs ? Number(meta.connectStartMs) : null,
+          connectedMs: meta.connectedMs ? Number(meta.connectedMs) : null,
+          disconnectMs: meta.disconnectMs ? Number(meta.disconnectMs) : null,
+          sdkVersion: meta.sdkVersion,
+          appId: meta.appId,
+          terminalInfo: meta.terminalInfo,
+        },
+        timeline,
+        commandChains,
+        events: events.map((e) => ({
+          id: e.id,
+          eventName: e.eventName,
+          level: e.level,
+          timestampMs: Number(e.timestampMs),
+          msg: this.extractMsgPreview(e.msgJson),
+          requestId: e.requestId,
+          errorCode: e.errorCode,
+          threadName: e.threadName,
+        })),
+      };
+    }
 
     const session = await this.prisma.deviceSession.findUnique({
       where: {
@@ -610,6 +862,7 @@ export class BluetoothService {
   async analyzeCommandChains(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     startTime: string;
     endTime: string;
     deviceMac?: string;
@@ -621,6 +874,13 @@ export class BluetoothService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
@@ -631,6 +891,9 @@ export class BluetoothService {
       requestId: { not: null },
     };
 
+    if (params.logFileId) {
+      where.logFileId = params.logFileId;
+    }
     if (params.deviceMac) {
       where.deviceMac = params.deviceMac;
     }
@@ -698,6 +961,7 @@ export class BluetoothService {
   async detectAnomalies(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     startTime: string;
     endTime: string;
     deviceMac?: string;
@@ -708,6 +972,13 @@ export class BluetoothService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
 
@@ -716,6 +987,9 @@ export class BluetoothService {
       timestampMs: { gte: startMs, lte: endMs },
     };
 
+    if (params.logFileId) {
+      where.logFileId = params.logFileId;
+    }
     if (params.deviceMac) {
       where.deviceMac = params.deviceMac;
     }
@@ -821,6 +1095,7 @@ export class BluetoothService {
   async getErrorDistribution(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     startTime: string;
     endTime: string;
     deviceMac?: string;
@@ -831,6 +1106,13 @@ export class BluetoothService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
 
@@ -840,6 +1122,9 @@ export class BluetoothService {
       OR: [{ level: { gte: 3 } }, { errorCode: { not: null } }],
     };
 
+    if (params.logFileId) {
+      where.logFileId = params.logFileId;
+    }
     if (params.deviceMac) {
       where.deviceMac = params.deviceMac;
     }
@@ -931,8 +1216,8 @@ export class BluetoothService {
     const contextSize = params.contextSize ?? 10;
 
     // Get the target event
-    const targetEvent = await this.prisma.logEvent.findUnique({
-      where: { id: params.eventId },
+    const targetEvent = await this.prisma.logEvent.findFirst({
+      where: { id: params.eventId, projectId: params.projectId },
       select: {
         id: true,
         eventName: true,
@@ -952,12 +1237,18 @@ export class BluetoothService {
       return null;
     }
 
+    const contextBaseWhere: Prisma.LogEventWhereInput = {
+      projectId: params.projectId,
+    };
+    if (targetEvent.logFileId) {
+      contextBaseWhere.logFileId = targetEvent.logFileId;
+    }
+
     // Get context events (before and after)
     const [beforeEvents, afterEvents] = await Promise.all([
       this.prisma.logEvent.findMany({
         where: {
-          projectId: params.projectId,
-          logFileId: targetEvent.logFileId,
+          ...contextBaseWhere,
           timestampMs: { lt: targetEvent.timestampMs },
         },
         orderBy: { timestampMs: 'desc' },
@@ -974,8 +1265,7 @@ export class BluetoothService {
       }),
       this.prisma.logEvent.findMany({
         where: {
-          projectId: params.projectId,
-          logFileId: targetEvent.logFileId,
+          ...contextBaseWhere,
           timestampMs: { gt: targetEvent.timestampMs },
         },
         orderBy: { timestampMs: 'asc' },
@@ -996,14 +1286,20 @@ export class BluetoothService {
     const errorAnalysis = this.analyzeErrorPattern(targetEvent.eventName, targetEvent.errorCode);
 
     // Find related events (same linkCode or requestId)
-    const relatedEvents = await this.findRelatedEvents(params.projectId, targetEvent);
+    const relatedEvents = await this.findRelatedEvents(
+      params.projectId,
+      targetEvent,
+      targetEvent.logFileId,
+    );
 
     // Build connection flow context
-    const flowContext = this.analyzeConnectionFlow([
-      ...beforeEvents.reverse(),
-      targetEvent,
-      ...afterEvents,
-    ]);
+    const beforeChronological = [...beforeEvents].reverse();
+    const flowContext = this.analyzeConnectionFlow(
+      [...beforeChronological, targetEvent, ...afterEvents].map((e) => ({
+        eventName: e.eventName,
+        level: e.level,
+      })),
+    );
 
     return {
       event: {
@@ -1017,7 +1313,7 @@ export class BluetoothService {
         sdkVersion: targetEvent.sdkVersion,
       },
       context: {
-        before: beforeEvents.reverse().map((e) => ({
+        before: beforeChronological.map((e) => ({
           id: e.id,
           eventName: e.eventName,
           level: e.level,
@@ -1090,6 +1386,7 @@ export class BluetoothService {
       requestId: string | null;
       timestampMs: bigint;
     },
+    logFileId?: string | null,
   ) {
     const conditions: Prisma.LogEventWhereInput[] = [];
 
@@ -1104,11 +1401,16 @@ export class BluetoothService {
       return [];
     }
 
+    const where: Prisma.LogEventWhereInput = {
+      projectId,
+      OR: conditions,
+    };
+    if (logFileId) {
+      where.logFileId = logFileId;
+    }
+
     const related = await this.prisma.logEvent.findMany({
-      where: {
-        projectId,
-        OR: conditions,
-      },
+      where,
       orderBy: { timestampMs: 'asc' },
       take: 50,
       select: {
@@ -1189,6 +1491,7 @@ export class BluetoothService {
   async detectAnomaliesEnhanced(params: {
     actorUserId: string;
     projectId: string;
+    logFileId?: string;
     startTime: string;
     endTime: string;
     deviceMac?: string;
@@ -1199,6 +1502,13 @@ export class BluetoothService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
     const startMs = BigInt(new Date(params.startTime).getTime());
     const endMs = BigInt(new Date(params.endTime).getTime());
 
@@ -1207,6 +1517,9 @@ export class BluetoothService {
       timestampMs: { gte: startMs, lte: endMs },
     };
 
+    if (params.logFileId) {
+      where.logFileId = params.logFileId;
+    }
     if (params.deviceMac) {
       where.deviceMac = params.deviceMac;
     }

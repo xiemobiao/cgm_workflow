@@ -23,6 +23,8 @@ type LogFileItem = {
   uploadedAt: string;
   eventCount: number;
   errorCount: number;
+  qualityScore: number | null;
+  analysisStatus: 'pending' | 'analyzing' | 'completed' | 'failed' | null;
 };
 
 type ListResponse = { items: LogFileItem[]; nextCursor: string | null };
@@ -271,6 +273,9 @@ export default function LogFilesPage() {
                         <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-4 px-4">
                           {t('logs.files.errors')}
                         </th>
+                        <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wider py-4 px-4">
+                          Quality
+                        </th>
                         <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-4 px-4 w-10">
                         </th>
                       </tr>
@@ -324,6 +329,35 @@ export default function LogFilesPage() {
                                 </span>
                               ) : (
                                 <span className="text-sm tabular-nums text-muted-foreground">0</span>
+                              )}
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {f.analysisStatus === 'completed' && f.qualityScore !== null ? (
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs gap-1 ${
+                                    f.qualityScore >= 80
+                                      ? 'text-emerald-400 border-emerald-500/30'
+                                      : f.qualityScore >= 60
+                                        ? 'text-amber-400 border-amber-500/30'
+                                        : 'text-red-400 border-red-500/30'
+                                  }`}
+                                >
+                                  <Activity className="w-3 h-3" />
+                                  {f.qualityScore}
+                                </Badge>
+                              ) : f.analysisStatus === 'analyzing' ? (
+                                <Badge variant="outline" className="text-xs gap-1 text-blue-400 border-blue-500/30">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Analyzing
+                                </Badge>
+                              ) : f.analysisStatus === 'failed' ? (
+                                <Badge variant="outline" className="text-xs gap-1 text-red-400 border-red-500/30">
+                                  <XCircle className="w-3 h-3" />
+                                  Failed
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </td>
                             <td className="py-4 px-4 text-right">

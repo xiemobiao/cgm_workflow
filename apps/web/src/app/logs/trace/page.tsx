@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle, Tag } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { getActiveLogFileId, setActiveLogFileId } from '@/lib/log-file-scope';
 
 type TraceItem = {
   id: string;
@@ -148,9 +149,11 @@ const traceTypeOptions = [
 export default function TracePage() {
   const { localeTag, t } = useI18n();
   const searchParams = useSearchParams();
+  const lastProjectIdRef = useRef<string | null>(null);
   const [projectId, setProjectId] = useState('');
   const [traceType, setTraceType] = useState<'linkCode' | 'requestId' | 'deviceMac' | 'deviceSn'>('linkCode');
   const [traceValue, setTraceValue] = useState('');
+  const [logFileId, setLogFileId] = useState('');
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
   const [loading, setLoading] = useState(false);
@@ -177,6 +180,8 @@ export default function TracePage() {
         setTraceValue(qpValue.trim());
       }
 
+      setLogFileId(searchParams.get('logFileId')?.trim() ?? '');
+
       const qpStart = searchParams.get('startTime');
       const qpEnd = searchParams.get('endTime');
       const startDate = qpStart ? new Date(qpStart) : null;
@@ -202,6 +207,30 @@ export default function TracePage() {
     return () => window.clearTimeout(id);
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    const previousProjectId = lastProjectIdRef.current;
+    if (previousProjectId === projectId) return;
+    lastProjectIdRef.current = projectId;
+
+    const stored = getActiveLogFileId(projectId);
+    const nextLogFileId = stored ?? '';
+
+    if (previousProjectId && previousProjectId !== projectId) {
+      setLogFileId(nextLogFileId);
+      return;
+    }
+
+    if (!logFileId.trim() && nextLogFileId) {
+      setLogFileId(nextLogFileId);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setActiveLogFileId(projectId, logFileId.trim() || null);
+  }, [projectId, logFileId]);
+
   async function trace() {
     if (!projectId || !traceValue.trim()) return;
     setLoading(true);
@@ -213,6 +242,7 @@ export default function TracePage() {
     try {
       let url = '';
       const qs = new URLSearchParams({ projectId });
+      if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
 
       if (traceType === 'linkCode') {
         url = `/api/logs/trace/link-code/${encodeURIComponent(traceValue.trim())}`;
@@ -239,8 +269,10 @@ export default function TracePage() {
       setRelationLoading(true);
       try {
         if (traceType === 'linkCode') {
+          const devicesQs = new URLSearchParams({ projectId });
+          if (logFileId.trim()) devicesQs.set('logFileId', logFileId.trim());
           const devicesData = await apiFetch<LinkCodeDevicesResponse>(
-            `/api/logs/trace/link-code/${encodeURIComponent(traceValue.trim())}/devices?projectId=${projectId}`
+            `/api/logs/trace/link-code/${encodeURIComponent(traceValue.trim())}/devices?${devicesQs.toString()}`
           );
           setRelatedDevices(devicesData.devices);
         } else if (traceType === 'deviceMac' && startLocal && endLocal) {
@@ -249,6 +281,7 @@ export default function TracePage() {
             startTime: toIsoFromDatetimeLocal(startLocal),
             endTime: toIsoFromDatetimeLocal(endLocal),
           });
+          if (logFileId.trim()) sessionsQs.set('logFileId', logFileId.trim());
           const sessionsData = await apiFetch<DeviceSessionsResponse>(
             `/api/logs/trace/device/${encodeURIComponent(traceValue.trim())}/sessions?${sessionsQs.toString()}`
           );
@@ -273,7 +306,7 @@ export default function TracePage() {
     if ((traceType === 'deviceMac' || traceType === 'deviceSn') && (!startLocal || !endLocal)) return;
     setAutoTraceDone(true);
     void trace();
-  }, [autoTrace, autoTraceDone, projectId, traceType, traceValue, startLocal, endLocal]);
+  }, [autoTrace, autoTraceDone, projectId, traceType, traceValue, logFileId, startLocal, endLocal]);
 
   const selectedTypeOption = traceTypeOptions.find((o) => o.value === traceType) ?? traceTypeOptions[0];
 
@@ -349,6 +382,18 @@ export default function TracePage() {
                     }}
                   />
                 </div>
+              </div>
+
+              <div className="flex-1 min-w-[220px]">
+                <label className="block text-sm text-muted-foreground mb-1.5">
+                  {t('logs.logFileIdOptional')}
+                </label>
+                <Input
+                  value={logFileId}
+                  onChange={(e) => setLogFileId(e.target.value)}
+                  placeholder="Filter by logFileId (optional)"
+                  className="bg-card/50"
+                />
               </div>
 
               {(traceType === 'deviceMac' || traceType === 'deviceSn') && (

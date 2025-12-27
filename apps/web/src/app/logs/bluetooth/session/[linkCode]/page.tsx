@@ -145,6 +145,7 @@ export default function SessionDetailPage() {
   const searchParams = useSearchParams();
   const linkCode = params.linkCode as string;
   const projectId = searchParams.get('projectId') ?? '';
+  const logFileId = searchParams.get('logFileId')?.trim() ?? '';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -159,7 +160,10 @@ export default function SessionDetailPage() {
     setLoading(true);
     setError('');
 
-    apiFetch<SessionDetail>(`/api/logs/bluetooth/session/${encodeURIComponent(linkCode)}?projectId=${projectId}`)
+    const qs = new URLSearchParams({ projectId });
+    if (logFileId) qs.set('logFileId', logFileId);
+
+    apiFetch<SessionDetail>(`/api/logs/bluetooth/session/${encodeURIComponent(linkCode)}?${qs.toString()}`)
       .then((data) => {
         if (cancelled) return;
         setDetail(data);
@@ -177,7 +181,7 @@ export default function SessionDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, linkCode]);
+  }, [projectId, linkCode, logFileId]);
 
   function toggleCommand(requestId: string) {
     setExpandedCommands((prev) => {
@@ -216,11 +220,14 @@ export default function SessionDetailPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Link href={`/logs/bluetooth?projectId=${projectId}`} className={shellStyles.button}>
+            <Link
+              href={`/logs/bluetooth?projectId=${projectId}${logFileId ? `&logFileId=${encodeURIComponent(logFileId)}` : ''}`}
+              className={shellStyles.button}
+            >
               Back to Sessions
             </Link>
             <Link
-              href={`/logs?projectId=${projectId}&linkCode=${encodeURIComponent(linkCode)}`}
+              href={`/logs?projectId=${projectId}&linkCode=${encodeURIComponent(linkCode)}${logFileId ? `&logFileId=${encodeURIComponent(logFileId)}` : ''}`}
               className={shellStyles.button}
             >
               View All Events

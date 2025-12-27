@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { LoganDecryptService } from './logan-decrypt.service';
+import { LogsAnalyzerService } from './logs-analyzer.service';
 
 type OuterLine = {
   c: string;
@@ -420,6 +421,7 @@ export class LogsParserService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly loganDecrypt: LoganDecryptService,
+    private readonly analyzer?: LogsAnalyzerService,
   ) {}
 
   enqueue(logFileId: string) {
@@ -664,6 +666,11 @@ export class LogsParserService {
           logan: loganStats ?? undefined,
         },
       });
+
+      // Trigger automated analysis after successful parsing
+      if (!hadError && this.analyzer) {
+        void this.analyzer.analyzeLogFile(logFile.id);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       try {
