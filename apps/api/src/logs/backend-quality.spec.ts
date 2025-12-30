@@ -93,4 +93,132 @@ describe('buildBackendQualityReport', () => {
     expect(report.mqtt.publishFailures[0]?.deviceSn).toBe('SN-B');
     expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')?.publishFailed).toBe(1);
   });
+
+  it('classifies MQTT events by structured stage/op/result fields', () => {
+    const report = buildBackendQualityReport({
+      httpEvents: [],
+      mqttEvents: [
+        {
+          timestampMs: 1000,
+          eventName: 'info',
+          deviceSn: null,
+          requestId: 'm1',
+          errorCode: null,
+          msgJson: {
+            data: 'custom text without keywords',
+            stage: 'mqtt',
+            op: 'publish',
+            result: 'start',
+            deviceSn: 'SN-A',
+            topic: 'data/SN-A',
+            msgId: 'm1',
+          },
+        },
+        {
+          timestampMs: 1100,
+          eventName: 'COMMON',
+          deviceSn: null,
+          requestId: 'm1',
+          errorCode: null,
+          msgJson: {
+            data: 'custom text without keywords',
+            stage: 'mqtt',
+            op: 'publish',
+            result: 'ok',
+            deviceSn: 'SN-A',
+            topic: 'data/SN-A',
+            msgId: 'm1',
+          },
+        },
+        {
+          timestampMs: 1200,
+          eventName: 'warning',
+          deviceSn: null,
+          requestId: 'm1',
+          errorCode: 'ACK_TIMEOUT',
+          msgJson: {
+            data: 'custom text without keywords',
+            stage: 'mqtt',
+            op: 'ack',
+            result: 'timeout',
+            deviceSn: 'SN-A',
+            msgId: 'm1',
+          },
+        },
+        {
+          timestampMs: 1300,
+          eventName: 'error_occurred',
+          deviceSn: null,
+          requestId: 'm2',
+          errorCode: 'MQTT_PUBLISH_FAILED',
+          msgJson: {
+            data: 'custom text without keywords',
+            stage: 'mqtt',
+            op: 'publish',
+            result: 'fail',
+            deviceSn: 'SN-B',
+            topic: 'data/SN-B',
+            msgId: 'm2',
+          },
+        },
+      ],
+    });
+
+    expect(report.summary.mqtt.uploadBatchSent).toBe(1);
+    expect(report.summary.mqtt.publishSuccess).toBe(1);
+    expect(report.summary.mqtt.ackTimeout).toBe(1);
+    expect(report.summary.mqtt.publishFailed).toBe(1);
+
+    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout).toBe(1);
+    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')?.publishFailed).toBe(1);
+    expect(report.mqtt.publishFailures[0]?.topic).toBe('data/SN-B');
+  });
+
+  it('classifies MQTT events when stage/op/result are only present as tokens in text', () => {
+    const report = buildBackendQualityReport({
+      httpEvents: [],
+      mqttEvents: [
+        {
+          timestampMs: 1000,
+          eventName: 'info',
+          deviceSn: null,
+          requestId: 'm1',
+          errorCode: null,
+          msgJson: 'custom stage:mqtt op:publish result:start deviceSn=SN-A topic=data/SN-A msgId=m1',
+        },
+        {
+          timestampMs: 1100,
+          eventName: 'COMMON',
+          deviceSn: null,
+          requestId: 'm1',
+          errorCode: null,
+          msgJson: 'custom stage:mqtt op:publish result:ok deviceSn=SN-A topic=data/SN-A msgId=m1',
+        },
+        {
+          timestampMs: 1200,
+          eventName: 'warning',
+          deviceSn: null,
+          requestId: 'm1',
+          errorCode: null,
+          msgJson: 'custom stage:mqtt op:ack result:ok deviceSn=SN-A msgId=m1',
+        },
+        {
+          timestampMs: 1300,
+          eventName: 'warning',
+          deviceSn: null,
+          requestId: 'm2',
+          errorCode: null,
+          msgJson: 'custom stage:mqtt op:ack result:timeout deviceSn=SN-B msgId=m2',
+        },
+      ],
+    });
+
+    expect(report.summary.mqtt.uploadBatchSent).toBe(1);
+    expect(report.summary.mqtt.publishSuccess).toBe(1);
+    expect(report.summary.mqtt.ackSuccess).toBe(1);
+    expect(report.summary.mqtt.ackTimeout).toBe(1);
+
+    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout).toBe(0);
+    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')?.ackTimeout).toBe(1);
+  });
 });

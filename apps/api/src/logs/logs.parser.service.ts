@@ -24,6 +24,48 @@ type InnerLine = {
   appInfo?: string;
 };
 
+type TrackingFields = {
+  linkCode: string | null;
+  requestId: string | null;
+  deviceMac: string | null;
+  deviceSn: string | null;
+  errorCode: string | null;
+  // 数据质量字段
+  dataPointCount: number | null;
+  timeSpanHours: number | null;
+  valueMin: number | null;
+  valueMax: number | null;
+  valueAvg: number | null;
+  timestampJumps: number | null;
+  outlierCount: number | null;
+  // 蓝牙参数字段
+  actualMtu: number | null;
+  rssi: number | null;
+  signalQuality: string | null;
+};
+
+function createEmptyTrackingFields(): TrackingFields {
+  return {
+    linkCode: null,
+    requestId: null,
+    deviceMac: null,
+    deviceSn: null,
+    errorCode: null,
+    // 数据质量字段
+    dataPointCount: null,
+    timeSpanHours: null,
+    valueMin: null,
+    valueMax: null,
+    valueAvg: null,
+    timestampJumps: null,
+    outlierCount: null,
+    // 蓝牙参数字段
+    actualMtu: null,
+    rssi: null,
+    signalQuality: null,
+  };
+}
+
 function asRecord(x: unknown): Record<string, unknown> | null {
   if (!x || typeof x !== 'object') return null;
   return x as Record<string, unknown>;
@@ -66,6 +108,32 @@ function pickFirstString(
   return null;
 }
 
+function pickFirstNumber(
+  obj: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const raw = obj[key];
+    const n = asNumber(raw);
+    if (n !== undefined) return n;
+    if (typeof raw === 'bigint') {
+      const bn = Number(raw);
+      if (Number.isFinite(bn)) return bn;
+      continue;
+    }
+    if (typeof raw === 'string') {
+      const t = raw.trim();
+      if (!t) continue;
+      const m = t.match(/-?\d+(?:\.\d+)?/);
+      if (!m) continue;
+      const parsed = Number(m[0]);
+      if (!Number.isFinite(parsed)) continue;
+      return parsed;
+    }
+  }
+  return null;
+}
+
 function looksLikeMac(value: string): boolean {
   // Support common formats:
   // - AA:BB:CC:DD:EE:FF
@@ -92,20 +160,8 @@ function parseKeyValueTokens(text: string): Record<string, string> {
   return tokens;
 }
 
-function extractTrackingFieldsFromText(text: string): {
-  linkCode: string | null;
-  requestId: string | null;
-  deviceMac: string | null;
-  deviceSn: string | null;
-  errorCode: string | null;
-} {
-  const result = {
-    linkCode: null as string | null,
-    requestId: null as string | null,
-    deviceMac: null as string | null,
-    deviceSn: null as string | null,
-    errorCode: null as string | null,
-  };
+function extractTrackingFieldsFromText(text: string): TrackingFields {
+  const result = createEmptyTrackingFields();
 
   const tokens = parseKeyValueTokens(text);
 
@@ -200,6 +256,34 @@ function extractTrackingFieldsFromText(text: string): {
     'ErrorCode',
   ]);
 
+  // 数据质量字段
+  result.dataPointCount = pickFirstNumber(tokens, [
+    'dataPointCount',
+    'data_point_count',
+  ]);
+  result.timeSpanHours = pickFirstNumber(tokens, [
+    'timeSpanHours',
+    'time_span_hours',
+  ]);
+  result.valueMin = pickFirstNumber(tokens, ['valueMin', 'value_min']);
+  result.valueMax = pickFirstNumber(tokens, ['valueMax', 'value_max']);
+  result.valueAvg = pickFirstNumber(tokens, ['valueAvg', 'value_avg']);
+  result.timestampJumps = pickFirstNumber(tokens, [
+    'timestampJumps',
+    'timestamp_jumps',
+  ]);
+  result.outlierCount = pickFirstNumber(tokens, [
+    'outlierCount',
+    'outlier_count',
+  ]);
+
+  // 蓝牙参数字段
+  result.actualMtu = pickFirstNumber(tokens, ['actualMtu', 'actual_mtu', 'mtu']);
+  result.rssi = pickFirstNumber(tokens, ['rssi', 'RSSI']);
+  result.signalQuality =
+    pickFirstString(tokens, ['signalQuality', 'signal_quality', 'quality', 'Quality']) ??
+    null;
+
   return result;
 }
 
@@ -268,44 +352,8 @@ function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
 }
 
 // Extract tracking fields from msg object for flow tracing
-export function extractTrackingFields(msg: unknown): {
-  linkCode: string | null;
-  requestId: string | null;
-  deviceMac: string | null;
-  deviceSn: string | null;
-  errorCode: string | null;
-  // 数据质量字段
-  dataPointCount: number | null;
-  timeSpanHours: number | null;
-  valueMin: number | null;
-  valueMax: number | null;
-  valueAvg: number | null;
-  timestampJumps: number | null;
-  outlierCount: number | null;
-  // 蓝牙参数字段
-  actualMtu: number | null;
-  rssi: number | null;
-  signalQuality: string | null;
-} {
-  const result = {
-    linkCode: null as string | null,
-    requestId: null as string | null,
-    deviceMac: null as string | null,
-    deviceSn: null as string | null,
-    errorCode: null as string | null,
-    // 数据质量字段
-    dataPointCount: null as number | null,
-    timeSpanHours: null as number | null,
-    valueMin: null as number | null,
-    valueMax: null as number | null,
-    valueAvg: null as number | null,
-    timestampJumps: null as number | null,
-    outlierCount: null as number | null,
-    // 蓝牙参数字段
-    actualMtu: null as number | null,
-    rssi: null as number | null,
-    signalQuality: null as string | null,
-  };
+export function extractTrackingFields(msg: unknown): TrackingFields {
+  const result = createEmptyTrackingFields();
 
   const msgString = asString(msg);
   if (msgString !== undefined) {
@@ -459,13 +507,19 @@ export function extractTrackingFields(msg: unknown): {
 
     // 蓝牙参数字段
     if (result.actualMtu === null) {
-      result.actualMtu = pickFirstNumber(obj, ['actualMtu', 'actual_mtu']);
+      result.actualMtu = pickFirstNumber(obj, ['actualMtu', 'actual_mtu', 'mtu']);
     }
     if (result.rssi === null) {
       result.rssi = pickFirstNumber(obj, ['rssi', 'RSSI']);
     }
     if (result.signalQuality === null) {
-      result.signalQuality = pickFirstString(obj, ['signalQuality', 'signal_quality']);
+      result.signalQuality =
+        pickFirstString(obj, [
+          'signalQuality',
+          'signal_quality',
+          'quality',
+          'Quality',
+        ]) ?? null;
     }
   }
 

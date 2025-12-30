@@ -307,6 +307,24 @@ export class LogsController {
     return this.logs.getBackendQualityReport({ actorUserId: user.userId, id: fileId });
   }
 
+  @Get('files/:id/data-continuity')
+  async getDataContinuityReport(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.getDataContinuityReport({ actorUserId: user.userId, id: fileId });
+  }
+
+  @Get('files/:id/stream-session-quality')
+  async getStreamSessionQualityReport(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.getStreamSessionQualityReport({ actorUserId: user.userId, id: fileId });
+  }
+
   @Get('files/:id/analysis')
   async getLogFileAnalysis(
     @CurrentUser() user: CurrentUserPayload,

@@ -1,8 +1,22 @@
 import { extractTrackingFields } from './logs.parser.service';
 
 describe('extractTrackingFields', () => {
+  const emptyExtras = {
+    dataPointCount: null,
+    timeSpanHours: null,
+    valueMin: null,
+    valueMax: null,
+    valueAvg: null,
+    timestampJumps: null,
+    outlierCount: null,
+    actualMtu: null,
+    rssi: null,
+    signalQuality: null,
+  };
+
   it('returns nulls for unsupported msg', () => {
     expect(extractTrackingFields(null)).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,
@@ -10,6 +24,7 @@ describe('extractTrackingFields', () => {
       errorCode: null,
     });
     expect(extractTrackingFields('x')).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,
@@ -17,6 +32,7 @@ describe('extractTrackingFields', () => {
       errorCode: null,
     });
     expect(extractTrackingFields(123)).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,
@@ -31,6 +47,7 @@ describe('extractTrackingFields', () => {
         'linkCode=LC-STR requestId=REQ-STR mac=AA:BB:CC:DD:EE:FF sn=SN-STR code=E1',
       ),
     ).toEqual({
+      ...emptyExtras,
       linkCode: 'LC-STR',
       requestId: 'REQ-STR',
       deviceMac: 'AA:BB:CC:DD:EE:FF',
@@ -41,6 +58,7 @@ describe('extractTrackingFields', () => {
 
   it('parses JSON string msg', () => {
     expect(extractTrackingFields('{"deviceSn":"SN-J","linkCode":"LC-J"}')).toEqual({
+      ...emptyExtras,
       linkCode: 'LC-J',
       requestId: null,
       deviceMac: null,
@@ -51,6 +69,7 @@ describe('extractTrackingFields', () => {
 
   it('derives deviceSn from mqtt topic', () => {
     expect(extractTrackingFields('topic=data_reply/SN-XYZ msgId=1')).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: '1',
       deviceMac: null,
@@ -68,6 +87,7 @@ describe('extractTrackingFields', () => {
         code: 'E8',
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: 'LC-1',
       requestId: 'REQ-1',
       deviceMac: 'AA:BB:CC:DD:EE:FF',
@@ -87,6 +107,7 @@ describe('extractTrackingFields', () => {
         },
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: 'LC-2',
       requestId: 'REQ-2',
       deviceMac: '11:22:33:44:55:66',
@@ -101,6 +122,7 @@ describe('extractTrackingFields', () => {
         deviceId: 'SN12345678',
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,
@@ -115,6 +137,7 @@ describe('extractTrackingFields', () => {
         error: { code: 'E123' },
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,
@@ -129,6 +152,7 @@ describe('extractTrackingFields', () => {
         DeviceMac: 'AA:AA:AA:AA:AA:AA',
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: 'AA:AA:AA:AA:AA:AA',
@@ -143,6 +167,7 @@ describe('extractTrackingFields', () => {
         deviceSn: 'SN-A',
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,
@@ -155,6 +180,7 @@ describe('extractTrackingFields', () => {
         serialNumber: 'SN-B',
       }),
     ).toEqual({
+      ...emptyExtras,
       linkCode: null,
       requestId: null,
       deviceMac: null,

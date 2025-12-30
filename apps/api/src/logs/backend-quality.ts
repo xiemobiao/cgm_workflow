@@ -231,30 +231,72 @@ type HttpAgg = {
   hasFailure: boolean;
 };
 
-function classifyMqttMessage(text: string, errorCode: string | null): {
-  kind:
-    | 'uploadBatchSent'
-    | 'uploadSkippedNotConnected'
-    | 'publishSuccess'
-    | 'publishFailed'
-    | 'ackSuccess'
-    | 'ackFailed'
-    | 'ackTimeout'
-    | 'subscribeFailed'
-    | 'connected'
-    | 'disconnected'
-    | 'other';
+type MqttKind =
+  | 'uploadBatchSent'
+  | 'uploadSkippedNotConnected'
+  | 'publishSuccess'
+  | 'publishFailed'
+  | 'ackSuccess'
+  | 'ackFailed'
+  | 'ackTimeout'
+  | 'subscribeFailed'
+  | 'connected'
+  | 'disconnected'
+  | 'other';
+
+type ExtractedMqttFields = {
+  text: string;
+  stage: string | null;
+  op: string | null;
+  result: string | null;
   msgId: string | null;
   topic: string | null;
   deviceSnCandidate: string | null;
-} {
+};
+
+function extractMqttFields(msgJson: unknown): ExtractedMqttFields {
+  const text = extractMessageText(msgJson);
+
+  const obj = asRecord(msgJson);
   const tokens = parseKeyValueTokens(text);
-  const msgId =
-    pickFirstString(tokens, ['msgId', 'messageId', 'msg_id', 'id']) ?? null;
-  const topic = pickFirstString(tokens, ['topic', 'topicFilter', 'expectedTopic']) ?? null;
+
+  const stageRaw =
+    (obj ? pickFirstString(obj, ['stage', 'Stage']) : null) ??
+    (pickFirstString(tokens, ['stage', 'Stage']) ?? null);
+  const opRaw =
+    (obj ? pickFirstString(obj, ['op', 'Op', 'operation']) : null) ??
+    (pickFirstString(tokens, ['op', 'Op', 'operation']) ?? null);
+  const resultRaw =
+    (obj ? pickFirstString(obj, ['result', 'Result', 'status']) : null) ??
+    (pickFirstString(tokens, ['result', 'Result', 'status']) ?? null);
+  const stage = stageRaw ? stageRaw.trim().toLowerCase() : null;
+  const op = opRaw ? opRaw.trim().toLowerCase() : null;
+  const result = resultRaw ? resultRaw.trim().toLowerCase() : null;
+
+  let msgId =
+    (obj ? pickFirstString(obj, ['msgId', 'messageId', 'msg_id', 'id']) : null) ??
+    (pickFirstString(tokens, ['msgId', 'messageId', 'msg_id', 'id']) ?? null);
+
+  let topic =
+    (obj ? pickFirstString(obj, ['topic', 'topicFilter', 'expectedTopic']) : null) ??
+    (pickFirstString(tokens, ['topic', 'topicFilter', 'expectedTopic']) ?? null);
 
   const deviceSnToken =
-    pickFirstString(tokens, [
+    (obj
+      ? pickFirstString(obj, [
+          'deviceSn',
+          'device_sn',
+          'sn',
+          'SN',
+          'serialNumber',
+          'serial_number',
+          'SerialNumber',
+          'serial',
+          'device',
+          'DeviceSn',
+        ])
+      : null) ??
+    (pickFirstString(tokens, [
       'deviceSn',
       'device_sn',
       'sn',
@@ -265,11 +307,87 @@ function classifyMqttMessage(text: string, errorCode: string | null): {
       'serial',
       'device',
       'DeviceSn',
-    ]) ?? null;
+    ]) ?? null);
+
   const deviceSnCandidate =
     normalizeDeviceSnCandidate(deviceSnToken) ?? extractDeviceSnFromTopic(topic);
 
-  if (text.includes('[Ack]') && (text.includes('ACK超时') || text.includes('超时未收到回执') || text.includes('ACK 超时'))) {
+  return {
+    text,
+    stage,
+    op,
+    result,
+    msgId,
+    topic,
+    deviceSnCandidate,
+  };
+}
+
+function classifyMqttMessage(fields: ExtractedMqttFields, errorCode: string | null): {
+  kind: MqttKind;
+  msgId: string | null;
+  topic: string | null;
+  deviceSnCandidate: string | null;
+} {
+  const { text, stage, op, result, msgId, topic, deviceSnCandidate } = fields;
+  const err = errorCode ? errorCode.trim() : '';
+
+  // Prefer structured fields: stage/op/result
+  if (stage === 'mqtt' && op && result) {
+    if (op === 'publish') {
+      if (result === 'start') {
+        return { kind: 'uploadBatchSent', msgId, topic, deviceSnCandidate };
+      }
+      if (result === 'ok') {
+        return { kind: 'publishSuccess', msgId, topic, deviceSnCandidate };
+      }
+      if (result === 'fail') {
+        return { kind: 'publishFailed', msgId, topic, deviceSnCandidate };
+      }
+      if (result === 'skip') {
+        const looksLikeNotConnected =
+          err === 'MQTT_NOT_CONNECTED' ||
+          text.includes('MQTT 未连接') ||
+          text.includes('未连接');
+        return {
+          kind: looksLikeNotConnected ? 'uploadSkippedNotConnected' : 'other',
+          msgId,
+          topic,
+          deviceSnCandidate,
+        };
+      }
+    }
+
+    if (op === 'ack') {
+      if (result === 'timeout' || err === 'ACK_TIMEOUT') {
+        return { kind: 'ackTimeout', msgId, topic, deviceSnCandidate };
+      }
+      if (result === 'ok') {
+        return { kind: 'ackSuccess', msgId, topic, deviceSnCandidate };
+      }
+      if (result === 'fail') {
+        return { kind: 'ackFailed', msgId, topic, deviceSnCandidate };
+      }
+    }
+
+    if (op === 'subscribe') {
+      if (result === 'fail' || err === 'MQTT_SUBSCRIBE_FAILED') {
+        return { kind: 'subscribeFailed', msgId, topic, deviceSnCandidate };
+      }
+    }
+
+    if (op === 'connect') {
+      if (result === 'ok') {
+        return { kind: 'connected', msgId, topic, deviceSnCandidate };
+      }
+      if (result === 'fail') {
+        return { kind: 'disconnected', msgId, topic, deviceSnCandidate };
+      }
+    }
+  }
+
+  // Fallback to legacy text matching (for old logs or string msg)
+  if (err === 'ACK_TIMEOUT' || (text.includes('[Ack]') && (text.includes('ACK超时') || text.includes('超时未收到回执') || text.includes('ACK 超时')))) {
     return { kind: 'ackTimeout', msgId, topic, deviceSnCandidate };
   }
   if (text.includes('[Ack]') && text.includes('回执失败')) {
@@ -287,20 +405,46 @@ function classifyMqttMessage(text: string, errorCode: string | null): {
   if (text.includes('[Upload]') && text.includes('MQTT 未连接')) {
     return { kind: 'uploadSkippedNotConnected', msgId, topic, deviceSnCandidate };
   }
-  if (text.includes('[MQTT]') && text.includes('监听到已连接')) {
+  if (
+    (text.includes('[MQTT]') && text.includes('监听到已连接')) ||
+    text.includes('MQTT 已连接')
+  ) {
     return { kind: 'connected', msgId, topic, deviceSnCandidate };
   }
-  if (text.includes('[MQTT]') && text.includes('监听到断开连接')) {
+  if (
+    (text.includes('[MQTT]') && text.includes('监听到断开连接')) ||
+    text.includes('MQTT 已断开')
+  ) {
     return { kind: 'disconnected', msgId, topic, deviceSnCandidate };
   }
-  if (text.includes('MQTT_SUBSCRIBE_FAILED') || errorCode === 'MQTT_SUBSCRIBE_FAILED' || (text.includes('[MQTT]') && text.includes('订阅失败'))) {
+  if (
+    text.includes('MQTT_SUBSCRIBE_FAILED') ||
+    err === 'MQTT_SUBSCRIBE_FAILED' ||
+    (text.includes('[MQTT]') && text.includes('订阅失败'))
+  ) {
     return { kind: 'subscribeFailed', msgId, topic, deviceSnCandidate };
   }
-  if (text.includes('MQTT_PUBLISH_FAILED') || errorCode === 'MQTT_PUBLISH_FAILED' || text.includes('MQTT 发布失败') || (text.includes('[MQTT]') && text.includes('发布失败'))) {
+  if (
+    text.includes('MQTT_PUBLISH_FAILED') ||
+    err === 'MQTT_PUBLISH_FAILED' ||
+    text.includes('MQTT 发布失败') ||
+    (text.includes('[MQTT]') && text.includes('发布失败'))
+  ) {
     return { kind: 'publishFailed', msgId, topic, deviceSnCandidate };
   }
   if ((text.includes('[MQTT]') && text.includes('发布成功')) || text.includes('[SdkCore] 发布完成')) {
     return { kind: 'publishSuccess', msgId, topic, deviceSnCandidate };
+  }
+
+  // Structured errorCode fallback (for logs where text is customized)
+  if (err === 'MQTT_SUBSCRIBE_FAILED') {
+    return { kind: 'subscribeFailed', msgId, topic, deviceSnCandidate };
+  }
+  if (err === 'MQTT_PUBLISH_FAILED') {
+    return { kind: 'publishFailed', msgId, topic, deviceSnCandidate };
+  }
+  if (err.startsWith('ACK_') && err !== 'ACK_TIMEOUT') {
+    return { kind: 'ackFailed', msgId, topic, deviceSnCandidate };
   }
 
   return { kind: 'other', msgId, topic, deviceSnCandidate };
@@ -438,10 +582,11 @@ export function buildBackendQualityReport(params: {
   const publishFailures: BackendQualityReport['mqtt']['publishFailures'] = [];
 
   for (const e of params.mqttEvents) {
-    const text = extractMessageText(e.msgJson);
-    if (!text) continue;
+    const fields = extractMqttFields(e.msgJson);
+    if (!fields.text) continue;
 
-    const { kind, msgId, topic, deviceSnCandidate } = classifyMqttMessage(text, e.errorCode);
+    const { kind, msgId, topic, deviceSnCandidate } = classifyMqttMessage(fields, e.errorCode);
+    const text = fields.text;
 
     const deviceSn =
       normalizeDeviceSnCandidate(e.deviceSn) ?? deviceSnCandidate ?? null;

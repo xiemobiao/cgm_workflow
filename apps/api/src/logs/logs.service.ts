@@ -6,7 +6,9 @@ import { PrismaService } from '../database/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
 import { StorageService } from '../storage/storage.service';
 import { buildBackendQualityReport } from './backend-quality';
+import { buildDataContinuityReport } from './data-continuity';
 import { buildBleQualityReport, type LoganDecryptStats } from './ble-quality';
+import { buildStreamSessionQualityReport } from './stream-session-quality';
 import { LogsParserService } from './logs.parser.service';
 
 @Injectable()
@@ -970,9 +972,16 @@ export class LogsService {
           eventName: { in: ['info', 'warning', 'error_occurred', 'COMMON', 'error'] },
           OR: [
             { msgJson: { string_contains: '[Upload]' } },
+            { msgJson: { path: ['data'], string_contains: '[Upload]' } },
             { msgJson: { string_contains: '[Ack]' } },
+            { msgJson: { path: ['data'], string_contains: '[Ack]' } },
             { msgJson: { string_contains: '[MQTT]' } },
+            { msgJson: { path: ['data'], string_contains: '[MQTT]' } },
+            { msgJson: { string_contains: '[SdkCore]' } },
+            { msgJson: { path: ['data'], string_contains: '[SdkCore]' } },
             { msgJson: { string_contains: 'MQTT_' } },
+            { msgJson: { path: ['code'], string_contains: 'MQTT_' } },
+            { errorCode: { startsWith: 'MQTT_' } },
           ],
         },
         select: {
@@ -1000,6 +1009,107 @@ export class LogsService {
         deviceSn: e.deviceSn,
         requestId: e.requestId,
         errorCode: e.errorCode,
+        msgJson: e.msgJson,
+      })),
+    });
+
+    return { logFileId: logFile.id, ...report };
+  }
+
+  async getDataContinuityReport(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+	    const rows = await this.prisma.logEvent.findMany({
+	      where: {
+	        logFileId: logFile.id,
+	        errorCode: {
+	          in: [
+	            'DATA_STREAM_ORDER_BROKEN',
+	            'DATA_STREAM_OUT_OF_ORDER_BUFFERED',
+	            'DATA_STREAM_DUPLICATE_DROPPED',
+	            'DATA_PERSIST_TIMEOUT',
+	            'V3_RT_BUFFER_DROP',
+	          ],
+	        },
+	      },
+	      select: {
+	        timestampMs: true,
+	        deviceSn: true,
+        linkCode: true,
+        requestId: true,
+        errorCode: true,
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+    });
+
+    const report = buildDataContinuityReport({
+      events: rows.map((e) => ({
+        timestampMs: Number(e.timestampMs),
+        deviceSn: e.deviceSn,
+        linkCode: e.linkCode,
+        requestId: e.requestId,
+        errorCode: e.errorCode,
+      })),
+    });
+
+    return { logFileId: logFile.id, ...report };
+  }
+
+  async getStreamSessionQualityReport(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const rows = await this.prisma.logEvent.findMany({
+      where: { logFileId: logFile.id, errorCode: 'DATA_STREAM_SESSION_SUMMARY' },
+      select: {
+        timestampMs: true,
+        deviceSn: true,
+        linkCode: true,
+        requestId: true,
+        msgJson: true,
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+    });
+
+    const report = buildStreamSessionQualityReport({
+      events: rows.map((e) => ({
+        timestampMs: Number(e.timestampMs),
+        deviceSn: e.deviceSn,
+        linkCode: e.linkCode,
+        requestId: e.requestId,
         msgJson: e.msgJson,
       })),
     });

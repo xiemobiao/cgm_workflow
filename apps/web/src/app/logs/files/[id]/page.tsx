@@ -144,6 +144,89 @@ type BackendQualityReport = {
   };
 };
 
+type DataContinuityReport = {
+  logFileId: string;
+  summary: {
+    total: number;
+    orderBroken: number;
+    outOfOrderBuffered: number;
+    duplicateDropped: number;
+    persistTimeout: number;
+    rtBufferDrop: number;
+    issuesMissingDeviceSn: number;
+    issuesMissingLinkCode: number;
+    issuesMissingRequestId: number;
+  };
+  byDevice: Array<{
+    deviceSn: string;
+    total: number;
+    orderBroken: number;
+    outOfOrderBuffered: number;
+    duplicateDropped: number;
+    persistTimeout: number;
+    rtBufferDrop: number;
+  }>;
+  byLinkCode: Array<{
+    linkCode: string;
+    total: number;
+    orderBroken: number;
+    outOfOrderBuffered: number;
+    duplicateDropped: number;
+    persistTimeout: number;
+    rtBufferDrop: number;
+  }>;
+  byRequestId: Array<{
+    requestId: string;
+    total: number;
+    orderBroken: number;
+    outOfOrderBuffered: number;
+    duplicateDropped: number;
+    persistTimeout: number;
+    rtBufferDrop: number;
+  }>;
+};
+
+type StreamSessionQualityReport = {
+  logFileId: string;
+  summary: {
+    total: number;
+    issuesMissingDeviceSn: number;
+    issuesMissingLinkCode: number;
+    issuesMissingRequestId: number;
+    issuesMissingReason: number;
+    issuesMissingSessionStartIndex: number;
+    issuesMissingSessionStartAtMs: number;
+    scoreAvg: number | null;
+    qualityGood: number;
+    qualityWarn: number;
+    qualityBad: number;
+    thresholdWarnBelow: number;
+    thresholdBadBelow: number;
+  };
+  byReason: Array<{ reason: string; total: number }>;
+  byDevice: Array<{ deviceSn: string; total: number }>;
+  byLinkCode: Array<{ linkCode: string; total: number }>;
+  byRequestId: Array<{ requestId: string; total: number }>;
+  sessions: Array<{
+    timestampMs: number;
+    deviceSn: string | null;
+    linkCode: string | null;
+    requestId: string | null;
+    reason: string | null;
+    score: number;
+    quality: 'good' | 'warn' | 'bad';
+    rawStartIndex: number | null;
+    nextExpectedRaw: number | null;
+    lastRaw: number | null;
+    bufferedOutOfOrderCount: number | null;
+    persistedMax: number | null;
+    pendingCallbacks: number | null;
+    sessionStartIndex: number | null;
+    sessionStartAtMs: number | null;
+    sessionElapsedMs: number | null;
+  }>;
+};
+
 export default function LogFileDetailPage() {
   const { localeTag, t } = useI18n();
   const router = useRouter();
@@ -163,6 +246,14 @@ export default function LogFileDetailPage() {
   const [backendLoading, setBackendLoading] = useState(false);
   const [backendError, setBackendError] = useState('');
   const [backendDetails, setBackendDetails] = useState(false);
+  const [dataContinuity, setDataContinuity] = useState<DataContinuityReport | null>(null);
+  const [dataContinuityLoading, setDataContinuityLoading] = useState(false);
+  const [dataContinuityError, setDataContinuityError] = useState('');
+  const [dataContinuityDetails, setDataContinuityDetails] = useState(false);
+  const [streamSessionQuality, setStreamSessionQuality] = useState<StreamSessionQualityReport | null>(null);
+  const [streamSessionQualityLoading, setStreamSessionQualityLoading] = useState(false);
+  const [streamSessionQualityError, setStreamSessionQualityError] = useState('');
+  const [streamSessionQualityDetails, setStreamSessionQualityDetails] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
@@ -174,14 +265,22 @@ export default function LogFileDetailPage() {
       setLoading(true);
       setBleLoading(true);
       setBackendLoading(true);
+      setDataContinuityLoading(true);
+      setStreamSessionQualityLoading(true);
       setError('');
       setBleError('');
       setBackendError('');
+      setDataContinuityError('');
+      setStreamSessionQualityError('');
       setDetail(null);
       setBleQuality(null);
       setBackendQuality(null);
+      setDataContinuity(null);
+      setStreamSessionQuality(null);
       setBleTabInitialized(false);
       setBackendDetails(false);
+      setDataContinuityDetails(false);
+      setStreamSessionQualityDetails(false);
       apiFetch<LogFileDetail>(`/api/logs/files/${fileId}`)
         .then((data) => {
           if (cancelled) return;
@@ -230,6 +329,38 @@ export default function LogFileDetailPage() {
           if (cancelled) return;
           setBackendLoading(false);
         });
+
+      apiFetch<DataContinuityReport>(`/api/logs/files/${fileId}/data-continuity`)
+        .then((data) => {
+          if (cancelled) return;
+          setDataContinuity(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg =
+            e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setDataContinuityError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setDataContinuityLoading(false);
+        });
+
+      apiFetch<StreamSessionQualityReport>(`/api/logs/files/${fileId}/stream-session-quality`)
+        .then((data) => {
+          if (cancelled) return;
+          setStreamSessionQuality(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg =
+            e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setStreamSessionQualityError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setStreamSessionQualityLoading(false);
+        });
     }, 0);
     return () => {
       cancelled = true;
@@ -257,7 +388,7 @@ export default function LogFileDetailPage() {
     return `/logs?${qs.toString()}`;
   };
 
-  const makeTraceHref = (type: 'deviceSn' | 'deviceMac' | 'linkCode', value: string) => {
+  const makeTraceHref = (type: 'deviceSn' | 'deviceMac' | 'linkCode' | 'requestId', value: string) => {
     if (!fileId || !detail?.projectId || !value.trim()) return '/logs/trace';
     const qs = new URLSearchParams({
       projectId: detail.projectId,
@@ -309,6 +440,37 @@ export default function LogFileDetailPage() {
       backendQuality.summary.mqtt.ackTimeout +
       backendQuality.summary.mqtt.subscribeFailed
     : 0;
+  const continuityIssueCount = dataContinuity ? dataContinuity.summary.total : 0;
+  const streamSessionCount = streamSessionQuality ? streamSessionQuality.summary.total : 0;
+
+  const renderOrderBrokenBreakdown = (row: {
+    orderBroken: number;
+    outOfOrderBuffered: number;
+    duplicateDropped: number;
+  }) => {
+    const hasBreakdown = row.outOfOrderBuffered > 0 || row.duplicateDropped > 0;
+    return (
+      <div className="space-y-0.5">
+        <div>{row.orderBroken}</div>
+        {hasBreakdown ? (
+          <div className="text-xs text-muted-foreground">
+            {t('logs.files.dataContinuity.outOfOrderBuffered')}: {row.outOfOrderBuffered} ·{' '}
+            {t('logs.files.dataContinuity.duplicateDropped')}: {row.duplicateDropped}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderSessionScoreBadge = (score: number, quality: 'good' | 'warn' | 'bad') => {
+    if (quality === 'bad') {
+      return <Badge variant="destructive">{score}</Badge>;
+    }
+    if (quality === 'warn') {
+      return <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20">{score}</Badge>;
+    }
+    return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">{score}</Badge>;
+  };
 
   useEffect(() => {
     if (bleAdvanced) return;
@@ -655,7 +817,7 @@ export default function LogFileDetailPage() {
                   </Link>
                 </Button>
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ msgContains: 'ACK超时' })}>
+                  <Link href={makeLogsHref({ errorCode: 'ACK_TIMEOUT' })}>
                     {t('logs.files.backendQuality.viewAckTimeouts')}
                   </Link>
                 </Button>
@@ -830,6 +992,581 @@ export default function LogFileDetailPage() {
                 </Table>
               </div>
             )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* 数据连续性诊断卡片 */}
+      <Card className="glass">
+        <CardHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                {t('logs.files.dataContinuity.title')}
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ eventName: 'warning', msgContains: 'DATA_STREAM_' })}>
+                    {t('logs.files.dataContinuity.viewOrderBroken')}
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_OUT_OF_ORDER_BUFFERED' })}>
+                    {t('logs.files.dataContinuity.viewOutOfOrderBuffered')}
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_DUPLICATE_DROPPED' })}>
+                    {t('logs.files.dataContinuity.viewDuplicateDropped')}
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'DATA_PERSIST_TIMEOUT' })}>
+                    {t('logs.files.dataContinuity.viewPersistTimeout')}
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'V3_RT_BUFFER_DROP' })}>
+                    {t('logs.files.dataContinuity.viewRtBufferDrop')}
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDataContinuityDetails((v) => !v)}
+                  title={t('logs.files.dataContinuity.hint')}
+                >
+                  {dataContinuityDetails
+                    ? t('logs.files.dataContinuity.hideDetails')
+                    : t('logs.files.dataContinuity.showDetails')}
+                  {!dataContinuityDetails && continuityIssueCount > 0 ? ` (${continuityIssueCount})` : null}
+                </Button>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">{t('logs.files.dataContinuity.hint')}</p>
+          </div>
+        </CardHeader>
+
+        {dataContinuityLoading && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          </CardContent>
+        )}
+        {dataContinuityError && (
+          <CardContent>
+            <p className="text-sm text-red-400">{dataContinuityError}</p>
+          </CardContent>
+        )}
+
+        {dataContinuity && (
+          <CardContent className="space-y-4">
+	            <div className="flex items-center gap-2 flex-wrap">
+	              <Badge variant="secondary">
+	                {t('logs.files.dataContinuity.total')}: {dataContinuity.summary.total}
+	              </Badge>
+	              <Badge variant={dataContinuity.summary.orderBroken > 0 ? 'destructive' : 'secondary'}>
+	                {t('logs.files.dataContinuity.orderBroken')}: {dataContinuity.summary.orderBroken}
+	              </Badge>
+	              <Badge
+	                variant={dataContinuity.summary.outOfOrderBuffered > 0 ? 'destructive' : 'secondary'}
+	                title={t('logs.files.dataContinuity.outOfOrderBuffered')}
+	              >
+	                {t('logs.files.dataContinuity.outOfOrderBuffered')}: {dataContinuity.summary.outOfOrderBuffered}
+	              </Badge>
+	              <Badge
+	                variant={dataContinuity.summary.duplicateDropped > 0 ? 'destructive' : 'secondary'}
+	                title={t('logs.files.dataContinuity.duplicateDropped')}
+	              >
+	                {t('logs.files.dataContinuity.duplicateDropped')}: {dataContinuity.summary.duplicateDropped}
+	              </Badge>
+	              <Badge variant={dataContinuity.summary.persistTimeout > 0 ? 'destructive' : 'secondary'}>
+	                {t('logs.files.dataContinuity.persistTimeout')}: {dataContinuity.summary.persistTimeout}
+	              </Badge>
+              <Badge className={dataContinuity.summary.rtBufferDrop > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}>
+                {t('logs.files.dataContinuity.rtBufferDrop')}: {dataContinuity.summary.rtBufferDrop}
+              </Badge>
+              <Badge
+                variant={dataContinuity.summary.issuesMissingDeviceSn > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.dataContinuity.snMissingHint')}
+              >
+                {t('logs.files.dataContinuity.snMissing')}: {dataContinuity.summary.issuesMissingDeviceSn}
+              </Badge>
+              <Badge
+                variant={dataContinuity.summary.issuesMissingLinkCode > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.dataContinuity.linkCodeMissingHint')}
+              >
+                {t('logs.files.dataContinuity.linkCodeMissing')}: {dataContinuity.summary.issuesMissingLinkCode}
+              </Badge>
+              <Badge
+                variant={dataContinuity.summary.issuesMissingRequestId > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.dataContinuity.requestIdMissingHint')}
+              >
+                {t('logs.files.dataContinuity.requestIdMissing')}: {dataContinuity.summary.issuesMissingRequestId}
+              </Badge>
+            </div>
+
+            {dataContinuityDetails ? (
+              <>
+                {dataContinuity.byDevice.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.dataContinuity.deviceTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.dataContinuity.deviceSn')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.orderBroken')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.persistTimeout')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.rtBufferDrop')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.dataContinuity.total')}</TableHead>
+                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+	                        {dataContinuity.byDevice.map((row) => (
+	                          <TableRow key={row.deviceSn}>
+	                            <TableCell className="font-mono text-xs">{row.deviceSn}</TableCell>
+	                            <TableCell>{renderOrderBrokenBreakdown(row)}</TableCell>
+	                            <TableCell>{row.persistTimeout}</TableCell>
+	                            <TableCell>{row.rtBufferDrop}</TableCell>
+	                            <TableCell>{row.total}</TableCell>
+	                            <TableCell>
+	                              <Button variant="outline" size="sm" asChild>
+                                <Link href={makeTraceHref('deviceSn', row.deviceSn)}>
+                                  {t('logs.files.dataContinuity.traceSn')}
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {dataContinuity.byLinkCode.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.dataContinuity.linkCodeTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.dataContinuity.linkCode')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.orderBroken')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.persistTimeout')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.rtBufferDrop')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.dataContinuity.total')}</TableHead>
+                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+	                        {dataContinuity.byLinkCode.map((row) => (
+	                          <TableRow key={row.linkCode}>
+	                            <TableCell className="font-mono text-xs">{row.linkCode}</TableCell>
+	                            <TableCell>{renderOrderBrokenBreakdown(row)}</TableCell>
+	                            <TableCell>{row.persistTimeout}</TableCell>
+	                            <TableCell>{row.rtBufferDrop}</TableCell>
+	                            <TableCell>{row.total}</TableCell>
+	                            <TableCell>
+	                              <Button variant="outline" size="sm" asChild>
+                                <Link href={makeTraceHref('linkCode', row.linkCode)}>
+                                  {t('logs.files.dataContinuity.traceLinkCode')}
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {dataContinuity.byRequestId.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.dataContinuity.requestIdTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.dataContinuity.requestId')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.orderBroken')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.persistTimeout')}</TableHead>
+                          <TableHead className="w-32">{t('logs.files.dataContinuity.rtBufferDrop')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.dataContinuity.total')}</TableHead>
+                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+	                        {dataContinuity.byRequestId.map((row) => (
+	                          <TableRow key={row.requestId}>
+	                            <TableCell className="font-mono text-xs" title={row.requestId}>
+	                              {row.requestId}
+	                            </TableCell>
+	                            <TableCell>{renderOrderBrokenBreakdown(row)}</TableCell>
+	                            <TableCell>{row.persistTimeout}</TableCell>
+	                            <TableCell>{row.rtBufferDrop}</TableCell>
+	                            <TableCell>{row.total}</TableCell>
+	                            <TableCell>
+	                              <Button variant="outline" size="sm" asChild>
+                                <Link href={makeTraceHref('requestId', row.requestId)}>
+                                  {t('logs.files.dataContinuity.traceRequestId')}
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* 数据流会话质量卡片 */}
+      <Card className="glass">
+        <CardHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                {t('logs.files.streamSessionQuality.title')}
+              </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_SESSION_SUMMARY' })}>
+                    {t('logs.files.streamSessionQuality.viewSessions')}
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStreamSessionQualityDetails((v) => !v)}
+                  title={t('logs.files.streamSessionQuality.hint')}
+                >
+                  {streamSessionQualityDetails
+                    ? t('logs.files.streamSessionQuality.hideDetails')
+                    : t('logs.files.streamSessionQuality.showDetails')}
+                  {!streamSessionQualityDetails && streamSessionCount > 0 ? ` (${streamSessionCount})` : null}
+                </Button>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.hint')}</p>
+          </div>
+        </CardHeader>
+
+        {streamSessionQualityLoading && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          </CardContent>
+        )}
+        {streamSessionQualityError && (
+          <CardContent>
+            <p className="text-sm text-red-400">{streamSessionQualityError}</p>
+          </CardContent>
+        )}
+
+        {streamSessionQuality && (
+	          <CardContent className="space-y-4">
+	            <div className="flex items-center gap-2 flex-wrap">
+	              <Badge variant="secondary">
+	                {t('logs.files.streamSessionQuality.total')}: {streamSessionQuality.summary.total}
+	              </Badge>
+	              {(() => {
+	                const avg = streamSessionQuality.summary.scoreAvg;
+	                const title = t('logs.files.streamSessionQuality.scoreHint');
+	                if (avg === null) {
+	                  return (
+	                    <Badge variant="secondary" title={title}>
+	                      {t('logs.files.streamSessionQuality.scoreAvg')}: -
+	                    </Badge>
+	                  );
+	                }
+	                const quality =
+	                  avg < streamSessionQuality.summary.thresholdBadBelow
+	                    ? 'bad'
+	                    : avg < streamSessionQuality.summary.thresholdWarnBelow
+	                      ? 'warn'
+	                      : 'good';
+	                if (quality === 'bad') {
+	                  return (
+	                    <Badge variant="destructive" title={title}>
+	                      {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
+	                    </Badge>
+	                  );
+	                }
+	                if (quality === 'warn') {
+	                  return (
+	                    <Badge
+	                      className="bg-amber-500/10 text-amber-400 border-amber-500/20"
+	                      title={title}
+	                    >
+	                      {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
+	                    </Badge>
+	                  );
+	                }
+	                return (
+	                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20" title={title}>
+	                    {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
+	                  </Badge>
+	                );
+	              })()}
+	              <Badge
+	                className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+	                title={t('logs.files.streamSessionQuality.thresholdHint', {
+	                  warnBelow: String(streamSessionQuality.summary.thresholdWarnBelow),
+	                  badBelow: String(streamSessionQuality.summary.thresholdBadBelow),
+	                })}
+	              >
+	                {t('logs.files.streamSessionQuality.qualityGood')}: {streamSessionQuality.summary.qualityGood}
+	              </Badge>
+	              <Badge
+	                className="bg-amber-500/10 text-amber-400 border-amber-500/20"
+	                title={t('logs.files.streamSessionQuality.thresholdHint', {
+	                  warnBelow: String(streamSessionQuality.summary.thresholdWarnBelow),
+	                  badBelow: String(streamSessionQuality.summary.thresholdBadBelow),
+	                })}
+	              >
+	                {t('logs.files.streamSessionQuality.qualityWarn')} (&lt;
+	                {streamSessionQuality.summary.thresholdWarnBelow}): {streamSessionQuality.summary.qualityWarn}
+	              </Badge>
+	              <Badge
+	                variant="destructive"
+	                title={t('logs.files.streamSessionQuality.thresholdHint', {
+	                  warnBelow: String(streamSessionQuality.summary.thresholdWarnBelow),
+	                  badBelow: String(streamSessionQuality.summary.thresholdBadBelow),
+	                })}
+	              >
+	                {t('logs.files.streamSessionQuality.qualityBad')} (&lt;
+	                {streamSessionQuality.summary.thresholdBadBelow}): {streamSessionQuality.summary.qualityBad}
+	              </Badge>
+	              <Badge
+	                variant={streamSessionQuality.summary.issuesMissingDeviceSn > 0 ? 'destructive' : 'secondary'}
+	                title={t('logs.files.streamSessionQuality.snMissingHint')}
+	              >
+                {t('logs.files.streamSessionQuality.snMissing')}: {streamSessionQuality.summary.issuesMissingDeviceSn}
+              </Badge>
+              <Badge
+                variant={streamSessionQuality.summary.issuesMissingLinkCode > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.streamSessionQuality.linkCodeMissingHint')}
+              >
+                {t('logs.files.streamSessionQuality.linkCodeMissing')}:{' '}
+                {streamSessionQuality.summary.issuesMissingLinkCode}
+              </Badge>
+              <Badge
+                variant={streamSessionQuality.summary.issuesMissingRequestId > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.streamSessionQuality.requestIdMissingHint')}
+              >
+                {t('logs.files.streamSessionQuality.requestIdMissing')}:{' '}
+                {streamSessionQuality.summary.issuesMissingRequestId}
+              </Badge>
+              <Badge
+                variant={streamSessionQuality.summary.issuesMissingReason > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.streamSessionQuality.reasonMissingHint')}
+              >
+                {t('logs.files.streamSessionQuality.reasonMissing')}:{' '}
+                {streamSessionQuality.summary.issuesMissingReason}
+              </Badge>
+              <Badge
+                variant={streamSessionQuality.summary.issuesMissingSessionStartIndex > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.streamSessionQuality.sessionStartIndexMissingHint')}
+              >
+                {t('logs.files.streamSessionQuality.sessionStartIndexMissing')}:{' '}
+                {streamSessionQuality.summary.issuesMissingSessionStartIndex}
+              </Badge>
+              <Badge
+                variant={streamSessionQuality.summary.issuesMissingSessionStartAtMs > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.streamSessionQuality.sessionStartAtMsMissingHint')}
+              >
+                {t('logs.files.streamSessionQuality.sessionStartAtMsMissing')}:{' '}
+                {streamSessionQuality.summary.issuesMissingSessionStartAtMs}
+              </Badge>
+            </div>
+
+            {streamSessionQualityDetails ? (
+              <>
+                {streamSessionQuality.byReason.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.reasonTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.streamSessionQuality.reason')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.total')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {streamSessionQuality.byReason.map((row) => (
+                          <TableRow key={row.reason}>
+                            <TableCell className="font-mono text-xs">{row.reason}</TableCell>
+                            <TableCell>{row.total}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {streamSessionQuality.byDevice.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.deviceTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.streamSessionQuality.deviceSn')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.total')}</TableHead>
+                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {streamSessionQuality.byDevice.map((row) => (
+                          <TableRow key={row.deviceSn}>
+                            <TableCell className="font-mono text-xs">{row.deviceSn}</TableCell>
+                            <TableCell>{row.total}</TableCell>
+                            <TableCell>
+                              <Button variant="outline" size="sm" asChild>
+                                <Link href={makeTraceHref('deviceSn', row.deviceSn)}>
+                                  {t('logs.files.streamSessionQuality.traceSn')}
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {streamSessionQuality.byLinkCode.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.linkCodeTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.streamSessionQuality.linkCode')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.total')}</TableHead>
+                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {streamSessionQuality.byLinkCode.map((row) => (
+                          <TableRow key={row.linkCode}>
+                            <TableCell className="font-mono text-xs">{row.linkCode}</TableCell>
+                            <TableCell>{row.total}</TableCell>
+                            <TableCell>
+                              <Button variant="outline" size="sm" asChild>
+                                <Link href={makeTraceHref('linkCode', row.linkCode)}>
+                                  {t('logs.files.streamSessionQuality.traceLinkCode')}
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {streamSessionQuality.byRequestId.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.requestIdTop')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('logs.files.streamSessionQuality.requestId')}</TableHead>
+                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.total')}</TableHead>
+                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {streamSessionQuality.byRequestId.map((row) => (
+                          <TableRow key={row.requestId}>
+                            <TableCell className="font-mono text-xs" title={row.requestId}>
+                              {row.requestId}
+                            </TableCell>
+                            <TableCell>{row.total}</TableCell>
+                            <TableCell>
+                              <Button variant="outline" size="sm" asChild>
+                                <Link href={makeTraceHref('requestId', row.requestId)}>
+                                  {t('logs.files.streamSessionQuality.traceRequestId')}
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {streamSessionQuality.sessions.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.sessionsRecent')}</p>
+                    <Table>
+	                      <TableHeader>
+	                        <TableRow>
+	                          <TableHead className="w-44">{t('logs.files.streamSessionQuality.time')}</TableHead>
+	                          <TableHead>{t('logs.files.streamSessionQuality.deviceSn')}</TableHead>
+	                          <TableHead>{t('logs.files.streamSessionQuality.linkCode')}</TableHead>
+	                          <TableHead>{t('logs.files.streamSessionQuality.reason')}</TableHead>
+	                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.score')}</TableHead>
+	                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.rawStartIndex')}</TableHead>
+	                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.nextExpectedRaw')}</TableHead>
+	                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.lastRaw')}</TableHead>
+	                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.bufferedOutOfOrderCount')}</TableHead>
+	                          <TableHead className="w-24">{t('logs.files.streamSessionQuality.persistedMax')}</TableHead>
+	                          <TableHead className="w-36">{t('table.actions')}</TableHead>
+	                        </TableRow>
+	                      </TableHeader>
+	                      <TableBody>
+	                        {streamSessionQuality.sessions.map((row) => (
+	                          <TableRow
+	                            key={`${row.timestampMs}:${row.deviceSn ?? 'NA'}:${row.linkCode ?? 'NA'}`}
+	                            className={
+	                              row.quality === 'bad'
+	                                ? 'bg-red-500/5'
+	                                : row.quality === 'warn'
+	                                  ? 'bg-amber-500/5'
+	                                  : ''
+	                            }
+	                          >
+	                            <TableCell className="text-xs">
+	                              {new Date(row.timestampMs).toLocaleString(localeTag)}
+	                            </TableCell>
+	                            <TableCell className="font-mono text-xs">{row.deviceSn ?? '-'}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.linkCode ?? '-'}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.reason ?? '-'}</TableCell>
+	                            <TableCell className="text-xs">{renderSessionScoreBadge(row.score, row.quality)}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.rawStartIndex ?? '-'}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.nextExpectedRaw ?? '-'}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.lastRaw ?? '-'}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.bufferedOutOfOrderCount ?? '-'}</TableCell>
+	                            <TableCell className="font-mono text-xs">{row.persistedMax ?? '-'}</TableCell>
+	                            <TableCell>
+	                              {row.requestId ? (
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={makeTraceHref('requestId', row.requestId)}>
+                                    {t('logs.files.streamSessionQuality.traceRequestId')}
+                                  </Link>
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </>
+            ) : null}
           </CardContent>
         )}
       </Card>
