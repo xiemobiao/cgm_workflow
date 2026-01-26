@@ -165,52 +165,7 @@ export function buildBleQualityReport(params: {
     }
   >();
 
-  // Only check flows that actually appear in this log file:
-  // If a flow never happened (no start/end events), we should not mark it as "missing".
-  const requiredEventNames = new Set<string>();
-  let hasPostConnectActivity = false;
-  const POST_CONNECT_FLOW_STARTS = new Set([
-    'BLE auth sendKey',
-    'BLE query device status',
-    'BLE query sn',
-    'BLE query sensitivity',
-    'BLE query active time',
-    'BLE query init time',
-    'BLE activation sendData',
-    'BLE start getData',
-    'BLE data receive start',
-    'BLE real time data callback start',
-    'BLE latest valid data callback Start',
-  ]);
-  for (const rule of BLE_FLOW_PAIR_CHECKS) {
-    const flowTotal =
-      aggregateTotalCount(rule.startEventName) +
-      rule.endEventNames.reduce((sum, n) => sum + aggregateTotalCount(n), 0);
-    if (flowTotal <= 0) continue;
-    requiredEventNames.add(rule.startEventName);
-    if (POST_CONNECT_FLOW_STARTS.has(rule.startEventName)) {
-      hasPostConnectActivity = true;
-    }
-  }
-
-  // Some standalone events are only meaningful when certain flows happened.
-  // Example: sdk info is expected when connection succeeds.
-  if (
-    aggregateTotalCount('BLE sdk info') > 0 ||
-    aggregateTotalCount('BLE connection success') > 0 ||
-    hasPostConnectActivity
-  ) {
-    requiredEventNames.add('BLE sdk info');
-  }
-
-  // Connection status snapshot is only expected when we are already in post-connect flows.
-  if (aggregateTotalCount('BLE current Status Value') > 0 || hasPostConnectActivity) {
-    requiredEventNames.add('BLE current Status Value');
-  }
-
-  const requiredDefs = BLE_REQUIRED_EVENTS.filter((e) => requiredEventNames.has(e.eventName));
-
-  const requiredEvents: BleQualityItem[] = requiredDefs.map((e) => {
+  const requiredEvents: BleQualityItem[] = BLE_REQUIRED_EVENTS.map((e) => {
     const categoryAgg = byCategory.get(e.category) ?? {
       requiredTotal: 0,
       okTotal: 0,

@@ -81,7 +81,7 @@ type BleQualityReport = {
   };
 };
 
-type BleQualityTab = 'missing' | 'levelMismatch' | 'nameMismatch' | 'pairChecks';
+type BleQualityTab = 'present' | 'levelMismatch' | 'nameMismatch' | 'pairChecks';
 
 type BackendQualityReport = {
   logFileId: string;
@@ -277,7 +277,7 @@ export default function LogFileDetailPage() {
   const [bleQuality, setBleQuality] = useState<BleQualityReport | null>(null);
   const [bleLoading, setBleLoading] = useState(false);
   const [bleError, setBleError] = useState('');
-  const [bleTab, setBleTab] = useState<BleQualityTab>('missing');
+  const [bleTab, setBleTab] = useState<BleQualityTab>('present');
   const [bleTabInitialized, setBleTabInitialized] = useState(false);
   const [bleAdvanced, setBleAdvanced] = useState(false);
   const [bleExpanded, setBleExpanded] = useState(false);
@@ -485,8 +485,8 @@ export default function LogFileDetailPage() {
     return Math.round((hitCount / total) * 100);
   };
 
-  const missingItems =
-    bleQuality?.requiredEvents.filter((e) => e.status === 'missing') ?? [];
+  const presentItems =
+    bleQuality?.requiredEvents.filter((e) => e.status !== 'missing') ?? [];
   const levelMismatchItems =
     bleQuality?.requiredEvents.filter((e) => e.status === 'level_mismatch') ?? [];
   const nameMismatchItems =
@@ -536,7 +536,7 @@ export default function LogFileDetailPage() {
 
   useEffect(() => {
     if (bleAdvanced) return;
-    if (bleTab === 'levelMismatch' || bleTab === 'nameMismatch') setBleTab('missing');
+    if (bleTab === 'levelMismatch' || bleTab === 'nameMismatch') setBleTab('present');
   }, [bleAdvanced, bleTab]);
 
   useEffect(() => {
@@ -544,16 +544,9 @@ export default function LogFileDetailPage() {
     if (bleTabInitialized) return;
 
     const pendingTotal = bleQuality.pairChecks.filter((p) => p.pendingCount > 0).length;
+    const presentTotal = bleQuality.requiredEvents.filter((e) => e.status !== 'missing').length;
     const first: BleQualityTab =
-      bleQuality.summary.missingTotal > 0
-        ? 'missing'
-        : pendingTotal > 0
-          ? 'pairChecks'
-          : bleAdvanced && bleQuality.summary.levelMismatchTotal > 0
-            ? 'levelMismatch'
-            : bleAdvanced && bleQuality.summary.nameMismatchTotal > 0
-              ? 'nameMismatch'
-              : 'missing';
+      presentTotal === 0 && pendingTotal > 0 ? 'pairChecks' : 'present';
 
     setBleTab(first);
     setBleTabInitialized(true);
@@ -844,21 +837,21 @@ export default function LogFileDetailPage() {
             </Card>
 
             {/* 质量评分卡片 */}
-            <Card className="glass">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
-                    <BarChart3 className="w-6 h-6 text-emerald-400" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-muted-foreground">BLE 质量覆盖率</p>
-                    <p className="text-3xl font-semibold tabular-nums">
-                      {bleQuality ? `${Math.round(bleQuality.summary.coverageRatio * 100)}%` : '-'}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+	            <Card className="glass">
+	              <CardContent className="pt-6">
+	                <div className="flex items-center gap-4">
+	                  <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
+	                    <BarChart3 className="w-6 h-6 text-emerald-400" />
+	                  </div>
+	                  <div className="flex-1">
+	                    <p className="text-sm text-muted-foreground">BLE 性能日志命中</p>
+	                    <p className="text-3xl font-semibold tabular-nums">
+	                      {bleQuality ? `${presentItems.length}/${bleQuality.summary.requiredTotal}` : '-'}
+	                    </p>
+	                  </div>
+	                </div>
+	              </CardContent>
+	            </Card>
           </div>
 
           {/* 文件基本信息卡片 */}
@@ -1831,7 +1824,7 @@ export default function LogFileDetailPage() {
               )}
               {!bleLoading && bleQuality && (
                 (() => {
-                  const issues = missingItems.length + pendingPairs.length;
+                  const issues = pendingPairs.length + levelMismatchItems.length + nameMismatchItems.length;
                   if (issues > 0) {
                     return <Badge variant="destructive">{issues}</Badge>;
                   }
@@ -1854,16 +1847,23 @@ export default function LogFileDetailPage() {
         {bleExpanded && bleQuality ? (
           <>
             {(() => {
-              const coveragePercent = Math.round(bleQuality.summary.coverageRatio * 100);
+              const hitTotal =
+                bleQuality.summary.okTotal +
+                bleQuality.summary.levelMismatchTotal +
+                bleQuality.summary.nameMismatchTotal;
+              const hitPercent =
+                bleQuality.summary.requiredTotal > 0
+                  ? Math.round((hitTotal / bleQuality.summary.requiredTotal) * 100)
+                  : 0;
               const progressColor =
-                coveragePercent >= 80
+                hitPercent >= 80
                   ? 'rgba(96, 255, 166, 0.85)'
-                  : coveragePercent >= 40
+                  : hitPercent >= 40
                     ? 'rgba(245, 158, 11, 0.85)'
                     : 'rgba(255, 107, 107, 0.85)';
 
               const tabItems: Array<{ key: BleQualityTab; label: string; count: number }> = [
-                { key: 'missing', label: t('logs.files.bleQuality.tab.missing'), count: missingItems.length },
+                { key: 'present', label: t('logs.files.bleQuality.tab.present'), count: presentItems.length },
                 ...(bleAdvanced
                   ? [
                       {
@@ -1904,8 +1904,8 @@ export default function LogFileDetailPage() {
                 );
               };
 
-              const renderMissing = () => {
-                if (missingItems.length === 0) {
+              const renderPresent = () => {
+                if (presentItems.length === 0) {
                   return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
                 }
                 return (
@@ -1915,20 +1915,39 @@ export default function LogFileDetailPage() {
                         <TableHead>{t('logs.files.bleQuality.table.eventName')}</TableHead>
                         <TableHead>{t('logs.files.bleQuality.table.description')}</TableHead>
                         <TableHead className="w-32">{t('logs.files.bleQuality.table.expectedLevel')}</TableHead>
-                        <TableHead className="w-40">{t('logs.files.bleQuality.table.category')}</TableHead>
+                        <TableHead>{t('logs.files.bleQuality.table.counts')}</TableHead>
+                        <TableHead className="w-80">{t('logs.files.bleQuality.table.matchedEventNames')}</TableHead>
                         <TableHead className="w-32">{t('logs.files.bleQuality.table.actions')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {missingItems.map((e) => (
+                      {presentItems.map((e) => (
                         <TableRow key={`${e.category}:${e.eventName}`}>
                           <TableCell className="font-mono text-xs">{e.eventName}</TableCell>
                           <TableCell>{e.description}</TableCell>
                           <TableCell>{levelBadge(e.expectedLevelLabel)}</TableCell>
-                          <TableCell>{e.category}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            DEBUG:{e.countsByLevel['1']} INFO:{e.countsByLevel['2']} WARN:
+                            {e.countsByLevel['3']} ERROR:{e.countsByLevel['4']}
+                          </TableCell>
+                          <TableCell>
+                            {e.matchedEventNames && e.matchedEventNames.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {e.matchedEventNames.map((n) => (
+                                  <Button key={n} variant="ghost" size="sm" asChild>
+                                    <Link href={makeLogsHref({ eventName: n })}>
+                                      <code className="text-xs">{n}</code>
+                                    </Link>
+                                  </Button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm" asChild>
-                              <Link href={makeLogsHref({ eventName: e.eventName })}>
+                              <Link href={makeLogsHref({ eventName: e.matchedEventNames?.[0] ?? e.eventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
                             </Button>
@@ -2063,10 +2082,10 @@ export default function LogFileDetailPage() {
 
               const renderTabBody = () => {
                 const visible = new Set(tabItems.map((t) => t.key));
-                const active = visible.has(bleTab) ? bleTab : 'missing';
+                const active = visible.has(bleTab) ? bleTab : 'present';
                 switch (active) {
-                  case 'missing':
-                    return renderMissing();
+                  case 'present':
+                    return renderPresent();
                   case 'levelMismatch':
                     return renderLevelMismatch();
                   case 'nameMismatch':
@@ -2108,7 +2127,7 @@ export default function LogFileDetailPage() {
                   <div style={{ marginTop: 14, paddingLeft: 24, paddingRight: 24 }}>
                     <div className="text-sm font-medium">{t('logs.files.bleQuality.coverage')}</div>
                     <div className="text-sm text-muted-foreground" style={{ marginTop: 6 }}>
-                      {bleQuality.summary.okTotal}/{bleQuality.summary.requiredTotal} ({coveragePercent}%)
+                      {hitTotal}/{bleQuality.summary.requiredTotal} ({hitPercent}%)
                     </div>
                     <div
                       style={{
@@ -2121,7 +2140,7 @@ export default function LogFileDetailPage() {
                     >
                       <div
                         style={{
-                          width: `${coveragePercent}%`,
+                          width: `${hitPercent}%`,
                           height: '100%',
                           background: progressColor,
                         }}
@@ -2130,12 +2149,6 @@ export default function LogFileDetailPage() {
                   </div>
 
                   <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <Badge
-                      variant={bleQuality.summary.missingTotal > 0 ? 'destructive' : 'secondary'}
-                      title={t('logs.files.bleQuality.missing')}
-                    >
-                      {t('logs.files.bleQuality.missing')}: {bleQuality.summary.missingTotal}
-                    </Badge>
                     {bleAdvanced ? (
                       <>
                         <Badge
