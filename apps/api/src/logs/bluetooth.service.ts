@@ -190,6 +190,9 @@ export class BluetoothService {
           deviceMac: true,
           errorCode: true,
           requestId: true,
+          stage: true,
+          op: true,
+          result: true,
         },
       });
 
@@ -227,6 +230,9 @@ export class BluetoothService {
       deviceMac: string | null;
       errorCode: string | null;
       requestId: string | null;
+      stage?: string | null;
+      op?: string | null;
+      result?: string | null;
     }>,
   ) {
     const firstEvent = events[0];
@@ -245,6 +251,7 @@ export class BluetoothService {
 
     for (const event of events) {
       const name = event.eventName.toUpperCase();
+      const result = this.normalizeLower(event.result);
 
       // Track phase timestamps
       if (this.matchesPattern(name, PHASE_PATTERNS.scan) && !scanStartMs) {
@@ -255,23 +262,36 @@ export class BluetoothService {
         pairStartMs = event.timestampMs;
         status = SessionStatus.pairing;
       }
-      if (this.matchesPattern(name, PHASE_PATTERNS.connect) && !connectStartMs) {
+      if (
+        (this.isBleOp(event, 'connect', 'start') ||
+          this.matchesPattern(name, PHASE_PATTERNS.connect)) &&
+        !connectStartMs
+      ) {
+        connectStartMs = event.timestampMs;
+        status = SessionStatus.connecting;
+      } else if (this.isBleOp(event, 'connect') && !connectStartMs) {
         connectStartMs = event.timestampMs;
         status = SessionStatus.connecting;
       }
-      if (this.matchesPattern(name, PHASE_PATTERNS.connected)) {
+      if (this.isBleOp(event, 'connect', 'ok') || this.matchesPattern(name, PHASE_PATTERNS.connected)) {
         connectedMs = event.timestampMs;
         status = SessionStatus.connected;
       }
-      if (this.matchesPattern(name, PHASE_PATTERNS.disconnect)) {
+      if (this.isBleOp(event, 'disconnect') || this.matchesPattern(name, PHASE_PATTERNS.disconnect)) {
         disconnectMs = event.timestampMs;
         status = SessionStatus.disconnected;
       }
 
       // Track errors
-      if (event.level >= 4 || this.matchesPattern(name, PHASE_PATTERNS.error)) {
+      const isStructuredConnectFailure =
+        this.isBleOp(event, 'connect') && (result === 'fail' || result === 'timeout');
+      if (
+        event.level >= 4 ||
+        this.matchesPattern(name, PHASE_PATTERNS.error) ||
+        isStructuredConnectFailure
+      ) {
         errorCount++;
-        if (name.includes('TIMEOUT')) {
+        if (name.includes('TIMEOUT') || result === 'timeout') {
           status = SessionStatus.timeout;
         } else if (errorCount > 0 && status !== SessionStatus.disconnected) {
           status = SessionStatus.error;
@@ -658,6 +678,9 @@ export class BluetoothService {
           appId: true,
           terminalInfo: true,
           deviceMac: true,
+          stage: true,
+          op: true,
+          result: true,
         },
       });
 
@@ -677,6 +700,9 @@ export class BluetoothService {
           deviceMac: e.deviceMac,
           errorCode: e.errorCode,
           requestId: e.requestId,
+          stage: e.stage,
+          op: e.op,
+          result: e.result,
         })),
       );
 
@@ -748,6 +774,9 @@ export class BluetoothService {
         requestId: true,
         errorCode: true,
         threadName: true,
+        stage: true,
+        op: true,
+        result: true,
       },
     });
 
@@ -792,6 +821,9 @@ export class BluetoothService {
       msgJson: Prisma.JsonValue;
       requestId: string | null;
       errorCode: string | null;
+      stage?: string | null;
+      op?: string | null;
+      result?: string | null;
     }>,
   ): SessionTimelinePhase[] {
     const phases: SessionTimelinePhase[] = [];
@@ -801,9 +833,16 @@ export class BluetoothService {
 
     for (const event of events) {
       const name = event.eventName.toUpperCase();
+      const result = this.normalizeLower(event.result);
       let phaseName: string | null = null;
 
-      if (this.matchesPattern(name, PHASE_PATTERNS.scan)) {
+      if (this.isBleOp(event, 'connect', 'ok')) {
+        phaseName = 'connected';
+      } else if (this.isBleOp(event, 'disconnect')) {
+        phaseName = 'disconnect';
+      } else if (this.isBleOp(event, 'connect')) {
+        phaseName = 'connect';
+      } else if (this.matchesPattern(name, PHASE_PATTERNS.scan)) {
         phaseName = 'scan';
       } else if (this.matchesPattern(name, PHASE_PATTERNS.pair)) {
         phaseName = 'pair';
@@ -819,8 +858,16 @@ export class BluetoothService {
 
       // Determine event status
       let eventStatus: 'success' | 'error' | 'timeout' | 'pending' = 'success';
-      if (event.level >= 4 || event.errorCode) {
-        eventStatus = name.includes('TIMEOUT') ? 'timeout' : 'error';
+      if (this.isBleOp(event, 'connect', 'start')) {
+        eventStatus = 'pending';
+      } else if (this.isBleOp(event, 'connect') && result === 'timeout') {
+        eventStatus = 'timeout';
+      } else if (this.isBleOp(event, 'connect') && result === 'fail') {
+        eventStatus = 'error';
+      }
+
+      if (event.level >= 4 || (event.errorCode && !this.isBleOp(event, 'disconnect'))) {
+        eventStatus = name.includes('TIMEOUT') || result === 'timeout' ? 'timeout' : 'error';
       }
 
       const eventItem = {
