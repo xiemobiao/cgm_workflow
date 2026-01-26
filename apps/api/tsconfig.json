@@ -16,10 +16,17 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
+    // Enhanced strict mode settings
+    "strict": false,
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true,
+    // Additional checks for better code quality
+    "noUnusedLocals": true,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": false
   }
 }

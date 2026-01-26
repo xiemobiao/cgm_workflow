@@ -30,18 +30,9 @@ type TrackingFields = {
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
-  // 数据质量字段
-  dataPointCount: number | null;
-  timeSpanHours: number | null;
-  valueMin: number | null;
-  valueMax: number | null;
-  valueAvg: number | null;
-  timestampJumps: number | null;
-  outlierCount: number | null;
-  // 蓝牙参数字段
-  actualMtu: number | null;
-  rssi: number | null;
-  signalQuality: string | null;
+  stage: string | null;
+  op: string | null;
+  result: string | null;
 };
 
 function createEmptyTrackingFields(): TrackingFields {
@@ -51,18 +42,9 @@ function createEmptyTrackingFields(): TrackingFields {
     deviceMac: null,
     deviceSn: null,
     errorCode: null,
-    // 数据质量字段
-    dataPointCount: null,
-    timeSpanHours: null,
-    valueMin: null,
-    valueMax: null,
-    valueAvg: null,
-    timestampJumps: null,
-    outlierCount: null,
-    // 蓝牙参数字段
-    actualMtu: null,
-    rssi: null,
-    signalQuality: null,
+    stage: null,
+    op: null,
+    result: null,
   };
 }
 
@@ -108,32 +90,6 @@ function pickFirstString(
   return null;
 }
 
-function pickFirstNumber(
-  obj: Record<string, unknown>,
-  keys: string[],
-): number | null {
-  for (const key of keys) {
-    const raw = obj[key];
-    const n = asNumber(raw);
-    if (n !== undefined) return n;
-    if (typeof raw === 'bigint') {
-      const bn = Number(raw);
-      if (Number.isFinite(bn)) return bn;
-      continue;
-    }
-    if (typeof raw === 'string') {
-      const t = raw.trim();
-      if (!t) continue;
-      const m = t.match(/-?\d+(?:\.\d+)?/);
-      if (!m) continue;
-      const parsed = Number(m[0]);
-      if (!Number.isFinite(parsed)) continue;
-      return parsed;
-    }
-  }
-  return null;
-}
-
 function looksLikeMac(value: string): boolean {
   // Support common formats:
   // - AA:BB:CC:DD:EE:FF
@@ -145,146 +101,38 @@ function looksLikeMac(value: string): boolean {
   );
 }
 
-function parseKeyValueTokens(text: string): Record<string, string> {
-  const tokens: Record<string, string> = {};
-  const re = /(?:^|[\s,;])([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*([^\s,;]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const key = m[1] ?? '';
-    const raw = m[2] ?? '';
-    if (!key || !raw) continue;
-    const value = raw.trim();
-    if (!value) continue;
-    tokens[key] = value;
-  }
-  return tokens;
+function normalizeTrim(value: string | null): string | null {
+  const v = value?.trim() ?? '';
+  return v.length > 0 ? v : null;
 }
 
-function extractTrackingFieldsFromText(text: string): TrackingFields {
-  const result = createEmptyTrackingFields();
+function normalizeLowerTrim(value: string | null): string | null {
+  const v = normalizeTrim(value);
+  return v ? v.toLowerCase() : null;
+}
 
-  const tokens = parseKeyValueTokens(text);
-
-  result.linkCode = pickFirstString(tokens, ['linkCode', 'link_code', 'LinkCode']);
-  result.requestId = pickFirstString(tokens, [
-    'requestId',
-    'request_id',
-    'RequestId',
-    'reqId',
-    'msgId',
-    'messageId',
-    'msg_id',
-  ]);
-
-  const macCandidate =
-    pickFirstString(tokens, [
-      'deviceMac',
-      'device_mac',
-      'mac',
-      'DeviceMac',
-      'macAddress',
-    ]) ?? null;
-
-  if (macCandidate) {
-    result.deviceMac = macCandidate;
+function extractDeviceSnFromTopic(topic: string | null): string | null {
+  const t = normalizeTrim(topic);
+  if (!t) return null;
+  const prefixes = ['data/', 'data_reply/'];
+  for (const p of prefixes) {
+    if (!t.startsWith(p)) continue;
+    const sn = t.slice(p.length).trim();
+    if (sn.length > 0) return sn;
   }
+  return null;
+}
 
-  const tokenDevice = pickFirstString(tokens, ['device']);
-  if (tokenDevice && looksLikeMac(tokenDevice)) {
-    result.deviceMac = result.deviceMac ?? tokenDevice;
+function extractDeviceSnFromUrl(url: string | null): string | null {
+  const u = normalizeTrim(url);
+  if (!u) return null;
+  try {
+    const parsed = new URL(u);
+    const sn = parsed.searchParams.get('sn')?.trim();
+    return sn && sn.length > 0 ? sn : null;
+  } catch {
+    return null;
   }
-
-  const deviceIdMaybeMac = pickFirstString(tokens, ['deviceId', 'device_id']);
-  if (deviceIdMaybeMac && looksLikeMac(deviceIdMaybeMac)) {
-    result.deviceMac = result.deviceMac ?? deviceIdMaybeMac;
-  }
-
-  result.deviceSn = pickFirstString(tokens, [
-    'deviceSn',
-    'device_sn',
-    'sn',
-    'SN',
-    'serialNumber',
-    'serial_number',
-    'SerialNumber',
-    'serial',
-    'DeviceSn',
-  ]);
-
-  if (!result.deviceSn) {
-    const topic = pickFirstString(tokens, ['topic', 'expectedTopic', 'topicFilter']);
-    if (topic) {
-      const t = topic.trim();
-      const prefixes = ['data/', 'data_reply/'];
-      for (const p of prefixes) {
-        if (!t.startsWith(p)) continue;
-        const sn = t.slice(p.length).trim();
-        if (sn.length > 0) {
-          result.deviceSn = sn;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!result.deviceSn) {
-    const url = pickFirstString(tokens, ['url', 'requestUrl']);
-    if (url) {
-      try {
-        const u = new URL(url);
-        const sn = u.searchParams.get('sn')?.trim();
-        if (sn) result.deviceSn = sn;
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  if (!result.deviceSn && tokenDevice && !looksLikeMac(tokenDevice)) {
-    result.deviceSn = tokenDevice;
-  }
-
-  const deviceIdMaybeSn = pickFirstString(tokens, ['deviceId', 'device_id']);
-  if (!result.deviceSn && deviceIdMaybeSn && !looksLikeMac(deviceIdMaybeSn)) {
-    result.deviceSn = deviceIdMaybeSn;
-  }
-
-  result.errorCode = pickFirstString(tokens, [
-    'errorCode',
-    'error_code',
-    'code',
-    'ErrorCode',
-  ]);
-
-  // 数据质量字段
-  result.dataPointCount = pickFirstNumber(tokens, [
-    'dataPointCount',
-    'data_point_count',
-  ]);
-  result.timeSpanHours = pickFirstNumber(tokens, [
-    'timeSpanHours',
-    'time_span_hours',
-  ]);
-  result.valueMin = pickFirstNumber(tokens, ['valueMin', 'value_min']);
-  result.valueMax = pickFirstNumber(tokens, ['valueMax', 'value_max']);
-  result.valueAvg = pickFirstNumber(tokens, ['valueAvg', 'value_avg']);
-  result.timestampJumps = pickFirstNumber(tokens, [
-    'timestampJumps',
-    'timestamp_jumps',
-  ]);
-  result.outlierCount = pickFirstNumber(tokens, [
-    'outlierCount',
-    'outlier_count',
-  ]);
-
-  // 蓝牙参数字段
-  result.actualMtu = pickFirstNumber(tokens, ['actualMtu', 'actual_mtu', 'mtu']);
-  result.rssi = pickFirstNumber(tokens, ['rssi', 'RSSI']);
-  result.signalQuality =
-    pickFirstString(tokens, ['signalQuality', 'signal_quality', 'quality', 'Quality']) ??
-    null;
-
-  return result;
 }
 
 function firstUniqueString(values: Array<string | null | undefined>): string | null {
@@ -353,173 +201,61 @@ function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
 
 // Extract tracking fields from msg object for flow tracing
 export function extractTrackingFields(msg: unknown): TrackingFields {
-  const result = createEmptyTrackingFields();
-
   const msgString = asString(msg);
   if (msgString !== undefined) {
     const trimmed = msgString.trim();
-    if (trimmed.length === 0) return result;
+    if (trimmed.length === 0) return createEmptyTrackingFields();
     if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
       try {
         const parsed = JSON.parse(trimmed) as unknown;
         return extractTrackingFields(parsed);
       } catch {
-        // ignore
+        return createEmptyTrackingFields();
       }
     }
-    return extractTrackingFieldsFromText(trimmed);
+    return createEmptyTrackingFields();
   }
 
   const root = asRecord(msg);
-  if (!root) return result;
+  if (!root) return createEmptyTrackingFields();
+
+  const result = createEmptyTrackingFields();
 
   const candidates: Record<string, unknown>[] = [root];
   const nestedData = asRecord(root.data);
   if (nestedData) candidates.push(nestedData);
 
   for (const obj of candidates) {
-    if (!result.linkCode) {
-      result.linkCode =
-        pickFirstString(obj, ['linkCode', 'link_code', 'LinkCode']) ?? null;
-    }
+    if (!result.stage) result.stage = normalizeLowerTrim(pickFirstString(obj, ['stage']));
+    if (!result.op) result.op = normalizeLowerTrim(pickFirstString(obj, ['op']));
+    if (!result.result) result.result = normalizeLowerTrim(pickFirstString(obj, ['result']));
 
-    if (!result.requestId) {
-      result.requestId =
-        pickFirstString(obj, [
-          'requestId',
-          'request_id',
-          'RequestId',
-          'reqId',
-          'msgId',
-          'messageId',
-          'msg_id',
-        ]) ?? null;
-    }
+    if (!result.linkCode) result.linkCode = normalizeTrim(pickFirstString(obj, ['linkCode']));
+    if (!result.requestId) result.requestId = normalizeTrim(pickFirstString(obj, ['requestId']));
 
     if (!result.deviceMac) {
-      const macCandidate =
-        pickFirstString(obj, [
-          'deviceMac',
-          'device_mac',
-          'mac',
-          'DeviceMac',
-          'macAddress',
-        ]) ?? null;
-
-      if (macCandidate) {
-        result.deviceMac = macCandidate;
-      } else {
-        const deviceIdMaybeMac =
-          pickFirstString(obj, ['deviceId', 'device_id']) ?? null;
-        result.deviceMac =
-          deviceIdMaybeMac && looksLikeMac(deviceIdMaybeMac)
-            ? deviceIdMaybeMac
-            : null;
-      }
+      const mac = normalizeTrim(pickFirstString(obj, ['deviceMac']));
+      result.deviceMac = mac && looksLikeMac(mac) ? mac : null;
     }
 
     if (!result.deviceSn) {
-      result.deviceSn =
-        pickFirstString(obj, [
-          'deviceSn',
-          'device_sn',
-          'sn',
-          'SN',
-          'serialNumber',
-          'serial_number',
-          'SerialNumber',
-          'serial',
-          'DeviceSn',
-        ]) ?? null;
-
+      result.deviceSn = normalizeTrim(pickFirstString(obj, ['deviceSn']));
       if (!result.deviceSn) {
-        const topic =
-          pickFirstString(obj, ['topic', 'expectedTopic', 'topicFilter']) ??
-          null;
-        if (topic) {
-          const prefixes = ['data/', 'data_reply/'];
-          for (const p of prefixes) {
-            if (!topic.startsWith(p)) continue;
-            const sn = topic.slice(p.length).trim();
-            if (sn.length > 0) {
-              result.deviceSn = sn;
-              break;
-            }
-          }
-        }
+        const topic = normalizeTrim(pickFirstString(obj, ['topic']));
+        result.deviceSn = extractDeviceSnFromTopic(topic);
       }
-
       if (!result.deviceSn) {
-        const url = pickFirstString(obj, ['url', 'requestUrl']) ?? null;
-        if (url) {
-          try {
-            const u = new URL(url);
-            const sn = u.searchParams.get('sn')?.trim();
-            if (sn) result.deviceSn = sn;
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (!result.deviceSn) {
-        const deviceIdMaybeSn =
-          pickFirstString(obj, ['deviceId', 'device_id']) ?? null;
-        result.deviceSn =
-          deviceIdMaybeSn && !looksLikeMac(deviceIdMaybeSn)
-            ? deviceIdMaybeSn
-            : null;
+        const url = normalizeTrim(pickFirstString(obj, ['url']));
+        result.deviceSn = extractDeviceSnFromUrl(url);
       }
     }
 
     if (!result.errorCode) {
       const errorObj = asRecord(obj.error);
-      result.errorCode =
-        (errorObj
-          ? pickFirstString(errorObj, ['code', 'errorCode', 'error_code'])
-          : null) ??
-        pickFirstString(obj, ['errorCode', 'error_code', 'code']) ??
-        null;
-    }
-
-    // 数据质量字段
-    if (result.dataPointCount === null) {
-      result.dataPointCount = pickFirstNumber(obj, ['dataPointCount', 'data_point_count']);
-    }
-    if (result.timeSpanHours === null) {
-      result.timeSpanHours = pickFirstNumber(obj, ['timeSpanHours', 'time_span_hours']);
-    }
-    if (result.valueMin === null) {
-      result.valueMin = pickFirstNumber(obj, ['valueMin', 'value_min']);
-    }
-    if (result.valueMax === null) {
-      result.valueMax = pickFirstNumber(obj, ['valueMax', 'value_max']);
-    }
-    if (result.valueAvg === null) {
-      result.valueAvg = pickFirstNumber(obj, ['valueAvg', 'value_avg']);
-    }
-    if (result.timestampJumps === null) {
-      result.timestampJumps = pickFirstNumber(obj, ['timestampJumps', 'timestamp_jumps']);
-    }
-    if (result.outlierCount === null) {
-      result.outlierCount = pickFirstNumber(obj, ['outlierCount', 'outlier_count']);
-    }
-
-    // 蓝牙参数字段
-    if (result.actualMtu === null) {
-      result.actualMtu = pickFirstNumber(obj, ['actualMtu', 'actual_mtu', 'mtu']);
-    }
-    if (result.rssi === null) {
-      result.rssi = pickFirstNumber(obj, ['rssi', 'RSSI']);
-    }
-    if (result.signalQuality === null) {
-      result.signalQuality =
-        pickFirstString(obj, [
-          'signalQuality',
-          'signal_quality',
-          'quality',
-          'Quality',
-        ]) ?? null;
+      const candidate =
+        pickFirstString(obj, ['errorCode']) ??
+        (errorObj ? pickFirstString(errorObj, ['code']) : null);
+      result.errorCode = normalizeTrim(candidate);
     }
   }
 
@@ -686,6 +422,9 @@ export class LogsParserService {
             deviceMac: tracking.deviceMac,
             deviceSn: tracking.deviceSn,
             errorCode: tracking.errorCode,
+            stage: tracking.stage,
+            op: tracking.op,
+            result: tracking.result,
           });
         } catch (e) {
           hadError = true;
@@ -756,7 +495,7 @@ export class LogsParserService {
             where: { id: logFile.id },
             data: {
               status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
-              parserVersion: 'v2',
+              parserVersion: 'v3',
             },
           });
           },

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, AlertTriangle, BarChart3, FileText, Clock, Database, Bluetooth, TrendingUp } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, FileText, Clock, Database, Bluetooth, TrendingUp, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -227,6 +227,44 @@ type StreamSessionQualityReport = {
   }>;
 };
 
+type DiagnosisReport = {
+  logFileId: string;
+  summary: {
+    totalErrors: number;
+    matchedIssues: number;
+    criticalCount: number;
+    warningCount: number;
+  };
+  issues: Array<{
+    issueId: string;
+    title: string;
+    solution: string;
+    matchType: string;
+    confidence: number;
+    eventCount: number;
+    severity: 'critical' | 'warning';
+    eventPattern: string | null;
+    issueErrorCode: string | null;
+    events: Array<{
+      id: string;
+      eventName: string;
+      level: number;
+      timestampMs: number;
+      linkCode: string | null;
+      deviceMac: string | null;
+    }>;
+  }>;
+  unmatchedErrors: Array<{
+    id: string;
+    eventName: string;
+    errorCode: string | null;
+    level: number;
+    timestampMs: number;
+    linkCode: string | null;
+    deviceMac: string | null;
+  }>;
+};
+
 export default function LogFileDetailPage() {
   const { localeTag, t } = useI18n();
   const router = useRouter();
@@ -242,6 +280,7 @@ export default function LogFileDetailPage() {
   const [bleTab, setBleTab] = useState<BleQualityTab>('missing');
   const [bleTabInitialized, setBleTabInitialized] = useState(false);
   const [bleAdvanced, setBleAdvanced] = useState(false);
+  const [bleExpanded, setBleExpanded] = useState(false);
   const [backendQuality, setBackendQuality] = useState<BackendQualityReport | null>(null);
   const [backendLoading, setBackendLoading] = useState(false);
   const [backendError, setBackendError] = useState('');
@@ -256,6 +295,10 @@ export default function LogFileDetailPage() {
   const [streamSessionQualityDetails, setStreamSessionQualityDetails] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  // Diagnosis state
+  const [diagnosis, setDiagnosis] = useState<DiagnosisReport | null>(null);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [diagnosisError, setDiagnosisError] = useState('');
 
   useEffect(() => {
     if (!fileId) return;
@@ -267,16 +310,19 @@ export default function LogFileDetailPage() {
       setBackendLoading(true);
       setDataContinuityLoading(true);
       setStreamSessionQualityLoading(true);
+      setDiagnosisLoading(true);
       setError('');
       setBleError('');
       setBackendError('');
       setDataContinuityError('');
       setStreamSessionQualityError('');
+      setDiagnosisError('');
       setDetail(null);
       setBleQuality(null);
       setBackendQuality(null);
       setDataContinuity(null);
       setStreamSessionQuality(null);
+      setDiagnosis(null);
       setBleTabInitialized(false);
       setBackendDetails(false);
       setDataContinuityDetails(false);
@@ -360,6 +406,22 @@ export default function LogFileDetailPage() {
         .finally(() => {
           if (cancelled) return;
           setStreamSessionQualityLoading(false);
+        });
+
+      apiFetch<DiagnosisReport>(`/api/logs/files/${fileId}/diagnose`)
+        .then((data) => {
+          if (cancelled) return;
+          setDiagnosis(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg =
+            e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setDiagnosisError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setDiagnosisLoading(false);
         });
     }, 0);
     return () => {
@@ -578,6 +640,177 @@ export default function LogFileDetailPage() {
 
       {detail ? (
         <>
+          {/* 问题诊断面板 - 最重要的功能放在最前面 */}
+          <Card id="diagnosis" className="glass border-2 border-primary/20 scroll-mt-4">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500/20 to-red-500/20 border border-amber-500/30">
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">{t('logs.files.diagnosis.title')}</CardTitle>
+                    <p className="text-sm text-muted-foreground">{t('logs.files.diagnosis.description')}</p>
+                  </div>
+                </div>
+                {diagnosisLoading && (
+                  <Badge variant="outline" className="animate-pulse">{t('common.loading')}</Badge>
+                )}
+                {!diagnosisLoading && diagnosis && diagnosis.summary.matchedIssues === 0 && diagnosis.summary.totalErrors === 0 && (
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">{t('logs.files.diagnosis.noIssues')}</Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {diagnosisError && (
+                <p className="text-sm text-red-400 mb-4">{diagnosisError}</p>
+              )}
+              {diagnosis && diagnosis.summary.matchedIssues > 0 && (
+                <div className="space-y-4">
+                  {/* 问题摘要 */}
+                  <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">{t('logs.files.diagnosis.totalErrors')}:</span>
+                      <Badge variant="outline">{diagnosis.summary.totalErrors}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">{t('logs.files.diagnosis.matchedIssues')}:</span>
+                      <Badge variant="outline">{diagnosis.summary.matchedIssues}</Badge>
+                    </div>
+                    {diagnosis.summary.criticalCount > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">{t('logs.files.diagnosis.critical')}:</span>
+                        <Badge variant="destructive">{diagnosis.summary.criticalCount}</Badge>
+                      </div>
+                    )}
+                    {diagnosis.summary.warningCount > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">{t('logs.files.diagnosis.warning')}:</span>
+                        <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20">{diagnosis.summary.warningCount}</Badge>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 问题列表 */}
+                  <div className="space-y-3">
+                    {diagnosis.issues.map((issue) => {
+                      // 计算影响范围
+                      const deviceMacs = new Set(issue.events.map(e => e.deviceMac).filter(Boolean));
+                      const linkCodes = new Set(issue.events.map(e => e.linkCode).filter(Boolean));
+                      const timestamps = issue.events.map(e => e.timestampMs).sort((a, b) => a - b);
+                      const firstTime = timestamps[0];
+                      const lastTime = timestamps[timestamps.length - 1];
+                      const firstLinkCode = issue.events.find(e => e.linkCode)?.linkCode;
+                      const firstDeviceMac = issue.events.find(e => e.deviceMac)?.deviceMac;
+
+                      return (
+                        <motion.div
+                          key={issue.issueId}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`p-4 rounded-lg border ${
+                            issue.severity === 'critical'
+                              ? 'border-red-500/30 bg-red-500/5'
+                              : 'border-amber-500/30 bg-amber-500/5'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge
+                                  variant={issue.severity === 'critical' ? 'destructive' : 'outline'}
+                                  className={issue.severity === 'warning' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}
+                                >
+                                  {issue.severity === 'critical' ? t('logs.files.diagnosis.critical') : t('logs.files.diagnosis.warning')}
+                                </Badge>
+                                <span className="font-medium">{issue.title}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {issue.eventCount} {t('logs.files.diagnosis.occurrences')}
+                                </Badge>
+                                {deviceMacs.size > 0 && (
+                                  <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-400 border-blue-500/20">
+                                    {deviceMacs.size} {t('logs.files.diagnosis.devices')}
+                                  </Badge>
+                                )}
+                                {linkCodes.size > 0 && (
+                                  <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-400 border-purple-500/20">
+                                    {linkCodes.size} {t('logs.files.diagnosis.sessions')}
+                                  </Badge>
+                                )}
+                              </div>
+                              {/* 时间范围 */}
+                              {firstTime && lastTime && (
+                                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{new Date(firstTime).toLocaleString()}</span>
+                                  {firstTime !== lastTime && (
+                                    <>
+                                      <span>-</span>
+                                      <span>{new Date(lastTime).toLocaleString()}</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              <div className="text-sm text-muted-foreground">
+                                <span className="font-medium text-foreground">{t('logs.files.diagnosis.solution')}:</span> {issue.solution}
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                asChild
+                              >
+                                <Link href={makeLogsHref(
+                                  issue.issueErrorCode
+                                    ? { errorCode: issue.issueErrorCode }
+                                    : issue.eventPattern
+                                      ? { q: issue.eventPattern }
+                                      : { eventName: issue.events[0]?.eventName ?? '' }
+                                )}>
+                                  {t('logs.files.diagnosis.viewEvents')}
+                                </Link>
+                              </Button>
+                              {firstLinkCode && (
+                                <Button variant="ghost" size="sm" asChild>
+                                  <Link href={makeTraceHref('linkCode', firstLinkCode)}>
+                                    {t('logs.files.diagnosis.traceSession')}
+                                  </Link>
+                                </Button>
+                              )}
+                              {firstDeviceMac && !firstLinkCode && (
+                                <Button variant="ghost" size="sm" asChild>
+                                  <Link href={makeTraceHref('deviceMac', firstDeviceMac)}>
+                                    {t('logs.files.diagnosis.traceDevice')}
+                                  </Link>
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {diagnosis && diagnosis.summary.matchedIssues === 0 && diagnosis.summary.totalErrors > 0 && (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">
+                    {t('logs.files.diagnosis.unmatchedErrors', { count: diagnosis.unmatchedErrors.length })}
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-2" asChild>
+                    <Link href={makeLogsHref({ levelGte: '3' })}>{t('logs.files.diagnosis.viewAllErrors')}</Link>
+                  </Button>
+                </div>
+              )}
+              {diagnosis && diagnosis.summary.totalErrors === 0 && (
+                <div className="text-center py-4">
+                  <p className="text-sm text-emerald-400">{t('logs.files.diagnosis.noErrorsFound')}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* 概览仪表盘 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* 事件总数卡片 */}
@@ -801,61 +1034,68 @@ export default function LogFileDetailPage() {
 
       {/* 后端质量报告卡片 */}
       <Card className="glass">
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
+        <CardHeader
+          className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
+          onClick={() => setBackendDetails((v) => !v)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Database className="w-4 h-4 text-muted-foreground" />
               <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
                 {t('logs.files.backendQuality.title')}
               </CardTitle>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ eventName: 'network_request_failed' })}>
-                    {t('logs.files.backendQuality.viewHttpFailed')}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ errorCode: 'ACK_TIMEOUT' })}>
-                    {t('logs.files.backendQuality.viewAckTimeouts')}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ msgContains: 'MQTT_PUBLISH_FAILED' })}>
-                    {t('logs.files.backendQuality.viewMqttPublishFailed')}
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBackendDetails((v) => !v)}
-                  title={t('logs.files.backendQuality.hint')}
-                >
-                  {backendDetails
-                    ? t('logs.files.backendQuality.hideDetails')
-                    : t('logs.files.backendQuality.showDetails')}
-                  {!backendDetails && backendIssueCount > 0 ? ` (${backendIssueCount})` : null}
-                </Button>
-              </div>
+              {backendLoading && (
+                <Badge variant="outline" className="animate-pulse">{t('common.loading')}</Badge>
+              )}
+              {!backendLoading && backendIssueCount > 0 && (
+                <Badge variant="destructive">{backendIssueCount}</Badge>
+              )}
+              {!backendLoading && backendIssueCount === 0 && backendQuality && (
+                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">OK</Badge>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">{t('logs.files.backendQuality.hint')}</p>
+            <ChevronDown
+              className={`w-5 h-5 text-muted-foreground transition-transform ${backendDetails ? 'rotate-180' : ''}`}
+            />
           </div>
         </CardHeader>
 
-        {backendLoading && (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
-          </CardContent>
-        )}
         {backendError && (
           <CardContent>
             <p className="text-sm text-red-400">{backendError}</p>
           </CardContent>
         )}
 
-        {backendQuality && (
+        {backendDetails && backendQuality && (
           <CardContent className="space-y-6">
+            {/* 快捷操作按钮 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+              </Button>
+              {backendQuality.summary.http.failed > 0 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ eventName: 'network_request_failed' })}>
+                    {t('logs.files.backendQuality.viewHttpFailed')}
+                  </Link>
+                </Button>
+              )}
+              {backendQuality.summary.mqtt.ackTimeout > 0 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'ACK_TIMEOUT' })}>
+                    {t('logs.files.backendQuality.viewAckTimeouts')}
+                  </Link>
+                </Button>
+              )}
+              {backendQuality.summary.mqtt.publishFailed > 0 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ msgContains: 'MQTT_PUBLISH_FAILED' })}>
+                    {t('logs.files.backendQuality.viewMqttPublishFailed')}
+                  </Link>
+                </Button>
+              )}
+            </div>
+
             {/* HTTP 统计 */}
             <div className="space-y-3">
               <h4 className="text-sm font-medium flex items-center gap-2">
@@ -927,7 +1167,7 @@ export default function LogFileDetailPage() {
             </div>
 
             {/* HTTP 端点详情表格 */}
-            {backendDetails && backendQuality.http.endpoints.length > 0 && (
+            {backendQuality.http.endpoints.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">{t('logs.files.backendQuality.httpTop')}</p>
                 <Table>
@@ -957,7 +1197,7 @@ export default function LogFileDetailPage() {
             )}
 
             {/* MQTT 设备问题详情表格 */}
-            {backendDetails && backendQuality.mqtt.issuesByDevice.length > 0 && (
+            {backendQuality.mqtt.issuesByDevice.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">{t('logs.files.backendQuality.mqttDeviceTop')}</p>
                 <Table>
@@ -998,94 +1238,91 @@ export default function LogFileDetailPage() {
 
       {/* 数据连续性诊断卡片 */}
       <Card className="glass">
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
+        <CardHeader
+          className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
+          onClick={() => setDataContinuityDetails((v) => !v)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
                 {t('logs.files.dataContinuity.title')}
               </CardTitle>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ eventName: 'warning', msgContains: 'DATA_STREAM_' })}>
-                    {t('logs.files.dataContinuity.viewOrderBroken')}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_OUT_OF_ORDER_BUFFERED' })}>
-                    {t('logs.files.dataContinuity.viewOutOfOrderBuffered')}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_DUPLICATE_DROPPED' })}>
-                    {t('logs.files.dataContinuity.viewDuplicateDropped')}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ errorCode: 'DATA_PERSIST_TIMEOUT' })}>
-                    {t('logs.files.dataContinuity.viewPersistTimeout')}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ errorCode: 'V3_RT_BUFFER_DROP' })}>
-                    {t('logs.files.dataContinuity.viewRtBufferDrop')}
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDataContinuityDetails((v) => !v)}
-                  title={t('logs.files.dataContinuity.hint')}
-                >
-                  {dataContinuityDetails
-                    ? t('logs.files.dataContinuity.hideDetails')
-                    : t('logs.files.dataContinuity.showDetails')}
-                  {!dataContinuityDetails && continuityIssueCount > 0 ? ` (${continuityIssueCount})` : null}
-                </Button>
-              </div>
+              {dataContinuityLoading && (
+                <Badge variant="outline" className="animate-pulse">{t('common.loading')}</Badge>
+              )}
+              {!dataContinuityLoading && continuityIssueCount > 0 && (
+                <Badge variant="destructive">{continuityIssueCount}</Badge>
+              )}
+              {!dataContinuityLoading && continuityIssueCount === 0 && dataContinuity && (
+                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">OK</Badge>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">{t('logs.files.dataContinuity.hint')}</p>
+            <ChevronDown
+              className={`w-5 h-5 text-muted-foreground transition-transform ${dataContinuityDetails ? 'rotate-180' : ''}`}
+            />
           </div>
         </CardHeader>
 
-        {dataContinuityLoading && (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
-          </CardContent>
-        )}
         {dataContinuityError && (
           <CardContent>
             <p className="text-sm text-red-400">{dataContinuityError}</p>
           </CardContent>
         )}
 
-        {dataContinuity && (
+        {dataContinuityDetails && dataContinuity && (
           <CardContent className="space-y-4">
-	            <div className="flex items-center gap-2 flex-wrap">
-	              <Badge variant="secondary">
-	                {t('logs.files.dataContinuity.total')}: {dataContinuity.summary.total}
-	              </Badge>
-	              <Badge variant={dataContinuity.summary.orderBroken > 0 ? 'destructive' : 'secondary'}>
-	                {t('logs.files.dataContinuity.orderBroken')}: {dataContinuity.summary.orderBroken}
-	              </Badge>
-	              <Badge
-	                variant={dataContinuity.summary.outOfOrderBuffered > 0 ? 'destructive' : 'secondary'}
-	                title={t('logs.files.dataContinuity.outOfOrderBuffered')}
-	              >
-	                {t('logs.files.dataContinuity.outOfOrderBuffered')}: {dataContinuity.summary.outOfOrderBuffered}
-	              </Badge>
-	              <Badge
-	                variant={dataContinuity.summary.duplicateDropped > 0 ? 'destructive' : 'secondary'}
-	                title={t('logs.files.dataContinuity.duplicateDropped')}
-	              >
-	                {t('logs.files.dataContinuity.duplicateDropped')}: {dataContinuity.summary.duplicateDropped}
-	              </Badge>
-	              <Badge variant={dataContinuity.summary.persistTimeout > 0 ? 'destructive' : 'secondary'}>
-	                {t('logs.files.dataContinuity.persistTimeout')}: {dataContinuity.summary.persistTimeout}
-	              </Badge>
+            {/* 快捷操作按钮 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+              </Button>
+              {dataContinuity.summary.orderBroken > 0 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ eventName: 'warning', msgContains: 'DATA_STREAM_' })}>
+                    {t('logs.files.dataContinuity.viewOrderBroken')}
+                  </Link>
+                </Button>
+              )}
+              {dataContinuity.summary.persistTimeout > 0 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'DATA_PERSIST_TIMEOUT' })}>
+                    {t('logs.files.dataContinuity.viewPersistTimeout')}
+                  </Link>
+                </Button>
+              )}
+              {dataContinuity.summary.rtBufferDrop > 0 && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={makeLogsHref({ errorCode: 'V3_RT_BUFFER_DROP' })}>
+                    {t('logs.files.dataContinuity.viewRtBufferDrop')}
+                  </Link>
+                </Button>
+              )}
+            </div>
+
+            {/* 统计摘要 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary">
+                {t('logs.files.dataContinuity.total')}: {dataContinuity.summary.total}
+              </Badge>
+              <Badge variant={dataContinuity.summary.orderBroken > 0 ? 'destructive' : 'secondary'}>
+                {t('logs.files.dataContinuity.orderBroken')}: {dataContinuity.summary.orderBroken}
+              </Badge>
+              <Badge
+                variant={dataContinuity.summary.outOfOrderBuffered > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.dataContinuity.outOfOrderBuffered')}
+              >
+                {t('logs.files.dataContinuity.outOfOrderBuffered')}: {dataContinuity.summary.outOfOrderBuffered}
+              </Badge>
+              <Badge
+                variant={dataContinuity.summary.duplicateDropped > 0 ? 'destructive' : 'secondary'}
+                title={t('logs.files.dataContinuity.duplicateDropped')}
+              >
+                {t('logs.files.dataContinuity.duplicateDropped')}: {dataContinuity.summary.duplicateDropped}
+              </Badge>
+              <Badge variant={dataContinuity.summary.persistTimeout > 0 ? 'destructive' : 'secondary'}>
+                {t('logs.files.dataContinuity.persistTimeout')}: {dataContinuity.summary.persistTimeout}
+              </Badge>
               <Badge className={dataContinuity.summary.rtBufferDrop > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}>
                 {t('logs.files.dataContinuity.rtBufferDrop')}: {dataContinuity.summary.rtBufferDrop}
               </Badge>
@@ -1109,8 +1346,8 @@ export default function LogFileDetailPage() {
               </Badge>
             </div>
 
-            {dataContinuityDetails ? (
-              <>
+            {/* 详情表格 */}
+            <>
                 {dataContinuity.byDevice.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">{t('logs.files.dataContinuity.deviceTop')}</p>
@@ -1221,96 +1458,103 @@ export default function LogFileDetailPage() {
                   </div>
                 )}
               </>
-            ) : null}
           </CardContent>
         )}
       </Card>
 
       {/* 数据流会话质量卡片 */}
       <Card className="glass">
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
+        <CardHeader
+          className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
+          onClick={() => setStreamSessionQualityDetails((v) => !v)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <BarChart3 className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
                 {t('logs.files.streamSessionQuality.title')}
               </CardTitle>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_SESSION_SUMMARY' })}>
-                    {t('logs.files.streamSessionQuality.viewSessions')}
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setStreamSessionQualityDetails((v) => !v)}
-                  title={t('logs.files.streamSessionQuality.hint')}
-                >
-                  {streamSessionQualityDetails
-                    ? t('logs.files.streamSessionQuality.hideDetails')
-                    : t('logs.files.streamSessionQuality.showDetails')}
-                  {!streamSessionQualityDetails && streamSessionCount > 0 ? ` (${streamSessionCount})` : null}
-                </Button>
-              </div>
+              {streamSessionQualityLoading && (
+                <Badge variant="outline" className="animate-pulse">{t('common.loading')}</Badge>
+              )}
+              {!streamSessionQualityLoading && streamSessionQuality && (
+                (() => {
+                  const badCount = streamSessionQuality.summary.qualityBad;
+                  const warnCount = streamSessionQuality.summary.qualityWarn;
+                  if (badCount > 0) {
+                    return <Badge variant="destructive">{badCount}</Badge>;
+                  }
+                  if (warnCount > 0) {
+                    return <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20">{warnCount}</Badge>;
+                  }
+                  return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">OK</Badge>;
+                })()
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.hint')}</p>
+            <ChevronDown
+              className={`w-5 h-5 text-muted-foreground transition-transform ${streamSessionQualityDetails ? 'rotate-180' : ''}`}
+            />
           </div>
         </CardHeader>
 
-        {streamSessionQualityLoading && (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
-          </CardContent>
-        )}
         {streamSessionQualityError && (
           <CardContent>
             <p className="text-sm text-red-400">{streamSessionQualityError}</p>
           </CardContent>
         )}
 
-        {streamSessionQuality && (
-	          <CardContent className="space-y-4">
-	            <div className="flex items-center gap-2 flex-wrap">
-	              <Badge variant="secondary">
-	                {t('logs.files.streamSessionQuality.total')}: {streamSessionQuality.summary.total}
-	              </Badge>
-	              {(() => {
-	                const avg = streamSessionQuality.summary.scoreAvg;
-	                const title = t('logs.files.streamSessionQuality.scoreHint');
-	                if (avg === null) {
-	                  return (
-	                    <Badge variant="secondary" title={title}>
-	                      {t('logs.files.streamSessionQuality.scoreAvg')}: -
-	                    </Badge>
-	                  );
-	                }
-	                const quality =
-	                  avg < streamSessionQuality.summary.thresholdBadBelow
-	                    ? 'bad'
-	                    : avg < streamSessionQuality.summary.thresholdWarnBelow
-	                      ? 'warn'
-	                      : 'good';
-	                if (quality === 'bad') {
-	                  return (
-	                    <Badge variant="destructive" title={title}>
-	                      {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
-	                    </Badge>
-	                  );
-	                }
-	                if (quality === 'warn') {
-	                  return (
-	                    <Badge
-	                      className="bg-amber-500/10 text-amber-400 border-amber-500/20"
-	                      title={title}
-	                    >
-	                      {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
-	                    </Badge>
-	                  );
-	                }
+        {streamSessionQualityDetails && streamSessionQuality && (
+          <CardContent className="space-y-4">
+            {/* 快捷操作按钮 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_SESSION_SUMMARY' })}>
+                  {t('logs.files.streamSessionQuality.viewSessions')}
+                </Link>
+              </Button>
+            </div>
+
+            {/* 统计摘要 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary">
+                {t('logs.files.streamSessionQuality.total')}: {streamSessionQuality.summary.total}
+              </Badge>
+              {(() => {
+                const avg = streamSessionQuality.summary.scoreAvg;
+                const title = t('logs.files.streamSessionQuality.scoreHint');
+                if (avg === null) {
+                  return (
+                    <Badge variant="secondary" title={title}>
+                      {t('logs.files.streamSessionQuality.scoreAvg')}: -
+                    </Badge>
+                  );
+                }
+                const quality =
+                  avg < streamSessionQuality.summary.thresholdBadBelow
+                    ? 'bad'
+                    : avg < streamSessionQuality.summary.thresholdWarnBelow
+                      ? 'warn'
+                      : 'good';
+                if (quality === 'bad') {
+                  return (
+                    <Badge variant="destructive" title={title}>
+                      {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
+                    </Badge>
+                  );
+                }
+                if (quality === 'warn') {
+                  return (
+                    <Badge
+                      className="bg-amber-500/10 text-amber-400 border-amber-500/20"
+                      title={title}
+                    >
+                      {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
+                    </Badge>
+                  );
+                }
 	                return (
 	                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20" title={title}>
 	                    {t('logs.files.streamSessionQuality.scoreAvg')}: {avg}
@@ -1389,9 +1633,9 @@ export default function LogFileDetailPage() {
               </Badge>
             </div>
 
-            {streamSessionQualityDetails ? (
-              <>
-                {streamSessionQuality.byReason.length > 0 && (
+            {/* 详情表格 */}
+            <>
+              {streamSessionQuality.byReason.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">{t('logs.files.streamSessionQuality.reasonTop')}</p>
                     <Table>
@@ -1565,59 +1809,49 @@ export default function LogFileDetailPage() {
                     </Table>
                   </div>
                 )}
-              </>
-            ) : null}
+            </>
           </CardContent>
         )}
       </Card>
 
       {/* BLE 质量报告卡片 */}
       <Card className="glass">
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Bluetooth className="w-4 h-4" />
+        <CardHeader
+          className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
+          onClick={() => setBleExpanded((v) => !v)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Bluetooth className="w-4 h-4 text-muted-foreground" />
+              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
                 {t('logs.files.bleQuality.title')}
               </CardTitle>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={makeLogsHref({ eventName: 'PARSER_ERROR' })}>
-                    {t('logs.files.bleQuality.viewParserErrors')}
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBleAdvanced((v) => !v)}
-                  title={t('logs.files.bleQuality.hint')}
-                >
-                  {bleAdvanced
-                    ? t('logs.files.bleQuality.hideAdvanced')
-                    : t('logs.files.bleQuality.showAdvanced')}
-                  {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
-                </Button>
-              </div>
+              {bleLoading && (
+                <Badge variant="outline" className="animate-pulse">{t('common.loading')}</Badge>
+              )}
+              {!bleLoading && bleQuality && (
+                (() => {
+                  const issues = missingItems.length + pendingPairs.length;
+                  if (issues > 0) {
+                    return <Badge variant="destructive">{issues}</Badge>;
+                  }
+                  return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">OK</Badge>;
+                })()
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">{t('logs.files.bleQuality.hint')}</p>
+            <ChevronDown
+              className={`w-5 h-5 text-muted-foreground transition-transform ${bleExpanded ? 'rotate-180' : ''}`}
+            />
           </div>
         </CardHeader>
 
-        {bleLoading && (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
-          </CardContent>
-        )}
         {bleError && (
           <CardContent>
             <p className="text-sm text-red-400">{bleError}</p>
           </CardContent>
         )}
 
-        {bleQuality ? (
+        {bleExpanded && bleQuality ? (
           <>
             {(() => {
               const coveragePercent = Math.round(bleQuality.summary.coverageRatio * 100);
@@ -1844,7 +2078,34 @@ export default function LogFileDetailPage() {
 
               return (
                 <>
-                  <div style={{ marginTop: 14 }}>
+                  {/* 快捷操作按钮 */}
+                  <div className="flex items-center gap-2 flex-wrap px-6 pt-4">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+                    </Button>
+                    {bleQuality.parser.parserErrorCount > 0 && (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={makeLogsHref({ eventName: 'PARSER_ERROR' })}>
+                          {t('logs.files.bleQuality.viewParserErrors')}
+                        </Link>
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBleAdvanced((v) => !v);
+                      }}
+                    >
+                      {bleAdvanced
+                        ? t('logs.files.bleQuality.hideAdvanced')
+                        : t('logs.files.bleQuality.showAdvanced')}
+                      {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
+                    </Button>
+                  </div>
+
+                  <div style={{ marginTop: 14, paddingLeft: 24, paddingRight: 24 }}>
                     <div className="text-sm font-medium">{t('logs.files.bleQuality.coverage')}</div>
                     <div className="text-sm text-muted-foreground" style={{ marginTop: 6 }}>
                       {bleQuality.summary.okTotal}/{bleQuality.summary.requiredTotal} ({coveragePercent}%)

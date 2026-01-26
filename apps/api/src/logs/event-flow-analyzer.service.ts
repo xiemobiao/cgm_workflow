@@ -3,7 +3,6 @@ import { PrismaService } from '../database/prisma.service';
 import {
   MAIN_FLOW_TEMPLATE,
   BLE_KNOWN_EVENTS,
-  getEventCategory,
 } from './event-flow-templates';
 import type {
   MainFlowAnalysisResult,
@@ -29,7 +28,7 @@ import type {
 export class EventFlowAnalyzerService {
   private readonly logger = new Logger(EventFlowAnalyzerService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Analyze main flow for a log file
@@ -131,7 +130,7 @@ export class EventFlowAnalyzerService {
     const totalDurationMs =
       stageTimings[0]?.startTime && stageTimings[stageTimings.length - 1]?.endTime
         ? Number(stageTimings[stageTimings.length - 1].endTime) -
-          Number(stageTimings[0].startTime)
+        Number(stageTimings[0].startTime)
         : null;
 
     const coverageRate =

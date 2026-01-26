@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, FileText, RefreshCw, ChevronRight, Clock, CheckCircle2, XCircle, Loader2, AlertCircle, Activity, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, FileText, RefreshCw, ChevronRight, Clock, CheckCircle2, XCircle, Loader2, AlertCircle, Activity, AlertTriangle, Trash2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -89,6 +90,19 @@ export default function LogFilesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Batch selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  // Filter state
+  const [showOnlyErrors, setShowOnlyErrors] = useState(false);
+
+  // Filtered items
+  const filteredItems = useMemo(() => {
+    if (!showOnlyErrors) return items;
+    return items.filter((f) => f.errorCount > 0);
+  }, [items, showOnlyErrors]);
+
   useEffect(() => {
     const id = window.setTimeout(() => {
       setProjectId(getProjectId() ?? '');
@@ -142,6 +156,60 @@ export default function LogFilesPage() {
     if (!projectId) return;
     void loadRef.current(true);
   }, [projectId]);
+
+  // Toggle single item selection
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  // Toggle all items selection (based on filtered items)
+  function toggleSelectAll() {
+    if (filteredItems.length > 0 && selectedIds.size === filteredItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map((f) => f.id)));
+    }
+  }
+
+  // Batch delete selected files
+  async function batchDelete() {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    const ok = window.confirm(t('logs.files.batchDeleteConfirm', { count }));
+    if (!ok) return;
+
+    setDeleting(true);
+    setError('');
+    try {
+      const ids = Array.from(selectedIds);
+      await apiFetch<{ deleted: number }>('/api/logs/files/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      // Remove deleted items from list
+      setItems((prev) => prev.filter((f) => !selectedIds.has(f.id)));
+      setSelectedIds(new Set());
+    } catch (e: unknown) {
+      const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+      setError(msg);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // Clear selection when items or filter change (e.g., after refresh or filter toggle)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [projectId, showOnlyErrors]);
 
   return (
     <motion.div
@@ -206,9 +274,42 @@ export default function LogFilesPage() {
               >
                 {t('common.loadMore')}
               </Button>
+
+              {/* Batch delete button */}
+              {selectedIds.size > 0 && (
+                <Button
+                  variant="destructive"
+                  disabled={deleting}
+                  onClick={() => void batchDelete()}
+                  className="gap-2"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  {t('logs.files.batchDelete', { count: selectedIds.size })}
+                </Button>
+              )}
+
+              {/* Filter button */}
+              <Button
+                variant={showOnlyErrors ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowOnlyErrors(!showOnlyErrors)}
+                className="gap-2"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                {t('logs.files.onlyErrors')}
+              </Button>
+
               <div className="flex items-center gap-2 text-sm text-muted-foreground ml-auto">
                 <Activity className="w-4 h-4" />
-                {loading ? t('common.loading') : t('common.items', { count: items.length })}
+                {loading ? t('common.loading') : (
+                  showOnlyErrors
+                    ? t('logs.files.filteredItems', { filtered: filteredItems.length, total: items.length })
+                    : t('common.items', { count: items.length })
+                )}
               </div>
             </div>
 
@@ -258,6 +359,13 @@ export default function LogFilesPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-white/[0.06]">
+                        <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wider py-4 px-3 w-12">
+                          <Checkbox
+                            checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                            onCheckedChange={toggleSelectAll}
+                            aria-label={t('logs.files.selectAll')}
+                          />
+                        </th>
                         <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-4 px-4">
                           {t('logs.files.uploadedAt')}
                         </th>
@@ -281,9 +389,10 @@ export default function LogFilesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((f, index) => {
+                      {filteredItems.map((f, index) => {
                         const statusConfig = getStatusConfig(f.status);
                         const StatusIcon = statusConfig.icon;
+                        const isSelected = selectedIds.has(f.id);
                         return (
                           <motion.tr
                             key={f.id}
@@ -291,8 +400,23 @@ export default function LogFilesPage() {
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.3, delay: 0.03 * index }}
                             onClick={() => router.push(`/logs/files/${f.id}`)}
-                            className="border-b border-white/[0.03] hover:bg-white/[0.02] cursor-pointer group transition-colors"
+                            className={`border-b border-white/[0.03] hover:bg-white/[0.02] cursor-pointer group transition-colors ${
+                              isSelected ? 'bg-white/[0.04]' : ''
+                            }`}
                           >
+                            <td
+                              className="py-4 px-3 text-center"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelect(f.id);
+                              }}
+                            >
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleSelect(f.id)}
+                                aria-label={t('logs.files.selectFile', { fileName: f.fileName })}
+                              />
+                            </td>
                             <td className="py-4 px-4 text-sm text-muted-foreground whitespace-nowrap">
                               <div className="flex items-center gap-2">
                                 <Clock className="w-3.5 h-3.5" />
@@ -323,10 +447,15 @@ export default function LogFilesPage() {
                             </td>
                             <td className="py-4 px-4 text-right">
                               {f.errorCount > 0 ? (
-                                <span className="inline-flex items-center gap-1.5 text-sm tabular-nums text-red-400">
+                                <Link
+                                  href={`/logs/files/${f.id}#diagnosis`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 text-sm tabular-nums text-red-400 hover:text-red-300 hover:underline transition-colors"
+                                  title={t('logs.viewDiagnosis')}
+                                >
                                   <AlertTriangle className="w-3.5 h-3.5" />
                                   {f.errorCount.toLocaleString()}
-                                </span>
+                                </Link>
                               ) : (
                                 <span className="text-sm tabular-nums text-muted-foreground">0</span>
                               )}

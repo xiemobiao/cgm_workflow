@@ -30,61 +30,61 @@ const KNOWN_ERROR_PATTERNS: Array<{
   severity: number;
   suggestion: string;
 }> = [
-  {
-    pattern: /GATT_ERROR|GATT_FAILURE/i,
-    category: 'gatt_error',
-    severity: 4,
-    suggestion: 'GATT operation failed. Check Bluetooth connection stability and retry.',
-  },
-  {
-    pattern: /CONNECTION_TIMEOUT|CONNECT_TIMEOUT/i,
-    category: 'connection_timeout',
-    severity: 3,
-    suggestion: 'Connection timeout. Ensure device is in range and not paired with other devices.',
-  },
-  {
-    pattern: /BOND_FAILED|PAIRING_FAILED/i,
-    category: 'pairing_failure',
-    severity: 4,
-    suggestion: 'Pairing failed. Remove device bond and try again.',
-  },
-  {
-    pattern: /SERVICE_NOT_FOUND|CHARACTERISTIC_NOT_FOUND/i,
-    category: 'service_missing',
-    severity: 5,
-    suggestion: 'BLE service/characteristic not found. Check device firmware version.',
-  },
-  {
-    pattern: /WRITE_FAILED|READ_FAILED/i,
-    category: 'io_error',
-    severity: 3,
-    suggestion: 'BLE read/write operation failed. Verify connection is still active.',
-  },
-  {
-    pattern: /DISCONNECTED_UNEXPECTEDLY|CONNECTION_LOST/i,
-    category: 'unexpected_disconnect',
-    severity: 4,
-    suggestion: 'Unexpected disconnection. Check for interference or low battery.',
-  },
-  {
-    pattern: /CRC_ERROR|CHECKSUM/i,
-    category: 'data_corruption',
-    severity: 5,
-    suggestion: 'Data corruption detected. Check for signal interference.',
-  },
-  {
-    pattern: /BLUETOOTH_OFF|ADAPTER_DISABLED/i,
-    category: 'bluetooth_disabled',
-    severity: 2,
-    suggestion: 'Bluetooth is disabled. Enable Bluetooth in system settings.',
-  },
-  {
-    pattern: /PERMISSION_DENIED|LOCATION_REQUIRED/i,
-    category: 'permission_error',
-    severity: 2,
-    suggestion: 'Missing permissions. Grant Bluetooth and location permissions.',
-  },
-];
+    {
+      pattern: /GATT_ERROR|GATT_FAILURE/i,
+      category: 'gatt_error',
+      severity: 4,
+      suggestion: 'GATT operation failed. Check Bluetooth connection stability and retry.',
+    },
+    {
+      pattern: /CONNECTION_TIMEOUT|CONNECT_TIMEOUT/i,
+      category: 'connection_timeout',
+      severity: 3,
+      suggestion: 'Connection timeout. Ensure device is in range and not paired with other devices.',
+    },
+    {
+      pattern: /BOND_FAILED|PAIRING_FAILED/i,
+      category: 'pairing_failure',
+      severity: 4,
+      suggestion: 'Pairing failed. Remove device bond and try again.',
+    },
+    {
+      pattern: /SERVICE_NOT_FOUND|CHARACTERISTIC_NOT_FOUND/i,
+      category: 'service_missing',
+      severity: 5,
+      suggestion: 'BLE service/characteristic not found. Check device firmware version.',
+    },
+    {
+      pattern: /WRITE_FAILED|READ_FAILED/i,
+      category: 'io_error',
+      severity: 3,
+      suggestion: 'BLE read/write operation failed. Verify connection is still active.',
+    },
+    {
+      pattern: /DISCONNECTED_UNEXPECTEDLY|CONNECTION_LOST/i,
+      category: 'unexpected_disconnect',
+      severity: 4,
+      suggestion: 'Unexpected disconnection. Check for interference or low battery.',
+    },
+    {
+      pattern: /CRC_ERROR|CHECKSUM/i,
+      category: 'data_corruption',
+      severity: 5,
+      suggestion: 'Data corruption detected. Check for signal interference.',
+    },
+    {
+      pattern: /BLUETOOTH_OFF|ADAPTER_DISABLED/i,
+      category: 'bluetooth_disabled',
+      severity: 2,
+      suggestion: 'Bluetooth is disabled. Enable Bluetooth in system settings.',
+    },
+    {
+      pattern: /PERMISSION_DENIED|LOCATION_REQUIRED/i,
+      category: 'permission_error',
+      severity: 2,
+      suggestion: 'Missing permissions. Grant Bluetooth and location permissions.',
+    },
+  ];
 
 // Connection flow patterns for context analysis
 const CONNECTION_FLOW_PATTERNS = {
@@ -127,7 +127,7 @@ export class BluetoothService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-  ) {}
+  ) { }
 
   // Aggregate sessions from log events
   async aggregateSessions(params: {
@@ -726,7 +726,7 @@ export class BluetoothService {
     const phases: SessionTimelinePhase[] = [];
     let currentPhase: SessionTimelinePhase | null = null;
 
-    const phaseOrder = ['scan', 'pair', 'connect', 'connected', 'communicate', 'disconnect'];
+    // Phase detection logic follows...
 
     for (const event of events) {
       const name = event.eventName.toUpperCase();

@@ -8,7 +8,7 @@ export class KnownIssuesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-  ) {}
+  ) { }
 
   // Create a known issue
   async create(params: {
@@ -306,6 +306,8 @@ export class KnownIssuesService {
         solution: string;
         matchType: string;
         confidence: number;
+        eventPattern: string | null;
+        errorCode: string | null;
       }>;
     }> = [];
 
@@ -318,6 +320,8 @@ export class KnownIssuesService {
         solution: string;
         matchType: string;
         confidence: number;
+        eventPattern: string | null;
+        errorCode: string | null;
       }> = [];
 
       for (const issue of issues) {
@@ -329,6 +333,8 @@ export class KnownIssuesService {
             solution: issue.solution,
             matchType: 'errorCode',
             confidence: 1.0,
+            eventPattern: issue.eventPattern,
+            errorCode: issue.errorCode,
           });
           hitIssueIds.add(issue.id);
           continue;
@@ -345,6 +351,8 @@ export class KnownIssuesService {
                 solution: issue.solution,
                 matchType: 'eventPattern',
                 confidence: 0.9,
+                eventPattern: issue.eventPattern,
+                errorCode: issue.errorCode,
               });
               hitIssueIds.add(issue.id);
               continue;
@@ -365,6 +373,8 @@ export class KnownIssuesService {
                 solution: issue.solution,
                 matchType: 'msgPattern',
                 confidence: 0.8,
+                eventPattern: issue.eventPattern,
+                errorCode: issue.errorCode,
               });
               hitIssueIds.add(issue.id);
             }
@@ -501,27 +511,27 @@ export class KnownIssuesService {
     const content = {
       session: session
         ? {
-            id: session.id,
-            projectId: session.projectId,
-            linkCode: session.linkCode,
-            deviceMac: session.deviceMac,
-            startTimeMs: Number(session.startTimeMs),
-            endTimeMs: session.endTimeMs ? Number(session.endTimeMs) : null,
-            durationMs: session.durationMs,
-            status: session.status,
-            eventCount: session.eventCount,
-            errorCount: session.errorCount,
-            commandCount: session.commandCount,
-            scanStartMs: session.scanStartMs ? Number(session.scanStartMs) : null,
-            pairStartMs: session.pairStartMs ? Number(session.pairStartMs) : null,
-            connectStartMs: session.connectStartMs ? Number(session.connectStartMs) : null,
-            connectedMs: session.connectedMs ? Number(session.connectedMs) : null,
-            disconnectMs: session.disconnectMs ? Number(session.disconnectMs) : null,
-            sdkVersion: session.sdkVersion,
-            appId: session.appId,
-            terminalInfo: session.terminalInfo,
-            createdAt: session.createdAt.toISOString(),
-          }
+          id: session.id,
+          projectId: session.projectId,
+          linkCode: session.linkCode,
+          deviceMac: session.deviceMac,
+          startTimeMs: Number(session.startTimeMs),
+          endTimeMs: session.endTimeMs ? Number(session.endTimeMs) : null,
+          durationMs: session.durationMs,
+          status: session.status,
+          eventCount: session.eventCount,
+          errorCount: session.errorCount,
+          commandCount: session.commandCount,
+          scanStartMs: session.scanStartMs ? Number(session.scanStartMs) : null,
+          pairStartMs: session.pairStartMs ? Number(session.pairStartMs) : null,
+          connectStartMs: session.connectStartMs ? Number(session.connectStartMs) : null,
+          connectedMs: session.connectedMs ? Number(session.connectedMs) : null,
+          disconnectMs: session.disconnectMs ? Number(session.disconnectMs) : null,
+          sdkVersion: session.sdkVersion,
+          appId: session.appId,
+          terminalInfo: session.terminalInfo,
+          createdAt: session.createdAt.toISOString(),
+        }
         : null,
       eventCount: events.length,
       errorCount: errorEvents.length,
@@ -780,9 +790,6 @@ export class KnownIssuesService {
         });
         idxA++;
       } else if (eventA && eventB) {
-        const relativeA = idxA;
-        const relativeB = idxB;
-
         if (eventA.eventName === eventB.eventName) {
           timeline.push({
             timestampMs: Number(eventA.timestampMs),

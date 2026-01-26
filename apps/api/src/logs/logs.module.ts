@@ -8,17 +8,32 @@ import { LogsParserService } from './logs.parser.service';
 import { LogsService } from './logs.service';
 import { LogsAnalyzerService } from './logs-analyzer.service';
 import { EventFlowAnalyzerService } from './event-flow-analyzer.service';
+// Refactored services
+import {
+  LogsHelperService,
+  LogsFileService,
+  LogsSearchService,
+  LogsTraceService,
+  LogsStatsService,
+} from './services';
 
 @Module({
   imports: [StorageModule, KnownIssuesModule],
   controllers: [LogsController],
   providers: [
+    // Original service (facade for backward compatibility)
     LogsService,
     LogsParserService,
     LoganDecryptService,
     BluetoothService,
     LogsAnalyzerService,
     EventFlowAnalyzerService,
+    // Refactored services
+    LogsHelperService,
+    LogsFileService,
+    LogsSearchService,
+    LogsTraceService,
+    LogsStatsService,
   ],
   exports: [
     LogsService,
@@ -26,6 +41,12 @@ import { EventFlowAnalyzerService } from './event-flow-analyzer.service';
     BluetoothService,
     LogsAnalyzerService,
     EventFlowAnalyzerService,
+    // Export refactored services for other modules
+    LogsHelperService,
+    LogsFileService,
+    LogsSearchService,
+    LogsTraceService,
+    LogsStatsService,
   ],
 })
-export class LogsModule {}
+export class LogsModule { }

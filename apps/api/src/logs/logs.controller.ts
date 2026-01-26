@@ -40,12 +40,16 @@ const searchSchema = z.object({
   level: z.coerce.number().int().min(1).max(4).optional(),
   levelGte: z.coerce.number().int().min(1).max(4).optional(),
   levelLte: z.coerce.number().int().min(1).max(4).optional(),
+  stage: z.string().min(1).optional(),
+  op: z.string().min(1).optional(),
+  result: z.string().min(1).optional(),
   // Tracking field filters
   linkCode: z.string().min(1).optional(),
   requestId: z.string().min(1).optional(),
   deviceMac: z.string().min(1).optional(),
   deviceSn: z.string().min(1).optional(),
   errorCode: z.string().min(1).optional(),
+  excludeNoisy: z.coerce.boolean().optional(),
   // Content search
   msgContains: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
@@ -64,6 +68,10 @@ const contextSchema = z.object({
 });
 
 const idSchema = z.string().uuid();
+
+const batchDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
+});
 
 // Tracing schemas
 const traceLinkCodeSchema = z.object({
@@ -210,7 +218,7 @@ export class LogsController {
     private readonly logs: LogsService,
     private readonly bluetooth: BluetoothService,
     private readonly analyzer: LogsAnalyzerService,
-  ) {}
+  ) { }
 
   @Post('upload')
   @HttpCode(200)
@@ -353,19 +361,6 @@ export class LogsController {
       });
     }
 
-    console.log('=== Event Flow Analysis API ===');
-    console.log('File ID:', fileId);
-    console.log('Analysis ID:', (analysis as any).id);
-    console.log('mainFlowAnalysis exists:', !!(analysis as any).mainFlowAnalysis);
-    console.log('eventCoverageAnalysis exists:', !!(analysis as any).eventCoverageAnalysis);
-
-    if ((analysis as any).mainFlowAnalysis) {
-      console.log('mainFlowAnalysis preview:', JSON.stringify((analysis as any).mainFlowAnalysis).substring(0, 200));
-    }
-    if ((analysis as any).eventCoverageAnalysis) {
-      console.log('eventCoverageAnalysis preview:', JSON.stringify((analysis as any).eventCoverageAnalysis).substring(0, 200));
-    }
-
     return {
       mainFlowAnalysis: (analysis as any).mainFlowAnalysis,
       eventCoverageAnalysis: (analysis as any).eventCoverageAnalysis,
@@ -391,6 +386,25 @@ export class LogsController {
   ) {
     const fileId = idSchema.parse(id);
     return this.logs.deleteLogFile({ actorUserId: user.userId, id: fileId });
+  }
+
+  @Post('files/batch-delete')
+  @HttpCode(200)
+  async batchDeleteLogFiles(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: unknown,
+  ) {
+    const dto = batchDeleteSchema.parse(body);
+    return this.logs.batchDeleteLogFiles({ actorUserId: user.userId, ids: dto.ids });
+  }
+
+  @Get('files/:id/diagnose')
+  async diagnoseLogFile(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logs.diagnoseLogFile({ actorUserId: user.userId, logFileId: fileId });
   }
 
   // ========== Tracing APIs ==========

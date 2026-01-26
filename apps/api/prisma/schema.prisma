@@ -168,6 +168,9 @@ model LogEvent {
   deviceMac   String?   // Device MAC address for filtering device-specific events
   deviceSn    String?   // Device SN / serial number for filtering device-specific events
   errorCode   String?   // Error code for quick error filtering
+  stage       String?   // stage for flow analysis, e.g. ble/http/mqtt
+  op          String?   // operation for stage, e.g. scan/connect/publish
+  result      String?   // result for op, e.g. start/ok/fail/timeout
 
   project Project @relation(fields: [projectId], references: [id])
   logFile LogFile @relation(fields: [logFileId], references: [id])
@@ -183,6 +186,7 @@ model LogEvent {
   @@index([deviceMac, timestampMs])
   @@index([deviceSn, timestampMs])
   @@index([errorCode])
+  @@index([logFileId, stage])
 }
 
 model Incident {

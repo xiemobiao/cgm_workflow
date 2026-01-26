@@ -10,6 +10,7 @@ import { buildDataContinuityReport } from './data-continuity';
 import { buildBleQualityReport, type LoganDecryptStats } from './ble-quality';
 import { buildStreamSessionQualityReport } from './stream-session-quality';
 import { LogsParserService } from './logs.parser.service';
+import { KnownIssuesService } from '../known-issues/known-issues.service';
 
 @Injectable()
 export class LogsService {
@@ -19,6 +20,7 @@ export class LogsService {
     private readonly audit: AuditService,
     private readonly storage: StorageService,
     private readonly parser: LogsParserService,
+    private readonly knownIssues: KnownIssuesService,
   ) {}
 
   private extractLoganDecryptStatsFromMsgJson(
@@ -202,22 +204,105 @@ export class LogsService {
     return `${normalized.slice(0, Math.max(0, maxLen - 1))}…`;
   }
 
+  private sanitizeTextLine(value: string): string {
+    let out = value;
+
+    // Authorization headers / bearer tokens
+    out = out.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer ***');
+
+    // Common JSON-like fields: "token":"...", "secret":"..."
+    out = out.replace(
+      /(\"(?:accessToken|refreshToken|token|secret|password|pwd|apiKey|appKey|secretKey|clientSecret|authorization)\"\s*:\s*\")([^\"]+)(\")/gi,
+      '$1***$3',
+    );
+
+    // Query params / key-value tokens: token=..., secret=...
+    out = out.replace(
+      /\b(access_token|refresh_token|token|secret|password|pwd|api_key|app_key|secret_key|client_secret|authorization)\s*=\s*([^\s&]+)/gi,
+      '$1=***',
+    );
+
+    return out;
+  }
+
+  private maskBrokerUrl(url: string): string {
+    if (!url.trim()) return '(empty)';
+    return url.replace(
+      /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/g,
+      '$1.***.***.$4',
+    );
+  }
+
+  private normalizeKey(key: string): string {
+    return key.toLowerCase().replace(/[-_]/g, '');
+  }
+
+  private shouldRedactKey(key: string): boolean {
+    const k = this.normalizeKey(key);
+
+    if (k.includes('token') || k.includes('sdkauth')) return true;
+    if (k.includes('secret')) return true;
+    if (k.includes('appid') || k.includes('clientid') || k.includes('clientsecret')) return true;
+    if (k === 'username') return true;
+    if ((k.includes('user') && k.includes('id')) || k === 'uid') return true;
+    if (k.includes('password') || k.includes('pwd')) return true;
+    if (k.includes('challenge')) return true;
+    if (k.includes('key') && !k.includes('keyboard') && !k.endsWith('keys')) return true;
+
+    return false;
+  }
+
+  private maskSecretValue(value: unknown): string {
+    const s = typeof value === 'string' ? value.trim() : String(value ?? '');
+    if (!s) return '***';
+    if (s.length <= 8) return '***';
+    return `${s.slice(0, 4)}…${s.slice(-4)}`;
+  }
+
+  private sanitizeMsgJson(value: unknown): unknown {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'string') return this.sanitizeTextLine(value);
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map((v) => this.sanitizeMsgJson(v));
+    }
+    if (typeof value !== 'object') return value;
+
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(obj)) {
+      const k = this.normalizeKey(key);
+      if (k === 'broker' || k === 'host') {
+        out[key] = typeof v === 'string' ? this.maskBrokerUrl(v) : this.maskSecretValue(v);
+        continue;
+      }
+      if (this.shouldRedactKey(key)) {
+        out[key] = this.maskSecretValue(v);
+        continue;
+      }
+      out[key] = this.sanitizeMsgJson(v);
+    }
+    return out;
+  }
+
   private msgPreviewFromJson(value: unknown): string | null {
     if (value === null || value === undefined) return null;
-    if (typeof value === 'string') return this.truncateText(value, 240);
+    if (typeof value === 'string') return this.truncateText(this.sanitizeTextLine(value), 240);
     if (typeof value === 'number' || typeof value === 'boolean') {
       return this.truncateText(String(value), 240);
     }
     if (Array.isArray(value)) {
       try {
-        return this.truncateText(JSON.stringify(value), 240);
+        return this.truncateText(JSON.stringify(this.sanitizeMsgJson(value)), 240);
       } catch {
         return this.truncateText(String(value), 240);
       }
     }
     if (typeof value === 'object') {
-      const obj = value as Record<string, unknown>;
-      const knownKeys = ['message', 'msg', 'error', 'err', 'reason', 'detail'];
+      const obj = this.sanitizeMsgJson(value) as Record<string, unknown>;
+      const knownKeys = ['data', 'message', 'msg', 'error', 'err', 'reason', 'detail'];
       for (const key of knownKeys) {
         const v = obj[key];
         if (typeof v === 'string' && v.trim()) {
@@ -263,12 +348,16 @@ export class LogsService {
     level?: number;
     levelGte?: number;
     levelLte?: number;
+    stage?: string;
+    op?: string;
+    result?: string;
     // Tracking field filters
     linkCode?: string;
     requestId?: string;
     deviceMac?: string;
     deviceSn?: string;
     errorCode?: string;
+    excludeNoisy?: boolean;
     // Content search
     msgContains?: string;
     limit?: number;
@@ -314,12 +403,36 @@ export class LogsService {
     if (params.levelGte !== undefined) andFilters.push({ level: { gte: params.levelGte } });
     if (params.levelLte !== undefined) andFilters.push({ level: { lte: params.levelLte } });
 
+    const stage = params.stage?.trim().toLowerCase();
+    if (stage) andFilters.push({ stage });
+    const op = params.op?.trim().toLowerCase();
+    if (op) andFilters.push({ op });
+    const result = params.result?.trim().toLowerCase();
+    if (result) andFilters.push({ result });
+
     // Tracking field filters
     if (params.linkCode) andFilters.push({ linkCode: params.linkCode });
     if (params.requestId) andFilters.push({ requestId: params.requestId });
     if (params.deviceMac) andFilters.push({ deviceMac: params.deviceMac });
     if (params.deviceSn) andFilters.push({ deviceSn: params.deviceSn });
     if (params.errorCode) andFilters.push({ errorCode: params.errorCode });
+
+    if (params.excludeNoisy) {
+      andFilters.push({
+        NOT: {
+          eventName: {
+            in: [
+              'scan_device_found',
+              'scan_device_filtered',
+              'scan_device_updated',
+              'scan_device_lost',
+              'BLE RSSI update',
+              'BLE connection params',
+            ],
+          },
+        },
+      });
+    }
 
     // msgJson content search (case-insensitive full-text search in JSON)
     if (params.msgContains?.trim()) {
@@ -577,6 +690,79 @@ export class LogsService {
     return { deleted: true };
   }
 
+  async batchDeleteLogFiles(params: { actorUserId: string; ids: string[] }) {
+    if (params.ids.length === 0) {
+      return { deleted: 0 };
+    }
+
+    // Fetch all log files to validate existence and permissions
+    const logFiles = await this.prisma.logFile.findMany({
+      where: { id: { in: params.ids } },
+      select: {
+        id: true,
+        projectId: true,
+        fileName: true,
+        storageKey: true,
+      },
+    });
+
+    if (logFiles.length === 0) {
+      throw new ApiException({
+        code: 'LOG_FILES_NOT_FOUND',
+        message: 'No log files found',
+        status: 404,
+      });
+    }
+
+    // Check permissions for all unique projects
+    const projectIds = [...new Set(logFiles.map((f) => f.projectId))];
+    for (const projectId of projectIds) {
+      await this.rbac.requireProjectRoles({
+        userId: params.actorUserId,
+        projectId,
+        allowed: ['Admin', 'Dev', 'QA', 'Support'],
+      });
+    }
+
+    const fileIds = logFiles.map((f) => f.id);
+
+    // Delete in transaction
+    await this.prisma.$transaction(async (tx) => {
+      await tx.incidentLogLink.deleteMany({
+        where: { logEvent: { logFileId: { in: fileIds } } },
+      });
+      await tx.logEventStats.deleteMany({ where: { logFileId: { in: fileIds } } });
+      await tx.logEvent.deleteMany({ where: { logFileId: { in: fileIds } } });
+      await tx.logFileAnalysis.deleteMany({ where: { logFileId: { in: fileIds } } });
+      await tx.logFile.deleteMany({ where: { id: { in: fileIds } } });
+    });
+
+    // Delete storage objects (ignore errors)
+    for (const logFile of logFiles) {
+      if (logFile.storageKey) {
+        try {
+          await this.storage.deleteObject(logFile.storageKey);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Record audit logs for each deleted file
+    for (const logFile of logFiles) {
+      await this.audit.record({
+        projectId: logFile.projectId,
+        actorUserId: params.actorUserId,
+        action: 'logs.delete',
+        targetType: 'LogFile',
+        targetId: logFile.id,
+        metadata: { fileName: logFile.fileName, batchDelete: true },
+      });
+    }
+
+    return { deleted: logFiles.length };
+  }
+
   async getEventDetail(params: { actorUserId: string; id: string }) {
     const event = await this.prisma.logEvent.findUnique({
       where: { id: params.id },
@@ -631,8 +817,8 @@ export class LogsService {
       threadId: event.threadId ? Number(event.threadId) : null,
       isMainThread: event.isMainThread,
       msg: this.msgPreviewFromJson(event.msgJson),
-      msgJson: event.msgJson,
-      rawLine: event.rawLine,
+      msgJson: this.sanitizeMsgJson(event.msgJson),
+      rawLine: event.rawLine ? this.sanitizeTextLine(event.rawLine) : event.rawLine,
       linkCode: event.linkCode,
       requestId: event.requestId,
       deviceMac: event.deviceMac,
@@ -969,20 +1155,7 @@ export class LogsService {
       this.prisma.logEvent.findMany({
         where: {
           logFileId: logFile.id,
-          eventName: { in: ['info', 'warning', 'error_occurred', 'COMMON', 'error'] },
-          OR: [
-            { msgJson: { string_contains: '[Upload]' } },
-            { msgJson: { path: ['data'], string_contains: '[Upload]' } },
-            { msgJson: { string_contains: '[Ack]' } },
-            { msgJson: { path: ['data'], string_contains: '[Ack]' } },
-            { msgJson: { string_contains: '[MQTT]' } },
-            { msgJson: { path: ['data'], string_contains: '[MQTT]' } },
-            { msgJson: { string_contains: '[SdkCore]' } },
-            { msgJson: { path: ['data'], string_contains: '[SdkCore]' } },
-            { msgJson: { string_contains: 'MQTT_' } },
-            { msgJson: { path: ['code'], string_contains: 'MQTT_' } },
-            { errorCode: { startsWith: 'MQTT_' } },
-          ],
+          stage: 'mqtt',
         },
         select: {
           timestampMs: true,
@@ -2035,6 +2208,181 @@ export class LogsService {
         startTimeMs: s._min.timestampMs ? Number(s._min.timestampMs) : null,
         endTimeMs: s._max.timestampMs ? Number(s._max.timestampMs) : null,
       })),
+    };
+  }
+
+  // ========== Diagnose API ==========
+
+  async diagnoseLogFile(params: {
+    actorUserId: string;
+    logFileId: string;
+  }) {
+    // Get log file info
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.logFileId },
+      select: { id: true, projectId: true, status: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    // Get error events (level >= 3) from this log file
+    const errorEvents = await this.prisma.logEvent.findMany({
+      where: {
+        logFileId: params.logFileId,
+        level: { gte: 3 },
+      },
+      select: {
+        id: true,
+        eventName: true,
+        errorCode: true,
+        msgJson: true,
+        level: true,
+        timestampMs: true,
+        linkCode: true,
+        deviceMac: true,
+      },
+      orderBy: { timestampMs: 'asc' },
+      take: 500,
+    });
+
+    if (errorEvents.length === 0) {
+      return {
+        logFileId: params.logFileId,
+        summary: {
+          totalErrors: 0,
+          matchedIssues: 0,
+          criticalCount: 0,
+          warningCount: 0,
+        },
+        issues: [],
+        unmatchedErrors: [],
+      };
+    }
+
+    // Batch match against known issues
+    const matchResult = await this.knownIssues.matchBatch({
+      actorUserId: params.actorUserId,
+      projectId: logFile.projectId,
+      events: errorEvents.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        errorCode: e.errorCode ?? undefined,
+        msg: e.msgJson ? JSON.stringify(e.msgJson) : undefined,
+      })),
+    });
+
+    // Group by issue
+    const issueMap = new Map<
+      string,
+      {
+        issueId: string;
+        title: string;
+        solution: string;
+        matchType: string;
+        confidence: number;
+        eventPattern: string | null;
+        issueErrorCode: string | null;
+        events: Array<{
+          id: string;
+          eventName: string;
+          level: number;
+          timestampMs: number;
+          linkCode: string | null;
+          deviceMac: string | null;
+        }>;
+      }
+    >();
+
+    const matchedEventIds = new Set<string>();
+
+    for (const result of matchResult.results) {
+      matchedEventIds.add(result.eventId);
+      const event = errorEvents.find((e) => e.id === result.eventId);
+      if (!event) continue;
+
+      for (const match of result.matches) {
+        const existing = issueMap.get(match.issueId);
+        if (existing) {
+          existing.events.push({
+            id: event.id,
+            eventName: event.eventName,
+            level: event.level,
+            timestampMs: Number(event.timestampMs),
+            linkCode: event.linkCode,
+            deviceMac: event.deviceMac,
+          });
+        } else {
+          issueMap.set(match.issueId, {
+            issueId: match.issueId,
+            title: match.title,
+            solution: match.solution,
+            matchType: match.matchType,
+            confidence: match.confidence,
+            eventPattern: match.eventPattern,
+            issueErrorCode: match.errorCode,
+            events: [
+              {
+                id: event.id,
+                eventName: event.eventName,
+                level: event.level,
+                timestampMs: Number(event.timestampMs),
+                linkCode: event.linkCode,
+                deviceMac: event.deviceMac,
+              },
+            ],
+          });
+        }
+      }
+    }
+
+    // Sort issues by event count (most frequent first)
+    const issues = Array.from(issueMap.values())
+      .map((issue) => ({
+        ...issue,
+        eventCount: issue.events.length,
+        severity: issue.events.some((e) => e.level >= 4) ? 'critical' : 'warning',
+      }))
+      .sort((a, b) => b.eventCount - a.eventCount);
+
+    // Get unmatched errors
+    const unmatchedErrors = errorEvents
+      .filter((e) => !matchedEventIds.has(e.id))
+      .slice(0, 50)
+      .map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        errorCode: e.errorCode,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        linkCode: e.linkCode,
+        deviceMac: e.deviceMac,
+      }));
+
+    const criticalCount = issues.filter((i) => i.severity === 'critical').length;
+    const warningCount = issues.filter((i) => i.severity === 'warning').length;
+
+    return {
+      logFileId: params.logFileId,
+      summary: {
+        totalErrors: errorEvents.length,
+        matchedIssues: issues.length,
+        criticalCount,
+        warningCount,
+      },
+      issues,
+      unmatchedErrors,
     };
   }
 }

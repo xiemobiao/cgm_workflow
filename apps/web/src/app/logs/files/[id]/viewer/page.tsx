@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import {
   useCallback,
   useEffect,
@@ -11,12 +11,21 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import shellStyles from '@/components/AppShell.module.css';
-import formStyles from '@/components/Form.module.css';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import viewerStyles from './LogViewer.module.css';
+import styles from './LogViewer.module.css';
 
 type LogFileDetail = {
   id: string;
@@ -40,33 +49,10 @@ type SearchItem = {
   appId: string | null;
   logFileId: string;
   msg: string | null;
+  threadName?: string | null;
 };
 
 type SearchResponse = { items: SearchItem[]; nextCursor: string | null };
-
-type LogEventDetail = {
-  id: string;
-  logFileId: string;
-  timestampMs: number;
-  level: number;
-  eventName: string;
-  sdkVersion: string | null;
-  appId: string | null;
-  terminalInfo: string | null;
-  threadName: string | null;
-  threadId: number | null;
-  isMainThread: boolean | null;
-  msg: string | null;
-  msgJson: unknown | null;
-  rawLine: string | null;
-  createdAt: string;
-};
-
-type EventContextResponse = {
-  logFileId: string;
-  before: SearchItem[];
-  after: SearchItem[];
-};
 
 type CssVars = { [key: `--${string}`]: string | number };
 type StyleWithVars = CSSProperties & CssVars;
@@ -94,7 +80,7 @@ function renderHighlighted(text: string, needle: string): ReactNode {
     const end = start + match[0].length;
     if (start > lastIndex) out.push(text.slice(lastIndex, start));
     out.push(
-      <mark key={`${start}-${i}`} className={shellStyles.highlight}>
+      <mark key={`${start}-${i}`} className="bg-yellow-500/30 text-yellow-200">
         {text.slice(start, end)}
       </mark>,
     );
@@ -112,15 +98,7 @@ function shortenText(value: string | null, maxLen: number) {
   const trimmed = value.trim();
   if (!trimmed) return '';
   if (trimmed.length <= maxLen) return trimmed;
-  return `${trimmed.slice(0, Math.max(0, maxLen - 1))}…`;
-}
-
-function prettyJson(value: unknown) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
+  return `${trimmed.slice(0, Math.max(0, maxLen - 1))}...`;
 }
 
 function hueForEvent(eventName: string) {
@@ -132,9 +110,40 @@ function hueForEvent(eventName: string) {
   return hash % 360;
 }
 
+function formatTime(timestampMs: number, localeTag: string) {
+  const date = new Date(timestampMs);
+  return date.toLocaleTimeString(localeTag, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+}
+
+function formatDateTime(timestampMs: number, localeTag: string) {
+  return new Date(timestampMs).toLocaleString(localeTag);
+}
+
+// Level badge colors
+function getLevelBadgeClass(level: number): string {
+  switch (level) {
+    case 1:
+      return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+    case 2:
+      return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+    case 3:
+      return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+    case 4:
+      return 'bg-red-500/20 text-red-300 border-red-500/30';
+    default:
+      return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+  }
+}
+
 export default function LogFileViewerPage() {
   const { localeTag, t } = useI18n();
   const params = useParams();
+  const router = useRouter();
   const fileId = typeof params.id === 'string' ? params.id : '';
 
   const [fileDetail, setFileDetail] = useState<LogFileDetail | null>(null);
@@ -144,42 +153,27 @@ export default function LogFileViewerPage() {
   const [eventName, setEventName] = useState('');
   const [keyword, setKeyword] = useState('');
   const [level, setLevel] = useState<string>('');
-  const [limit, setLimit] = useState(100);
+  const [limit] = useState(100);
 
-  const [pageIndex, setPageIndex] = useState(0);
-  const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
-  const [nextCursorByPage, setNextCursorByPage] = useState<(string | null)[]>(
-    [],
-  );
-  const [items, setItems] = useState<SearchItem[]>([]);
+  // Infinite scroll state
+  const [allItems, setAllItems] = useState<SearchItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [initialLoading, setInitialLoading] = useState(true);
 
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<LogEventDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState('');
-  const [context, setContext] = useState<EventContextResponse | null>(null);
-  const [contextLoading, setContextLoading] = useState(false);
-  const [contextError, setContextError] = useState('');
-  const [copyHint, setCopyHint] = useState('');
+  // Timeline slider state
+  const [sliderValue, setSliderValue] = useState(0);
+  const [sliderStartTime, setSliderStartTime] = useState<number | null>(null);
+  const [pendingSliderTime, setPendingSliderTime] = useState<string | null>(null);
+
   const searchReqIdRef = useRef(0);
-  const fetchPageRef = useRef<(page: number, cursor: string | null) => Promise<void>>(
-    async () => {},
-  );
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const sliderDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('cgm_log_file_viewer_limit');
-    const n = saved ? Number(saved) : NaN;
-    if (Number.isFinite(n) && n >= 1 && n <= 1000) {
-      setLimit(Math.trunc(n));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('cgm_log_file_viewer_limit', String(limit));
-  }, [limit]);
-
+  // Load file detail
   useEffect(() => {
     if (!fileId) return;
     let cancelled = false;
@@ -224,609 +218,389 @@ export default function LogFileViewerPage() {
     };
   }, [fileDetail?.maxTimestampMs, fileDetail?.minTimestampMs, fileDetail?.uploadedAt]);
 
-  async function fetchPage(page: number, cursor: string | null) {
-    if (!fileId) return;
-    if (!fileDetail) return;
-    const reqId = (searchReqIdRef.current += 1);
-    setLoading(true);
-    setError('');
-    try {
-      const projectId = fileDetail.projectId || getProjectId() || '';
-      if (!projectId) {
-        setError('Missing projectId');
-        return;
+  // Fetch data function
+  const fetchData = useCallback(
+    async (cursor: string | null, append: boolean, customStartTime?: string) => {
+      if (!fileId || !fileDetail) return;
+      const reqId = (searchReqIdRef.current += 1);
+      setLoading(true);
+      setError('');
+      try {
+        const projectId = fileDetail.projectId || getProjectId() || '';
+        if (!projectId) {
+          setError('Missing projectId');
+          return;
+        }
+
+        const startTime = customStartTime || timeRange.startTime;
+
+        const qs = new URLSearchParams({
+          projectId,
+          logFileId: fileId,
+          startTime,
+          endTime: timeRange.endTime,
+          limit: String(limit),
+        });
+        if (eventName.trim()) qs.set('eventName', eventName.trim());
+        if (keyword.trim()) qs.set('q', keyword.trim());
+        qs.set('direction', 'asc');
+        if (level) qs.set('level', level);
+        if (cursor) qs.set('cursor', cursor);
+
+        const data = await apiFetch<SearchResponse>(`/api/logs/events/search?${qs.toString()}`);
+        if (reqId !== searchReqIdRef.current) return;
+
+        if (append) {
+          setAllItems((prev) => [...prev, ...data.items]);
+        } else {
+          setAllItems(data.items);
+        }
+        setNextCursor(data.nextCursor);
+        setHasMore(!!data.nextCursor);
+      } catch (e: unknown) {
+        if (reqId !== searchReqIdRef.current) return;
+        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+        setError(msg);
+      } finally {
+        if (reqId === searchReqIdRef.current) {
+          setLoading(false);
+          setInitialLoading(false);
+        }
       }
+    },
+    [fileId, fileDetail, timeRange, eventName, keyword, level, limit],
+  );
 
-      const qs = new URLSearchParams({
-        projectId,
-        logFileId: fileId,
-        startTime: timeRange.startTime,
-        endTime: timeRange.endTime,
-        limit: String(limit),
-      });
-      if (eventName.trim()) qs.set('eventName', eventName.trim());
-      if (keyword.trim()) qs.set('q', keyword.trim());
-      qs.set('direction', 'asc');
-      if (level) qs.set('level', level);
-      if (cursor) qs.set('cursor', cursor);
+  // Load more function for infinite scroll
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore || !nextCursor) return;
+    await fetchData(nextCursor, true);
+  }, [loading, hasMore, nextCursor, fetchData]);
 
-      const data = await apiFetch<SearchResponse>(`/api/logs/events/search?${qs.toString()}`);
-      if (reqId !== searchReqIdRef.current) return;
-      setItems(data.items);
-      setSelectedEventId(null);
-      setPageIndex(page);
-      setPageCursors((prev) => {
-        const next = prev.slice();
-        while (next.length <= page) next.push(null);
-        next[page] = cursor;
-        return next;
-      });
-      setNextCursorByPage((prev) => {
-        const next = prev.slice();
-        while (next.length <= page) next.push(null);
-        next[page] = data.nextCursor;
-        return next;
-      });
-    } catch (e: unknown) {
-      if (reqId !== searchReqIdRef.current) return;
-      const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-      setError(msg);
-    } finally {
-      if (reqId === searchReqIdRef.current) setLoading(false);
-    }
-  }
+  loadMoreRef.current = loadMore;
 
-  fetchPageRef.current = fetchPage;
-
-  const runSearch = useCallback(() => {
-    setPageIndex(0);
-    setPageCursors([null]);
-    setNextCursorByPage([]);
-    void fetchPageRef.current(0, null);
-  }, []);
-
+  // Initial load
   useEffect(() => {
     if (!fileDetail?.id) return;
-    runSearch();
-  }, [fileDetail?.id, runSearch]);
+    setInitialLoading(true);
+    setAllItems([]);
+    setNextCursor(null);
+    setHasMore(true);
+    setSliderValue(0);
+    setSliderStartTime(null);
+    void fetchData(null, false);
+  }, [fileDetail?.id, fetchData]);
 
+  // Search handler
+  const runSearch = useCallback(() => {
+    setAllItems([]);
+    setNextCursor(null);
+    setHasMore(true);
+    setSliderValue(0);
+    setSliderStartTime(null);
+    void fetchData(null, false);
+  }, [fetchData]);
+
+  // Infinite scroll observer
   useEffect(() => {
-    if (!selectedEventId) return;
-    let cancelled = false;
-    setDetail(null);
-    setDetailError('');
-    setContext(null);
-    setContextError('');
-    setCopyHint('');
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
-    setDetailLoading(true);
-    apiFetch<LogEventDetail>(`/api/logs/events/${selectedEventId}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDetail(data);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setDetailError(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setDetailLoading(false);
-      });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          void loadMoreRef.current();
+        }
+      },
+      { rootMargin: '200px' },
+    );
 
-    setContextLoading(true);
-    apiFetch<EventContextResponse>(`/api/logs/events/${selectedEventId}/context?before=8&after=8`)
-      .then((data) => {
-        if (cancelled) return;
-        setContext(data);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setContextError(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setContextLoading(false);
-      });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
 
+  // Slider change handler with debounce
+  const handleSliderChange = useCallback(
+    (values: number[]) => {
+      const value = values[0];
+      setSliderValue(value);
+
+      // Calculate timestamp based on slider position
+      const range = timeRange.endMs - timeRange.startMs;
+      const targetTime = timeRange.startMs + (range * value) / 100;
+      setSliderStartTime(targetTime);
+
+      // Calculate the start time for API
+      const startTime = new Date(targetTime).toISOString();
+      setPendingSliderTime(startTime);
+
+      // Clear previous debounce timer
+      if (sliderDebounceRef.current) {
+        clearTimeout(sliderDebounceRef.current);
+      }
+
+      // Set new debounce timer - trigger fetch 300ms after user stops dragging
+      sliderDebounceRef.current = setTimeout(() => {
+        setPendingSliderTime(null);
+        setInitialLoading(true);
+        setAllItems([]);
+        setNextCursor(null);
+        setHasMore(true);
+        setError('');
+        void fetchData(null, false, startTime);
+      }, 300);
+    },
+    [timeRange, fetchData],
+  );
+
+  // Slider commit handler (when user releases) - immediate fetch
+  const handleSliderCommit = useCallback(
+    (values: number[]) => {
+      // Clear any pending debounce
+      if (sliderDebounceRef.current) {
+        clearTimeout(sliderDebounceRef.current);
+        sliderDebounceRef.current = null;
+      }
+
+      const value = values[0];
+      const range = timeRange.endMs - timeRange.startMs;
+      const targetTime = timeRange.startMs + (range * value) / 100;
+      const startTime = new Date(targetTime).toISOString();
+
+      // Always fetch on commit to ensure data is updated
+      setPendingSliderTime(null);
+      setInitialLoading(true);
+      setAllItems([]);
+      setNextCursor(null);
+      setHasMore(true);
+      setError('');
+      void fetchData(null, false, startTime);
+    },
+    [timeRange, fetchData],
+  );
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
     return () => {
-      cancelled = true;
+      if (sliderDebounceRef.current) {
+        clearTimeout(sliderDebounceRef.current);
+      }
     };
-  }, [selectedEventId]);
+  }, []);
 
-  async function copyText(value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopyHint(t('common.copied'));
-    } catch {
-      setCopyHint(t('common.copyFailed'));
+  // Reset handler
+  const handleReset = useCallback(() => {
+    setEventName('');
+    setKeyword('');
+    setLevel('');
+    setSliderValue(0);
+    setSliderStartTime(null);
+    setAllItems([]);
+    setNextCursor(null);
+    setHasMore(true);
+    void fetchData(null, false);
+  }, [fetchData]);
+
+  // Navigate to event detail
+  const handleRowClick = useCallback(
+    (eventId: string) => {
+      router.push(`/logs/events/${eventId}`);
+    },
+    [router],
+  );
+
+  // Current slider time display
+  const sliderTimeDisplay = useMemo(() => {
+    if (sliderStartTime !== null) {
+      return formatDateTime(sliderStartTime, localeTag);
     }
-  }
-
-  const legend = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of items) {
-      counts.set(item.eventName, (counts.get(item.eventName) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([name, count]) => ({ name, count, hue: hueForEvent(name) }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 24);
-  }, [items]);
-
-  const logsHref = useMemo(() => {
-    if (!fileId) return '/logs';
-    const qs = new URLSearchParams({
-      logFileId: fileId,
-      startMs: String(timeRange.startMs),
-      endMs: String(timeRange.endMs),
-    });
-    return `/logs?${qs.toString()}`;
-  }, [fileId, timeRange.endMs, timeRange.startMs]);
-
-  const nextCursor = nextCursorByPage[pageIndex] ?? null;
-  const viewedEnd = pageIndex * limit + items.length;
-  const totalPages = fileDetail ? Math.max(1, Math.ceil(fileDetail.eventCount / limit)) : 1;
+    return formatDateTime(timeRange.startMs, localeTag);
+  }, [sliderStartTime, timeRange.startMs, localeTag]);
 
   return (
-    <div className={shellStyles.grid}>
-      <div className={viewerStyles.layout}>
-        <aside className={`${shellStyles.card} ${viewerStyles.panel}`}>
-          <div className={viewerStyles.header}>
-            <div className={viewerStyles.title}>
-              <h1>{t('logs.files.viewerTitle')}</h1>
-              <div className={viewerStyles.subtitle}>{fileDetail ? fileDetail.fileName : fileId}</div>
-            </div>
-            <div className={formStyles.row}>
-              <Link href={`/logs/files/${fileId}`} className={shellStyles.button}>
-                {t('common.back')}
-              </Link>
-            </div>
+    <div className="flex flex-col h-full p-4 gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/logs/files/${fileId}`}>{t('common.back')}</Link>
+          </Button>
+          <div className="text-sm text-muted-foreground truncate max-w-[300px]">
+            {fileDetail?.fileName || fileId}
           </div>
-
-          <div className={formStyles.row}>
-            <Link href="/logs/files" className={shellStyles.button}>
-              {t('logs.files.title')}
-            </Link>
-            <Link href={logsHref} className={shellStyles.button}>
-              {t('logs.files.openInLogs')}
-            </Link>
-          </div>
-
-          {fileLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-          {fileError ? <div className={formStyles.error}>{fileError}</div> : null}
-
-          {fileDetail ? (
-            <div className={shellStyles.kvGrid} style={{ marginTop: 12 }}>
-              <div className={shellStyles.kvKey}>{t('logs.files.status')}</div>
-              <div className={shellStyles.kvValue}>
-                <span
-                  className={`${shellStyles.badge}${fileDetail.status === 'failed' ? ` ${shellStyles.badgeDanger}` : ''}`}
-                >
-                  {t(`logs.fileStatus.${fileDetail.status}`)}
-                </span>
-              </div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.uploadedAt')}</div>
-              <div className={shellStyles.kvValue}>
-                {new Date(fileDetail.uploadedAt).toLocaleString(localeTag)}
-              </div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.events')}</div>
-              <div className={shellStyles.kvValue}>{fileDetail.eventCount}</div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.errors')}</div>
-              <div className={shellStyles.kvValue}>{fileDetail.errorCount}</div>
-
-              <div className={shellStyles.kvKey}>{t('logs.files.timeRange')}</div>
-              <div className={shellStyles.kvValue}>
-                {fileDetail.minTimestampMs !== null && fileDetail.maxTimestampMs !== null
-                  ? `${new Date(timeRange.startMs).toLocaleString(localeTag)} ~ ${new Date(timeRange.endMs).toLocaleString(localeTag)}`
-                  : t('logs.files.timeRangeUnknown')}
-              </div>
+          {fileDetail && (
+            <div className="text-xs text-muted-foreground">
+              {t('common.items', { count: fileDetail.eventCount })}
             </div>
-          ) : null}
-
-          <div className={viewerStyles.divider} />
-
-          <div className={viewerStyles.toolbar}>
-            <div className={formStyles.field}>
-              <div className={formStyles.label}>{t('logs.eventNameOptional')}</div>
-              <input
-                className={formStyles.input}
-                value={eventName}
-                onChange={(e) => setEventName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  e.preventDefault();
-                  runSearch();
-                }}
-                placeholder="e.g. sdk_auth_start"
-              />
-            </div>
-            <div className={formStyles.field}>
-              <div className={formStyles.label}>{t('logs.keyword')}</div>
-              <input
-                className={formStyles.input}
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  e.preventDefault();
-                  runSearch();
-                }}
-                placeholder="e.g. error / timeout"
-              />
-            </div>
-            <div className={formStyles.row}>
-              <div className={formStyles.field} style={{ minWidth: 140 }}>
-                <div className={formStyles.label}>{t('logs.level')}</div>
-                <select
-                  className={formStyles.select}
-                  value={level}
-                  onChange={(e) => setLevel(e.target.value)}
-                >
-                  <option value="">{t('logs.level.all')}</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                </select>
-              </div>
-              <div className={formStyles.field} style={{ minWidth: 140 }}>
-                <div className={formStyles.label}>{t('logs.limit')}</div>
-                <input
-                  className={formStyles.input}
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={limit}
-                  onChange={(e) => {
-                    const n = e.currentTarget.valueAsNumber;
-                    if (!Number.isFinite(n)) return;
-                    setLimit(Math.min(Math.max(Math.trunc(n), 1), 1000));
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter') return;
-                    e.preventDefault();
-                    runSearch();
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className={formStyles.row}>
-              <button
-                className={shellStyles.button}
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  setEventName('PARSER_ERROR');
-                  window.setTimeout(() => {
-                    runSearch();
-                  }, 0);
-                }}
-              >
-                {t('logs.onlyParserError')}
-              </button>
-              <button
-                className={shellStyles.button}
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  runSearch();
-                }}
-              >
-                {t('common.search')}
-              </button>
-              <button
-                className={shellStyles.button}
-                type="button"
-                disabled={loading || pageIndex <= 0}
-                onClick={() => {
-                  const prevPage = Math.max(0, pageIndex - 1);
-                  const prevCursor = pageCursors[prevPage] ?? null;
-                  void fetchPage(prevPage, prevCursor);
-                }}
-              >
-                {t('common.prevPage')}
-              </button>
-              <button
-                className={shellStyles.button}
-                type="button"
-                disabled={loading || !nextCursor}
-                onClick={() => {
-                  if (!nextCursor) return;
-                  const nextPage = pageIndex + 1;
-                  setPageCursors((prev) => {
-                    const out = prev.slice();
-                    while (out.length <= nextPage) out.push(null);
-                    out[nextPage] = nextCursor;
-                    return out;
-                  });
-                  void fetchPage(nextPage, nextCursor);
-                }}
-              >
-                {t('common.nextPage')}
-              </button>
-              <div className={formStyles.muted}>
-                {loading
-                  ? t('common.loading')
-                  : fileDetail
-                    ? `${t('logs.files.viewerPage', {
-                        page: pageIndex + 1,
-                        totalPages,
-                      })} · ${t('logs.files.viewerLoaded', {
-                        loaded: Math.min(viewedEnd, fileDetail.eventCount),
-                        total: fileDetail.eventCount,
-                      })}`
-                    : t('common.items', { count: items.length })}
-              </div>
-            </div>
-
-            {error ? <div className={formStyles.error}>{error}</div> : null}
-          </div>
-
-          {legend.length ? (
-            <>
-              <div className={viewerStyles.divider} />
-              <div className={viewerStyles.legend}>
-                <div className={viewerStyles.legendTitle}>{t('logs.files.viewerLegend')}</div>
-                <div className={viewerStyles.chips}>
-                  {legend.map((it) => (
-                    <div
-                      key={it.name}
-                      className={`${viewerStyles.chip}${eventName === it.name ? ` ${viewerStyles.chipActive}` : ''}`}
-                      style={hueVars(it.hue)}
-                      onClick={() => {
-                        setEventName((prev) => (prev === it.name ? '' : it.name));
-                        window.setTimeout(() => {
-                          runSearch();
-                        }, 0);
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          setEventName((prev) => (prev === it.name ? '' : it.name));
-                          window.setTimeout(() => {
-                            runSearch();
-                          }, 0);
-                        }
-                      }}
-                    >
-                      <span className={viewerStyles.chipDot} />
-                      <span className={viewerStyles.chipText}>{it.name}</span>
-                      <span className={viewerStyles.chipCount}>{it.count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : null}
-        </aside>
-
-        <section className={`${shellStyles.card} ${viewerStyles.stream}`}>
-          <div className={viewerStyles.streamHeader}>
-            <div className={viewerStyles.streamTitle}>{t('logs.files.viewerStream')}</div>
-            <div className={formStyles.muted}>
-              {fileDetail ? fileDetail.fileName : fileId}
-            </div>
-          </div>
-
-          <div className={viewerStyles.list}>
-            {items.map((e) => {
-              const hue = hueForEvent(e.eventName);
-              const active = selectedEventId === e.id;
-              const levelClass =
-                e.level === 1
-                  ? viewerStyles.level1
-                  : e.level === 2
-                    ? viewerStyles.level2
-                    : e.level === 3
-                      ? viewerStyles.level3
-                      : viewerStyles.level4;
-
-              return (
-                <div key={e.id} className={viewerStyles.line} style={hueVars(hue)}>
-                  <div
-                    className={viewerStyles.lineHeader}
-                    onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
-                  >
-                    <div className={viewerStyles.gutter}>
-                      <div className={viewerStyles.time}>
-                        {new Date(e.timestampMs).toLocaleString(localeTag)}
-                      </div>
-                      <div className={viewerStyles.meta}>
-                        <span className={`${viewerStyles.levelDot} ${levelClass}`} />
-                        <span>Lv {e.level}</span>
-                        {e.sdkVersion ? <span>{e.sdkVersion}</span> : null}
-                        {e.appId ? <span>{e.appId}</span> : null}
-                      </div>
-                    </div>
-
-                      <div className={viewerStyles.main}>
-                        <div className={viewerStyles.eventRow}>
-                        <span className={viewerStyles.eventBadge} style={hueVars(hue)}>
-                          <span className={viewerStyles.eventBadgeDot} />
-                          {renderHighlighted(e.eventName, keyword)}
-                        </span>
-                      </div>
-                      <div className={viewerStyles.message}>
-                        {e.msg ? renderHighlighted(shortenText(e.msg, 220), keyword) : ''}
-                      </div>
-                    </div>
-
-                    <div className={viewerStyles.right}>
-                      <div className={viewerStyles.id}>{e.id.slice(0, 8)}…</div>
-                      <div className={viewerStyles.expandHint}>
-                        {active ? t('logs.files.viewerCollapse') : t('logs.files.viewerExpand')}
-                      </div>
-                    </div>
-                  </div>
-
-                  {active ? (
-                    <div className={viewerStyles.expanded}>
-                      {detailLoading ? <div className={formStyles.muted}>{t('common.loading')}</div> : null}
-                      {detailError ? <div className={formStyles.error}>{detailError}</div> : null}
-
-                      {detail && detail.id === e.id ? (
-                        <>
-                          <div className={viewerStyles.expandedGrid}>
-                            <div>
-                              <div className={viewerStyles.fieldTitle}>msg</div>
-                              <div className={viewerStyles.fieldText}>
-                                {detail.msg ? renderHighlighted(detail.msg, keyword) : '-'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className={viewerStyles.fieldTitle}>terminalInfo</div>
-                              <div className={viewerStyles.fieldText}>{detail.terminalInfo ?? '-'}</div>
-                            </div>
-                            <div>
-                              <div className={viewerStyles.fieldTitle}>thread</div>
-                              <div className={viewerStyles.fieldText}>
-                                {detail.threadName ?? '-'}
-                                {detail.threadId !== null ? ` (#${detail.threadId})` : ''}
-                                {detail.isMainThread === null ? '' : detail.isMainThread ? ' · main' : ' · bg'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className={viewerStyles.fieldTitle}>ids</div>
-                              <div className={viewerStyles.fieldText}>
-                                eventId: {detail.id}
-                                {'\n'}
-                                logFileId: {detail.logFileId}
-                              </div>
-                            </div>
-
-                            <div className={viewerStyles.expandedGridFull}>
-                              <div className={viewerStyles.fieldTitle}>{t('logs.detail.msgJson')}</div>
-                              <pre className={shellStyles.codeBlock}>
-                                {renderHighlighted(prettyJson(detail.msgJson), keyword)}
-                              </pre>
-                            </div>
-
-                            {detail.rawLine ? (
-                              <div className={viewerStyles.expandedGridFull}>
-                                <div className={viewerStyles.fieldTitle}>{t('logs.detail.rawLine')}</div>
-                                <pre className={shellStyles.codeBlock}>
-                                  {renderHighlighted(detail.rawLine, keyword)}
-                                </pre>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className={formStyles.row}>
-                            <button
-                              className={shellStyles.button}
-                              type="button"
-                              onClick={() => void copyText(detail.id)}
-                            >
-                              {t('logs.detail.copyEventId')}
-                            </button>
-                            <button
-                              className={shellStyles.button}
-                              type="button"
-                              onClick={() => void copyText(detail.logFileId)}
-                            >
-                              {t('logs.detail.copyLogFileId')}
-                            </button>
-                            {copyHint ? <div className={formStyles.success}>{copyHint}</div> : null}
-                          </div>
-
-                          <div className={viewerStyles.contextStrip}>
-                            <div className={viewerStyles.fieldTitle}>{t('logs.detail.context')}</div>
-                            {contextLoading ? (
-                              <div className={formStyles.muted}>{t('common.loading')}</div>
-                            ) : null}
-                            {contextError ? <div className={formStyles.error}>{contextError}</div> : null}
-                            {context ? (
-                              <>
-                                {context.before.map((c) => (
-                                  <div
-                                    key={c.id}
-                                    className={viewerStyles.contextRow}
-                                    onClick={() => {
-                                      setItems((prev) => {
-                                        if (prev.some((p) => p.id === c.id)) return prev;
-                                        const next = [...prev, c];
-                                        next.sort(
-                                          (a, b) =>
-                                            a.timestampMs - b.timestampMs || a.id.localeCompare(b.id),
-                                        );
-                                        return next;
-                                      });
-                                      setSelectedEventId(c.id);
-                                    }}
-                                  >
-                                    <div className={viewerStyles.contextTime}>
-                                      {new Date(c.timestampMs).toLocaleString(localeTag)}
-                                    </div>
-                                    <div className={viewerStyles.contextEvent}>
-                                      <div>{renderHighlighted(c.eventName, keyword)}</div>
-                                      {c.msg ? (
-                                        <div className={formStyles.muted} style={{ marginTop: 4 }}>
-                                          {renderHighlighted(shortenText(c.msg, 180), keyword)}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                ))}
-
-                                <div className={formStyles.muted}>{t('logs.detail.current')}</div>
-
-                                {context.after.map((c) => (
-                                  <div
-                                    key={c.id}
-                                    className={viewerStyles.contextRow}
-                                    onClick={() => {
-                                      setItems((prev) => {
-                                        if (prev.some((p) => p.id === c.id)) return prev;
-                                        const next = [...prev, c];
-                                        next.sort(
-                                          (a, b) =>
-                                            a.timestampMs - b.timestampMs || a.id.localeCompare(b.id),
-                                        );
-                                        return next;
-                                      });
-                                      setSelectedEventId(c.id);
-                                    }}
-                                  >
-                                    <div className={viewerStyles.contextTime}>
-                                      {new Date(c.timestampMs).toLocaleString(localeTag)}
-                                    </div>
-                                    <div className={viewerStyles.contextEvent}>
-                                      <div>{renderHighlighted(c.eventName, keyword)}</div>
-                                      {c.msg ? (
-                                        <div className={formStyles.muted} style={{ marginTop: 4 }}>
-                                          {renderHighlighted(shortenText(c.msg, 180), keyword)}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                ))}
-
-                                {context.before.length === 0 && context.after.length === 0 ? (
-                                  <div className={formStyles.muted}>{t('logs.detail.contextEmpty')}</div>
-                                ) : null}
-                              </>
-                            ) : null}
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-
-            {items.length === 0 ? <div className={formStyles.muted}>{t('logs.empty')}</div> : null}
-          </div>
-        </section>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/logs/files">{t('logs.files.title')}</Link>
+          </Button>
+        </div>
       </div>
+
+      {fileLoading && <div className="text-muted-foreground">{t('common.loading')}</div>}
+      {fileError && <div className="text-red-400">{fileError}</div>}
+
+      {fileDetail && (
+        <>
+          {/* Filter bar */}
+          <div className="flex items-center gap-3 flex-wrap bg-card/50 rounded-lg p-3 border border-border/50">
+            <Input
+              className="w-48"
+              placeholder={t('logs.eventNameOptional')}
+              value={eventName}
+              onChange={(e) => setEventName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  runSearch();
+                }
+              }}
+            />
+            <select
+              className="h-9 px-3 rounded-md border border-input bg-background text-sm"
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+            >
+              <option value="">{t('logs.level.all')}</option>
+              <option value="1">Level 1</option>
+              <option value="2">Level 2</option>
+              <option value="3">Level 3</option>
+              <option value="4">Level 4</option>
+            </select>
+            <Input
+              className="flex-1 min-w-[200px]"
+              placeholder={t('logs.keyword')}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  runSearch();
+                }
+              }}
+            />
+            <Button variant="default" size="sm" onClick={runSearch} disabled={loading}>
+              {t('common.search')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleReset} disabled={loading}>
+              {t('common.reset')}
+            </Button>
+            <div className="text-xs text-muted-foreground ml-auto">
+              {loading ? t('common.loading') : t('logs.files.viewerLoaded', { loaded: allItems.length, total: fileDetail.eventCount })}
+            </div>
+          </div>
+
+          {/* Timeline slider */}
+          <div className="flex items-center gap-4 bg-card/30 rounded-lg p-3 border border-border/30">
+            <div className="text-xs text-muted-foreground whitespace-nowrap">
+              {formatDateTime(timeRange.startMs, localeTag)}
+            </div>
+            <Slider
+              className="flex-1"
+              value={[sliderValue]}
+              min={0}
+              max={100}
+              step={0.1}
+              onValueChange={handleSliderChange}
+              onValueCommit={handleSliderCommit}
+            />
+            <div className="text-xs text-muted-foreground whitespace-nowrap">
+              {formatDateTime(timeRange.endMs, localeTag)}
+            </div>
+            <div className="text-xs bg-primary/20 text-primary px-2 py-1 rounded whitespace-nowrap">
+              {sliderTimeDisplay}
+            </div>
+          </div>
+
+          {error && <div className="text-red-400 text-sm">{error}</div>}
+
+          {/* Table */}
+          <div className="flex-1 overflow-auto rounded-lg border border-border/50">
+            <Table>
+              <TableHeader className="sticky top-0 bg-card z-10">
+                <TableRow>
+                  <TableHead className="w-32">{t('logs.time')}</TableHead>
+                  <TableHead className="w-40">{t('logs.eventName')}</TableHead>
+                  <TableHead className="w-20">{t('logs.level')}</TableHead>
+                  <TableHead className="w-24">{t('logs.thread')}</TableHead>
+                  <TableHead>{t('logs.message')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {initialLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      {t('common.loading')}
+                    </TableCell>
+                  </TableRow>
+                ) : allItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      {t('logs.empty')}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  allItems.map((item) => {
+                    const hue = hueForEvent(item.eventName);
+                    return (
+                      <TableRow
+                        key={item.id}
+                        className="cursor-pointer hover:bg-accent/50 transition-colors"
+                        onClick={() => handleRowClick(item.id)}
+                      >
+                        <TableCell className="font-mono text-xs whitespace-nowrap">
+                          {formatTime(item.timestampMs, localeTag)}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={styles.eventBadge}
+                            style={hueVars(hue)}
+                          >
+                            <span className={styles.eventBadgeDot} />
+                            {renderHighlighted(item.eventName, keyword)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${getLevelBadgeClass(item.level)}`}>
+                            Lv{item.level}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {item.threadName || 'main'}
+                        </TableCell>
+                        <TableCell className="text-sm max-w-md truncate">
+                          {item.msg ? renderHighlighted(shortenText(item.msg, 100), keyword) : '-'}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+
+            {/* Infinite scroll sentinel */}
+            <div ref={sentinelRef} className="h-px" />
+
+            {/* Loading more indicator */}
+            {loading && !initialLoading && (
+              <div className="text-center py-4 text-muted-foreground">
+                {t('common.loading')}
+              </div>
+            )}
+
+            {/* End of list indicator */}
+            {!hasMore && allItems.length > 0 && (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                {t('logs.files.viewerEnd')}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

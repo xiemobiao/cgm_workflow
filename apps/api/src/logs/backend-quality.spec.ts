@@ -62,15 +62,32 @@ describe('buildBackendQualityReport', () => {
           deviceSn: 'SN-A',
           requestId: 'm1',
           errorCode: null,
-          msgJson: '[Upload] 批次已发送等待ACK device=SN-A msgId=m1 count=10',
+          msgJson: {
+            stage: 'mqtt',
+            op: 'publish',
+            result: 'start',
+            deviceSn: 'SN-A',
+            topic: 'data/SN-A',
+            msgId: 'm1',
+            requestId: 'm1',
+            data: '[Upload] 批次已发送等待ACK device=SN-A msgId=m1 count=10',
+          },
         },
         {
           timestampMs: 1200,
           eventName: 'warning',
           deviceSn: 'SN-A',
           requestId: 'm1',
-          errorCode: null,
-          msgJson: '[Ack] 超时未收到回执，回退并重试 device=SN-A msgId=m1',
+          errorCode: 'ACK_TIMEOUT',
+          msgJson: {
+            stage: 'mqtt',
+            op: 'ack',
+            result: 'timeout',
+            deviceSn: 'SN-A',
+            msgId: 'm1',
+            requestId: 'm1',
+            data: '[Ack] 超时未收到回执，回退并重试 device=SN-A msgId=m1',
+          },
         },
         {
           timestampMs: 1300,
@@ -78,7 +95,16 @@ describe('buildBackendQualityReport', () => {
           deviceSn: null,
           requestId: null,
           errorCode: 'MQTT_PUBLISH_FAILED',
-          msgJson: { data: '[MQTT] 发布失败 topic=data/SN-B: not connected', code: 'MQTT_PUBLISH_FAILED' },
+          msgJson: {
+            stage: 'mqtt',
+            op: 'publish',
+            result: 'fail',
+            deviceSn: 'SN-B',
+            topic: 'data/SN-B',
+            msgId: 'm2',
+            requestId: 'm2',
+            data: '[MQTT] 发布失败 topic=data/SN-B: not connected',
+          },
         },
       ],
     });
@@ -174,51 +200,4 @@ describe('buildBackendQualityReport', () => {
     expect(report.mqtt.publishFailures[0]?.topic).toBe('data/SN-B');
   });
 
-  it('classifies MQTT events when stage/op/result are only present as tokens in text', () => {
-    const report = buildBackendQualityReport({
-      httpEvents: [],
-      mqttEvents: [
-        {
-          timestampMs: 1000,
-          eventName: 'info',
-          deviceSn: null,
-          requestId: 'm1',
-          errorCode: null,
-          msgJson: 'custom stage:mqtt op:publish result:start deviceSn=SN-A topic=data/SN-A msgId=m1',
-        },
-        {
-          timestampMs: 1100,
-          eventName: 'COMMON',
-          deviceSn: null,
-          requestId: 'm1',
-          errorCode: null,
-          msgJson: 'custom stage:mqtt op:publish result:ok deviceSn=SN-A topic=data/SN-A msgId=m1',
-        },
-        {
-          timestampMs: 1200,
-          eventName: 'warning',
-          deviceSn: null,
-          requestId: 'm1',
-          errorCode: null,
-          msgJson: 'custom stage:mqtt op:ack result:ok deviceSn=SN-A msgId=m1',
-        },
-        {
-          timestampMs: 1300,
-          eventName: 'warning',
-          deviceSn: null,
-          requestId: 'm2',
-          errorCode: null,
-          msgJson: 'custom stage:mqtt op:ack result:timeout deviceSn=SN-B msgId=m2',
-        },
-      ],
-    });
-
-    expect(report.summary.mqtt.uploadBatchSent).toBe(1);
-    expect(report.summary.mqtt.publishSuccess).toBe(1);
-    expect(report.summary.mqtt.ackSuccess).toBe(1);
-    expect(report.summary.mqtt.ackTimeout).toBe(1);
-
-    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout).toBe(0);
-    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')?.ackTimeout).toBe(1);
-  });
 });

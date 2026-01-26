@@ -16,7 +16,6 @@ import {
   FileText,
   GitBranch,
   BarChart3,
-  Bluetooth,
   Filter,
 } from 'lucide-react';
 import { ProjectPicker } from '@/components/ProjectPicker';
@@ -29,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations';
 import { cn } from '@/lib/utils';
@@ -186,6 +186,7 @@ export default function LogsPage() {
   const [errorCode, setErrorCode] = useState('');
   const [msgContains, setMsgContains] = useState('');
   const [limit, setLimit] = useState(50);
+  const [excludeNoisy, setExcludeNoisy] = useState(true);
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
   const [autoSearch, setAutoSearch] = useState(false);
@@ -437,9 +438,25 @@ export default function LogsPage() {
       setStartLocal(start);
       setEndLocal(end);
 
-      window.setTimeout(() => {
-        void search(true, { startLocal: start, endLocal: end });
-      }, 1200);
+      // Wait for file parsing to complete before searching
+      const uploadedId = body.data.logFileId;
+      const waitForParsed = async () => {
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => window.setTimeout(r, 1000));
+          try {
+            const info = await apiFetch<LogFileDetail>(`/api/logs/files/${uploadedId}`);
+            if (info.status === 'parsed' || info.status === 'failed') {
+              if (info.status === 'parsed') {
+                void search(true, { startLocal: start, endLocal: end });
+              }
+              return;
+            }
+          } catch {
+            // ignore and retry
+          }
+        }
+      };
+      void waitForParsed();
     } catch (e: unknown) {
       setError(String(e));
     } finally {
@@ -495,6 +512,7 @@ export default function LogsPage() {
       if (deviceSn.trim()) qs.set('deviceSn', deviceSn.trim());
       if (errorCode.trim()) qs.set('errorCode', errorCode.trim());
       if (msgContains.trim()) qs.set('msgContains', msgContains.trim());
+      if (excludeNoisy) qs.set('excludeNoisy', 'true');
       qs.set('limit', String(limit));
       if (!resetCursor && cursor) qs.set('cursor', cursor);
 
@@ -538,7 +556,6 @@ export default function LogsPage() {
   };
 
   const quickLinks = [
-    { href: buildQuickLinkHref('/logs/bluetooth'), icon: Bluetooth, label: 'Bluetooth Debug' },
     { href: buildQuickLinkHref('/logs/trace'), icon: GitBranch, label: t('logs.trace') },
     { href: buildQuickLinkHref('/logs/commands'), icon: BarChart3, label: t('logs.commands') },
     { href: '/logs/files', icon: FileText, label: t('logs.files.browse') },
@@ -630,6 +647,14 @@ export default function LogsPage() {
                 <span className="text-muted-foreground">
                   {t('logs.fileStatus.errors')}: {uploadedLogFile.errorCount}
                 </span>
+                {uploadedLogFile.status === 'parsed' && uploadedLogFileId && (
+                  <Button asChild variant="outline" size="sm" className="ml-auto gap-2">
+                    <Link href={`/logs/files/${uploadedLogFileId}`}>
+                      <FileText size={14} />
+                      {t('logs.viewDiagnosis')}
+                    </Link>
+                  </Button>
+                )}
               </motion.div>
             )}
           </CardContent>
@@ -837,8 +862,21 @@ export default function LogsPage() {
                         <option value="4">&gt;=4 (ERROR)</option>
                       </select>
                     </div>
-                  </div>
-                </motion.div>
+                    <div className="flex items-center gap-2 pt-6">
+                      <Checkbox
+                        id="excludeNoisy"
+                        checked={excludeNoisy}
+                        onCheckedChange={(checked) => setExcludeNoisy(checked === true)}
+                      />
+	                      <label
+	                        htmlFor="excludeNoisy"
+	                        className="text-xs text-muted-foreground select-none"
+	                      >
+	                        {t('logs.excludeNoisy')}
+	                      </label>
+	                    </div>
+	                  </div>
+	                </motion.div>
               )}
             </AnimatePresence>
 
@@ -856,6 +894,19 @@ export default function LogsPage() {
                 </Button>
               </div>
               <div className="flex-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLevelGte('4');
+                  window.setTimeout(() => void search(true), 0);
+                }}
+                disabled={!canSearch || loading}
+                className="gap-2 text-red-400 border-red-400/30 hover:bg-red-400/10"
+              >
+                <AlertCircle size={14} />
+                {t('logs.onlyErrors')}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1121,7 +1172,6 @@ export default function LogsPage() {
 	                    {/* Quick jump */}
 	                    <div className="flex flex-wrap items-center gap-2">
 		                      {detail.linkCode && projectId && (
-		                        <>
 		                          <Button asChild variant="outline" size="sm">
 		                            <Link
 		                              href={`/logs/trace?${new URLSearchParams({
@@ -1135,14 +1185,6 @@ export default function LogsPage() {
 		                              Trace linkCode
 		                            </Link>
 		                          </Button>
-		                          <Button asChild variant="outline" size="sm">
-		                            <Link
-		                              href={`/logs/bluetooth/session/${encodeURIComponent(detail.linkCode)}?projectId=${encodeURIComponent(projectId)}${logFileId.trim() ? `&logFileId=${encodeURIComponent(logFileId.trim())}` : ''}`}
-		                            >
-		                              Bluetooth Session
-		                            </Link>
-		                          </Button>
-		                        </>
 		                      )}
 		                      {detail.requestId && projectId && (
 		                        <Button asChild variant="outline" size="sm">
