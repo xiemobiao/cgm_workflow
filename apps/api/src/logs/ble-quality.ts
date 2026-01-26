@@ -125,6 +125,35 @@ export function buildBleQualityReport(params: {
     byNormalizedName.set(norm, set);
   }
 
+  const aggregateCountsByExpectedName = (expectedName: string): AggregatedEventCounts | null => {
+    const exact = byEventName.get(expectedName);
+    if (exact) return exact;
+
+    const norm = normalizeEventName(expectedName);
+    const matched = byNormalizedName.get(norm);
+    if (!matched || matched.size === 0) return null;
+
+    const merged: AggregatedEventCounts = {
+      totalCount: 0,
+      countsByLevel: emptyCounts(),
+    };
+    for (const name of matched.values()) {
+      const counts = byEventName.get(name);
+      if (!counts) continue;
+      merged.totalCount += counts.totalCount;
+      merged.countsByLevel['1'] += counts.countsByLevel['1'] ?? 0;
+      merged.countsByLevel['2'] += counts.countsByLevel['2'] ?? 0;
+      merged.countsByLevel['3'] += counts.countsByLevel['3'] ?? 0;
+      merged.countsByLevel['4'] += counts.countsByLevel['4'] ?? 0;
+    }
+    return merged.totalCount > 0 ? merged : null;
+  };
+
+  const aggregateTotalCount = (expectedName: string): number => {
+    const counts = aggregateCountsByExpectedName(expectedName);
+    return counts?.totalCount ?? 0;
+  };
+
   const byCategory = new Map<
     string,
     {
@@ -136,7 +165,52 @@ export function buildBleQualityReport(params: {
     }
   >();
 
-  const requiredEvents: BleQualityItem[] = BLE_REQUIRED_EVENTS.map((e) => {
+  // Only check flows that actually appear in this log file:
+  // If a flow never happened (no start/end events), we should not mark it as "missing".
+  const requiredEventNames = new Set<string>();
+  let hasPostConnectActivity = false;
+  const POST_CONNECT_FLOW_STARTS = new Set([
+    'BLE auth sendKey',
+    'BLE query device status',
+    'BLE query sn',
+    'BLE query sensitivity',
+    'BLE query active time',
+    'BLE query init time',
+    'BLE activation sendData',
+    'BLE start getData',
+    'BLE data receive start',
+    'BLE real time data callback start',
+    'BLE latest valid data callback Start',
+  ]);
+  for (const rule of BLE_FLOW_PAIR_CHECKS) {
+    const flowTotal =
+      aggregateTotalCount(rule.startEventName) +
+      rule.endEventNames.reduce((sum, n) => sum + aggregateTotalCount(n), 0);
+    if (flowTotal <= 0) continue;
+    requiredEventNames.add(rule.startEventName);
+    if (POST_CONNECT_FLOW_STARTS.has(rule.startEventName)) {
+      hasPostConnectActivity = true;
+    }
+  }
+
+  // Some standalone events are only meaningful when certain flows happened.
+  // Example: sdk info is expected when connection succeeds.
+  if (
+    aggregateTotalCount('BLE sdk info') > 0 ||
+    aggregateTotalCount('BLE connection success') > 0 ||
+    hasPostConnectActivity
+  ) {
+    requiredEventNames.add('BLE sdk info');
+  }
+
+  // Connection status snapshot is only expected when we are already in post-connect flows.
+  if (aggregateTotalCount('BLE current Status Value') > 0 || hasPostConnectActivity) {
+    requiredEventNames.add('BLE current Status Value');
+  }
+
+  const requiredDefs = BLE_REQUIRED_EVENTS.filter((e) => requiredEventNames.has(e.eventName));
+
+  const requiredEvents: BleQualityItem[] = requiredDefs.map((e) => {
     const categoryAgg = byCategory.get(e.category) ?? {
       requiredTotal: 0,
       okTotal: 0,
@@ -173,6 +247,7 @@ export function buildBleQualityReport(params: {
     const norm = normalizeEventName(e.eventName);
     const matched = byNormalizedName.get(norm);
     if (matched && matched.size > 0) {
+      const aggregated = aggregateCountsByExpectedName(e.eventName);
       categoryAgg.nameMismatchTotal += 1;
       return {
         category: e.category,
@@ -181,9 +256,9 @@ export function buildBleQualityReport(params: {
         expectedLevel: e.expectedLevel,
         expectedLevelLabel: levelLabel(e.expectedLevel),
         status: 'name_mismatch',
-        totalCount: 0,
+        totalCount: aggregated?.totalCount ?? 0,
         expectedLevelCount: 0,
-        countsByLevel: emptyCounts(),
+        countsByLevel: aggregated?.countsByLevel ?? emptyCounts(),
         matchedEventNames: Array.from(matched.values()).slice(0, 10),
       };
     }
@@ -203,9 +278,9 @@ export function buildBleQualityReport(params: {
   });
 
   const pairChecks: BlePairCheckResult[] = BLE_FLOW_PAIR_CHECKS.map((rule) => {
-    const startCount = byEventName.get(rule.startEventName)?.totalCount ?? 0;
+    const startCount = aggregateTotalCount(rule.startEventName);
     const endCount = rule.endEventNames.reduce((sum, endName) => {
-      return sum + (byEventName.get(endName)?.totalCount ?? 0);
+      return sum + aggregateTotalCount(endName);
     }, 0);
     const pendingCount = Math.max(startCount - endCount, 0);
     return {
@@ -254,4 +329,3 @@ export function buildBleQualityReport(params: {
     },
   };
 }
-
