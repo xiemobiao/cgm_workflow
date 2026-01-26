@@ -4,6 +4,7 @@ describe('extractTrackingFields', () => {
   const empty = {
     linkCode: null,
     requestId: null,
+    attemptId: null,
     deviceMac: null,
     deviceSn: null,
     errorCode: null,
@@ -29,12 +30,13 @@ describe('extractTrackingFields', () => {
   it('parses JSON string msg', () => {
     expect(
       extractTrackingFields(
-        '{"stage":"MQTT","op":"PUBLISH","result":"OK","deviceSn":"SN-J","linkCode":"LC-J"}',
+        '{"stage":"MQTT","op":"PUBLISH","result":"OK","deviceSn":"SN-J","linkCode":"LC-J","attemptId":"AT-1"}',
       ),
     ).toEqual({
       ...empty,
       linkCode: 'LC-J',
       deviceSn: 'SN-J',
+      attemptId: 'AT-1',
       stage: 'mqtt',
       op: 'publish',
       result: 'ok',
@@ -49,6 +51,7 @@ describe('extractTrackingFields', () => {
         result: 'start',
         linkCode: 'LC-1',
         requestId: 'REQ-1',
+        attemptId: 'AT-2',
         deviceMac: 'AA:BB:CC:DD:EE:FF',
         deviceSn: 'SN-1',
         errorCode: 'E8',
@@ -57,6 +60,7 @@ describe('extractTrackingFields', () => {
       ...empty,
       linkCode: 'LC-1',
       requestId: 'REQ-1',
+      attemptId: 'AT-2',
       deviceMac: 'AA:BB:CC:DD:EE:FF',
       deviceSn: 'SN-1',
       errorCode: 'E8',
@@ -75,6 +79,7 @@ describe('extractTrackingFields', () => {
           result: 'fail',
           linkCode: 'LC-2',
           requestId: 'REQ-2',
+          attemptId: 'AT-3',
           deviceMac: '11:22:33:44:55:66',
           errorCode: 9,
           topic: 'data_reply/SN-2',
@@ -84,6 +89,7 @@ describe('extractTrackingFields', () => {
       ...empty,
       linkCode: 'LC-2',
       requestId: 'REQ-2',
+      attemptId: 'AT-3',
       deviceMac: '11:22:33:44:55:66',
       deviceSn: 'SN-2',
       errorCode: '9',

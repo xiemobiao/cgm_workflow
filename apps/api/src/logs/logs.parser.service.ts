@@ -27,6 +27,7 @@ type InnerLine = {
 type TrackingFields = {
   linkCode: string | null;
   requestId: string | null;
+  attemptId: string | null;
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
@@ -39,6 +40,7 @@ function createEmptyTrackingFields(): TrackingFields {
   return {
     linkCode: null,
     requestId: null,
+    attemptId: null,
     deviceMac: null,
     deviceSn: null,
     errorCode: null,
@@ -232,6 +234,7 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
 
     if (!result.linkCode) result.linkCode = normalizeTrim(pickFirstString(obj, ['linkCode']));
     if (!result.requestId) result.requestId = normalizeTrim(pickFirstString(obj, ['requestId']));
+    if (!result.attemptId) result.attemptId = normalizeTrim(pickFirstString(obj, ['attemptId']));
 
     if (!result.deviceMac) {
       const mac = normalizeTrim(pickFirstString(obj, ['deviceMac']));
@@ -419,6 +422,7 @@ export class LogsParserService {
             // Tracking fields
             linkCode: tracking.linkCode,
             requestId: tracking.requestId,
+            attemptId: tracking.attemptId,
             deviceMac: tracking.deviceMac,
             deviceSn: tracking.deviceSn,
             errorCode: tracking.errorCode,

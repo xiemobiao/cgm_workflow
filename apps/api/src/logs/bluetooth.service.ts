@@ -326,6 +326,77 @@ export class BluetoothService {
     return patterns.some((p) => upper.includes(p.toUpperCase()));
   }
 
+  private normalizeLower(value: string | null | undefined): string | null {
+    const v = value?.trim() ?? '';
+    return v.length > 0 ? v.toLowerCase() : null;
+  }
+
+  private isBleOp(
+    row: { stage?: string | null; op?: string | null; result?: string | null },
+    op: string,
+    result?: string,
+  ): boolean {
+    const stage = this.normalizeLower(row.stage);
+    const rowOp = this.normalizeLower(row.op);
+    const rowResult = this.normalizeLower(row.result);
+    if (stage !== 'ble' || rowOp !== op) return false;
+    if (result === undefined) return true;
+    return rowResult === result;
+  }
+
+  private isDisconnectEvent(row: {
+    eventName: string;
+    stage?: string | null;
+    op?: string | null;
+  }): boolean {
+    if (row.stage || row.op) {
+      return this.isBleOp(row, 'disconnect');
+    }
+    return this.matchesPattern(row.eventName, PHASE_PATTERNS.disconnect);
+  }
+
+  private isConnectStartEvent(row: {
+    eventName: string;
+    stage?: string | null;
+    op?: string | null;
+    result?: string | null;
+  }): boolean {
+    if (row.stage || row.op || row.result) {
+      return this.isBleOp(row, 'connect', 'start');
+    }
+    const n = row.eventName.toLowerCase();
+    return n.includes('start connection') || n.includes('connect_start');
+  }
+
+  private isConnectSuccessEvent(row: {
+    eventName: string;
+    stage?: string | null;
+    op?: string | null;
+    result?: string | null;
+  }): boolean {
+    if (row.stage || row.op || row.result) {
+      return this.isBleOp(row, 'connect', 'ok');
+    }
+    const n = row.eventName.toLowerCase();
+    return n.includes('connection success') || n.includes('connect_success');
+  }
+
+  private extractDisconnectReason(msgJson: Prisma.JsonValue | null): string | null {
+    if (!msgJson) return null;
+    if (typeof msgJson !== 'object' || Array.isArray(msgJson)) return null;
+
+    const obj = msgJson as Record<string, unknown>;
+    const nestedData =
+      obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)
+        ? (obj.data as Record<string, unknown>)
+        : null;
+
+    const raw = obj.reason ?? obj.gattStatus ?? obj.hciReason ?? nestedData?.reason;
+    if (raw === undefined || raw === null) return null;
+    const s = typeof raw === 'string' ? raw.trim() : String(raw);
+    return s.length > 0 ? s : null;
+  }
+
   private async assertLogFileInProject(params: { projectId: string; logFileId: string }) {
     const found = await this.prisma.logFile.findFirst({
       where: { id: params.logFileId, projectId: params.projectId },
@@ -957,6 +1028,255 @@ export class BluetoothService {
     return sorted[Math.max(0, idx)];
   }
 
+  // Reconnect summary (disconnect -> reconnect) for faster diagnosis
+  async getReconnectSummary(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    startTime: string;
+    endTime: string;
+    deviceMac?: string;
+    limit?: number;
+    reconnectWindowMs?: number;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
+    const startMs = BigInt(new Date(params.startTime).getTime());
+    const endMs = BigInt(new Date(params.endTime).getTime());
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+    const reconnectWindowMs = Math.min(
+      Math.max(params.reconnectWindowMs ?? 5 * 60_000, 1_000),
+      30 * 60_000,
+    );
+
+    const where: Prisma.LogEventWhereInput = {
+      projectId: params.projectId,
+      timestampMs: { gte: startMs, lte: endMs },
+      stage: 'ble',
+    };
+    if (params.logFileId) {
+      where.logFileId = params.logFileId;
+    }
+    if (params.deviceMac) {
+      where.deviceMac = params.deviceMac;
+    }
+
+    const events = await this.prisma.logEvent.findMany({
+      where,
+      orderBy: { timestampMs: 'asc' },
+      select: {
+        id: true,
+        logFileId: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        linkCode: true,
+        deviceMac: true,
+        deviceSn: true,
+        attemptId: true,
+        stage: true,
+        op: true,
+        result: true,
+        errorCode: true,
+        msgJson: true,
+      },
+    });
+
+    const byDeviceKey = new Map<string, typeof events>();
+    for (const e of events) {
+      const key = e.deviceMac ?? e.deviceSn ?? e.linkCode;
+      if (!key) continue;
+      const list = byDeviceKey.get(key) ?? [];
+      list.push(e);
+      byDeviceKey.set(key, list);
+    }
+
+    const items: Array<{
+      deviceKey: string;
+      deviceMac: string | null;
+      deviceSn: string | null;
+      linkCodes: string[];
+      disconnects: number;
+      reconnectOk: number;
+      reconnectUnresolved: number;
+      reconnectDelayAvgMs: number | null;
+      reconnectDelayP95Ms: number | null;
+      reconnectDelayMaxMs: number | null;
+      attemptsAvg: number | null;
+      attemptsMax: number | null;
+      topReasons: Array<{ reason: string; count: number }>;
+      samples: Array<{
+        logFileId: string;
+        disconnectEventId: string;
+        disconnectAtMs: number;
+        reason: string | null;
+        reconnectEventId: string | null;
+        reconnectAtMs: number | null;
+        reconnectDelayMs: number | null;
+        attempts: number;
+        attemptIds: string[];
+      }>;
+    }> = [];
+
+    for (const [deviceKey, list] of byDeviceKey.entries()) {
+      if (list.length === 0) continue;
+
+      const linkCodes = [...new Set(list.map((e) => e.linkCode).filter(Boolean))] as string[];
+      const deviceMac = list.find((e) => e.deviceMac)?.deviceMac ?? null;
+      const deviceSn = list.find((e) => e.deviceSn)?.deviceSn ?? null;
+
+      const reasonsCount = new Map<string, number>();
+      const reconnectCases: Array<{
+        logFileId: string;
+        disconnectEventId: string;
+        disconnectAtMs: number;
+        reason: string | null;
+        reconnectEventId: string | null;
+        reconnectAtMs: number | null;
+        reconnectDelayMs: number | null;
+        attempts: number;
+        attemptIds: string[];
+      }> = [];
+
+      for (let i = 0; i < list.length; i += 1) {
+        const e = list[i];
+        if (!this.isDisconnectEvent(e)) continue;
+
+        const disconnectAtMs = Number(e.timestampMs);
+        const reason = e.errorCode ?? this.extractDisconnectReason(e.msgJson);
+        if (reason) {
+          reasonsCount.set(reason, (reasonsCount.get(reason) ?? 0) + 1);
+        }
+
+        let reconnectEventId: string | null = null;
+        let reconnectAtMs: number | null = null;
+        let attempts = 0;
+        const attemptIds = new Set<string>();
+
+        for (let j = i + 1; j < list.length; j += 1) {
+          const next = list[j];
+          const ts = Number(next.timestampMs);
+          if (ts - disconnectAtMs > reconnectWindowMs) break;
+          if (this.isDisconnectEvent(next)) break;
+
+          if (this.isConnectStartEvent(next)) {
+            attempts += 1;
+            if (next.attemptId) attemptIds.add(next.attemptId);
+          }
+          if (this.isConnectSuccessEvent(next)) {
+            reconnectEventId = next.id;
+            reconnectAtMs = ts;
+            break;
+          }
+        }
+
+        reconnectCases.push({
+          logFileId: e.logFileId,
+          disconnectEventId: e.id,
+          disconnectAtMs,
+          reason,
+          reconnectEventId,
+          reconnectAtMs,
+          reconnectDelayMs: reconnectAtMs !== null ? reconnectAtMs - disconnectAtMs : null,
+          attempts,
+          attemptIds: Array.from(attemptIds.values()).slice(0, 10),
+        });
+      }
+
+      if (reconnectCases.length === 0) continue;
+
+      const delays = reconnectCases
+        .map((c) => c.reconnectDelayMs)
+        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+        .sort((a, b) => a - b);
+
+      const attemptsList = reconnectCases
+        .map((c) => c.attempts)
+        .filter((v) => Number.isFinite(v) && v >= 0)
+        .sort((a, b) => a - b);
+
+      const reconnectOk = reconnectCases.filter((c) => c.reconnectAtMs !== null).length;
+      const reconnectUnresolved = reconnectCases.length - reconnectOk;
+
+      const reconnectDelayAvgMs =
+        delays.length > 0 ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) : null;
+      const reconnectDelayP95Ms = this.percentile(delays, 95);
+      const reconnectDelayMaxMs = delays.length > 0 ? delays[delays.length - 1] : null;
+
+      const attemptsAvg =
+        attemptsList.length > 0
+          ? Math.round(attemptsList.reduce((a, b) => a + b, 0) / attemptsList.length)
+          : null;
+      const attemptsMax = attemptsList.length > 0 ? attemptsList[attemptsList.length - 1] : null;
+
+      const topReasons = Array.from(reasonsCount.entries())
+        .map(([reasonKey, count]) => ({ reason: reasonKey, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+      const samples = reconnectCases
+        .slice()
+        .sort((a, b) => {
+          const av = a.reconnectDelayMs ?? Number.POSITIVE_INFINITY;
+          const bv = b.reconnectDelayMs ?? Number.POSITIVE_INFINITY;
+          return bv - av;
+        })
+        .slice(0, 5);
+
+      items.push({
+        deviceKey,
+        deviceMac,
+        deviceSn,
+        linkCodes,
+        disconnects: reconnectCases.length,
+        reconnectOk,
+        reconnectUnresolved,
+        reconnectDelayAvgMs,
+        reconnectDelayP95Ms,
+        reconnectDelayMaxMs,
+        attemptsAvg,
+        attemptsMax,
+        topReasons,
+        samples,
+      });
+    }
+
+    const sorted = items
+      .slice()
+      .sort((a, b) => {
+        if (a.reconnectUnresolved !== b.reconnectUnresolved) {
+          return b.reconnectUnresolved - a.reconnectUnresolved;
+        }
+        const av = a.reconnectDelayMaxMs ?? -1;
+        const bv = b.reconnectDelayMaxMs ?? -1;
+        if (av !== bv) return bv - av;
+        return b.disconnects - a.disconnects;
+      })
+      .slice(0, limit);
+
+    const totalDisconnects = sorted.reduce((sum, it) => sum + it.disconnects, 0);
+
+    return {
+      items: sorted,
+      summary: {
+        totalDevices: sorted.length,
+        totalDisconnects,
+        reconnectWindowMs,
+      },
+    };
+  }
+
   // Detect anomaly patterns
   async detectAnomalies(params: {
     actorUserId: string;
@@ -1003,9 +1323,13 @@ export class BluetoothService {
         level: true,
         timestampMs: true,
         linkCode: true,
+        attemptId: true,
         deviceMac: true,
         errorCode: true,
         sdkVersion: true,
+        stage: true,
+        op: true,
+        result: true,
       },
     });
 
@@ -1021,9 +1345,7 @@ export class BluetoothService {
     }> = [];
 
     // Detect frequent disconnects
-    const disconnectEvents = events.filter((e) =>
-      this.matchesPattern(e.eventName, PHASE_PATTERNS.disconnect),
-    );
+    const disconnectEvents = events.filter((e) => this.isDisconnectEvent(e));
     if (disconnectEvents.length >= ANOMALY_THRESHOLDS.frequentDisconnect.count) {
       const affectedLinkCodes = new Set(
         disconnectEvents.map((e) => e.linkCode).filter(Boolean),
@@ -1041,11 +1363,14 @@ export class BluetoothService {
     }
 
     // Detect timeout retries
-    const timeoutEvents = events.filter(
-      (e) =>
-        e.eventName.toUpperCase().includes('TIMEOUT') ||
-        (e.level >= 4 && e.eventName.toUpperCase().includes('RETRY')),
-    );
+    const timeoutEvents = events.filter((e) => {
+      if (this.isBleOp(e, 'connect')) {
+        const r = this.normalizeLower(e.result);
+        if (r === 'timeout' || r === 'retry' || r === 'fail') return true;
+      }
+      const upper = e.eventName.toUpperCase();
+      return upper.includes('TIMEOUT') || (e.level >= 4 && upper.includes('RETRY'));
+    });
     if (timeoutEvents.length >= ANOMALY_THRESHOLDS.timeoutRetry.count) {
       const affectedLinkCodes = new Set(
         timeoutEvents.map((e) => e.linkCode).filter(Boolean),
@@ -1534,9 +1859,13 @@ export class BluetoothService {
         timestampMs: true,
         linkCode: true,
         deviceMac: true,
+        attemptId: true,
         errorCode: true,
         sdkVersion: true,
         msgJson: true,
+        stage: true,
+        op: true,
+        result: true,
       },
     });
 
@@ -1557,7 +1886,7 @@ export class BluetoothService {
 
     // 1. Detect frequent disconnects within time windows
     const disconnectClusters = this.findEventClusters(
-      events.filter((e) => this.matchesPattern(e.eventName, PHASE_PATTERNS.disconnect)),
+      events.filter((e) => this.isDisconnectEvent(e)),
       ANOMALY_THRESHOLDS.frequentDisconnect.windowMs,
     );
 
@@ -1582,9 +1911,13 @@ export class BluetoothService {
     }
 
     // 2. Detect timeout retry patterns
-    const timeoutEvents = events.filter(
-      (e) => e.eventName.toUpperCase().includes('TIMEOUT'),
-    );
+    const timeoutEvents = events.filter((e) => {
+      if (this.isBleOp(e, 'connect')) {
+        const r = this.normalizeLower(e.result);
+        if (r === 'timeout' || r === 'retry' || r === 'fail') return true;
+      }
+      return e.eventName.toUpperCase().includes('TIMEOUT');
+    });
     const timeoutClusters = this.findEventClusters(
       timeoutEvents,
       ANOMALY_THRESHOLDS.timeoutRetry.windowMs,

@@ -46,6 +46,7 @@ const searchSchema = z.object({
   // Tracking field filters
   linkCode: z.string().min(1).optional(),
   requestId: z.string().min(1).optional(),
+  attemptId: z.string().min(1).optional(),
   deviceMac: z.string().min(1).optional(),
   deviceSn: z.string().min(1).optional(),
   errorCode: z.string().min(1).optional(),
@@ -188,6 +189,16 @@ const bluetoothAnomaliesSchema = z.object({
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   deviceMac: z.string().min(1).optional(),
+});
+
+const bluetoothReconnectSummarySchema = z.object({
+  projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  deviceMac: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  reconnectWindowMs: z.coerce.number().int().min(1000).max(30 * 60 * 1000).optional(),
 });
 
 const bluetoothErrorsSchema = z.object({
@@ -669,6 +680,24 @@ export class LogsController {
       startTime: dto.startTime,
       endTime: dto.endTime,
       deviceMac: dto.deviceMac,
+    });
+  }
+
+  @Get('bluetooth/reconnect/summary')
+  async getBluetoothReconnectSummary(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: unknown,
+  ) {
+    const dto = bluetoothReconnectSummarySchema.parse(query);
+    return this.bluetooth.getReconnectSummary({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      logFileId: dto.logFileId,
+      startTime: dto.startTime,
+      endTime: dto.endTime,
+      deviceMac: dto.deviceMac,
+      limit: dto.limit,
+      reconnectWindowMs: dto.reconnectWindowMs,
     });
   }
 

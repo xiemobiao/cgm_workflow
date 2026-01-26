@@ -36,6 +36,7 @@ export class LogsSearchService {
         // Tracking field filters
         linkCode?: string;
         requestId?: string;
+        attemptId?: string;
         deviceMac?: string;
         deviceSn?: string;
         errorCode?: string;
@@ -95,6 +96,7 @@ export class LogsSearchService {
         // Tracking field filters
         if (params.linkCode) andFilters.push({ linkCode: params.linkCode });
         if (params.requestId) andFilters.push({ requestId: params.requestId });
+        if (params.attemptId) andFilters.push({ attemptId: params.attemptId });
         if (params.deviceMac) andFilters.push({ deviceMac: params.deviceMac });
         if (params.deviceSn) andFilters.push({ deviceSn: params.deviceSn });
         if (params.errorCode) andFilters.push({ errorCode: params.errorCode });
@@ -180,6 +182,7 @@ export class LogsSearchService {
                 msgJson: true,
                 linkCode: true,
                 requestId: true,
+                attemptId: true,
                 deviceMac: true,
                 deviceSn: true,
                 errorCode: true,
@@ -208,6 +211,7 @@ export class LogsSearchService {
                 msg: this.helper.msgPreviewFromJson(e.msgJson),
                 linkCode: e.linkCode,
                 requestId: e.requestId,
+                attemptId: e.attemptId,
                 deviceMac: e.deviceMac,
                 deviceSn: e.deviceSn,
                 errorCode: e.errorCode,
@@ -236,6 +240,7 @@ export class LogsSearchService {
                 rawLine: true,
                 linkCode: true,
                 requestId: true,
+                attemptId: true,
                 deviceMac: true,
                 deviceSn: true,
                 errorCode: true,
@@ -274,6 +279,7 @@ export class LogsSearchService {
             rawLine: event.rawLine,
             linkCode: event.linkCode,
             requestId: event.requestId,
+            attemptId: event.attemptId,
             deviceMac: event.deviceMac,
             deviceSn: event.deviceSn,
             errorCode: event.errorCode,
