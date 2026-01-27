@@ -81,7 +81,7 @@ type BleQualityReport = {
   };
 };
 
-type BleQualityTab = 'present' | 'levelMismatch' | 'nameMismatch' | 'pairChecks';
+type BleQualityTab = 'present' | 'missing' | 'levelMismatch' | 'nameMismatch' | 'pairChecks';
 
 type BackendQualityReport = {
   logFileId: string;
@@ -487,6 +487,7 @@ export default function LogFileDetailPage() {
 
   const presentItems =
     bleQuality?.requiredEvents.filter((e) => e.status !== 'missing') ?? [];
+  const missingItems = bleQuality?.requiredEvents.filter((e) => e.status === 'missing') ?? [];
   const levelMismatchItems =
     bleQuality?.requiredEvents.filter((e) => e.status === 'level_mismatch') ?? [];
   const nameMismatchItems =
@@ -545,8 +546,9 @@ export default function LogFileDetailPage() {
 
     const pendingTotal = bleQuality.pairChecks.filter((p) => p.pendingCount > 0).length;
     const presentTotal = bleQuality.requiredEvents.filter((e) => e.status !== 'missing').length;
+    const missingTotal = bleQuality.requiredEvents.filter((e) => e.status === 'missing').length;
     const first: BleQualityTab =
-      presentTotal === 0 && pendingTotal > 0 ? 'pairChecks' : 'present';
+      presentTotal > 0 ? 'present' : missingTotal > 0 ? 'missing' : pendingTotal > 0 ? 'pairChecks' : 'present';
 
     setBleTab(first);
     setBleTabInitialized(true);
@@ -848,6 +850,11 @@ export default function LogFileDetailPage() {
 	                    <p className="text-3xl font-semibold tabular-nums">
 	                      {bleQuality ? `${presentItems.length}/${bleQuality.summary.requiredTotal}` : '-'}
 	                    </p>
+	                    {bleQuality ? (
+	                      <p className="text-xs text-muted-foreground" style={{ marginTop: 2 }}>
+	                        {t('logs.files.bleQuality.missing')}: {missingItems.length}
+	                      </p>
+	                    ) : null}
 	                  </div>
 	                </div>
 	              </CardContent>
@@ -1846,69 +1853,35 @@ export default function LogFileDetailPage() {
 
         {bleExpanded && bleQuality ? (
           <>
-            {(() => {
-              const hitTotal =
-                bleQuality.summary.okTotal +
-                bleQuality.summary.levelMismatchTotal +
-                bleQuality.summary.nameMismatchTotal;
-              const hitPercent =
-                bleQuality.summary.requiredTotal > 0
-                  ? Math.round((hitTotal / bleQuality.summary.requiredTotal) * 100)
-                  : 0;
-              const progressColor =
-                hitPercent >= 80
-                  ? 'rgba(96, 255, 166, 0.85)'
-                  : hitPercent >= 40
-                    ? 'rgba(245, 158, 11, 0.85)'
-                    : 'rgba(255, 107, 107, 0.85)';
+	            {(() => {
+	              const hitTotal =
+	                bleQuality.summary.okTotal +
+	                bleQuality.summary.levelMismatchTotal +
+	                bleQuality.summary.nameMismatchTotal;
+	              const hitPercent =
+	                bleQuality.summary.requiredTotal > 0
+	                  ? Math.round((hitTotal / bleQuality.summary.requiredTotal) * 100)
+	                  : 0;
+	              const progressColor =
+	                hitPercent >= 80
+	                  ? 'rgba(96, 255, 166, 0.85)'
+	                  : hitPercent >= 40
+	                    ? 'rgba(245, 158, 11, 0.85)'
+	                    : 'rgba(255, 107, 107, 0.85)';
 
-              const tabItems: Array<{ key: BleQualityTab; label: string; count: number }> = [
-                { key: 'present', label: t('logs.files.bleQuality.tab.present'), count: presentItems.length },
-                ...(bleAdvanced
-                  ? [
-                      {
-                        key: 'levelMismatch' as const,
-                        label: t('logs.files.bleQuality.tab.levelMismatch'),
-                        count: levelMismatchItems.length,
-                      },
-                      {
-                        key: 'nameMismatch' as const,
-                        label: t('logs.files.bleQuality.tab.nameMismatch'),
-                        count: nameMismatchItems.length,
-                      },
-                    ]
-                  : []),
-                { key: 'pairChecks', label: t('logs.files.bleQuality.tab.pairChecks'), count: pendingPairs.length },
-              ];
+	              const visibleTabs: BleQualityTab[] = ['present', 'missing', 'pairChecks'];
+	              if (bleAdvanced) visibleTabs.push('levelMismatch', 'nameMismatch');
+	              const activeTab: BleQualityTab = visibleTabs.includes(bleTab) ? bleTab : 'present';
 
-              const tabButton = (tab: (typeof tabItems)[number]) => {
-                const active = bleTab === tab.key;
-                const disabled = tab.count === 0;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    className=""
-                    disabled={disabled}
-                    onClick={() => setBleTab(tab.key)}
-                    style={{
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      opacity: disabled ? 0.55 : 1,
-                      borderColor: active ? 'rgba(124, 92, 255, 0.55)' : undefined,
-                      background: active ? 'rgba(124, 92, 255, 0.16)' : undefined,
-                    }}
-                  >
-                    <span>{tab.label}</span>
-                    <span style={{ fontWeight: 600 }}>{tab.count}</span>
-                  </button>
-                );
-              };
+	              const tabCount = (count: number) => (
+	                <span className="tabular-nums text-xs font-semibold text-muted-foreground">{count}</span>
+	              );
 
-              const renderPresent = () => {
-                if (presentItems.length === 0) {
-                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
-                }
-                return (
+		              const renderPresent = () => {
+		                if (presentItems.length === 0) {
+		                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
+		                }
+	                return (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1956,8 +1929,42 @@ export default function LogFileDetailPage() {
                       ))}
                     </TableBody>
                   </Table>
-                );
-              };
+	                );
+	              };
+
+	              const renderMissing = () => {
+	                if (missingItems.length === 0) {
+	                  return <div className="text-sm text-muted-foreground">{t('logs.files.bleQuality.emptySection')}</div>;
+	                }
+	                return (
+	                  <Table>
+	                    <TableHeader>
+	                      <TableRow>
+	                        <TableHead>{t('logs.files.bleQuality.table.eventName')}</TableHead>
+	                        <TableHead>{t('logs.files.bleQuality.table.description')}</TableHead>
+	                        <TableHead className="w-32">{t('logs.files.bleQuality.table.expectedLevel')}</TableHead>
+	                        <TableHead className="w-32">{t('logs.files.bleQuality.table.actions')}</TableHead>
+	                      </TableRow>
+	                    </TableHeader>
+	                    <TableBody>
+	                      {missingItems.map((e) => (
+	                        <TableRow key={`${e.category}:${e.eventName}`}>
+	                          <TableCell className="font-mono text-xs">{e.eventName}</TableCell>
+	                          <TableCell>{e.description}</TableCell>
+	                          <TableCell>{levelBadge(e.expectedLevelLabel)}</TableCell>
+	                          <TableCell>
+	                            <Button variant="ghost" size="sm" asChild>
+	                              <Link href={makeLogsHref({ eventName: e.eventName })}>
+	                                {t('logs.files.bleQuality.openInLogs')}
+	                              </Link>
+	                            </Button>
+	                          </TableCell>
+	                        </TableRow>
+	                      ))}
+	                    </TableBody>
+	                  </Table>
+	                );
+	              };
 
               const renderLevelMismatch = () => {
                 if (levelMismatchItems.length === 0) {
@@ -2077,32 +2084,16 @@ export default function LogFileDetailPage() {
                       ))}
                     </TableBody>
                   </Table>
-                );
-              };
+	                );
+	              };
 
-              const renderTabBody = () => {
-                const visible = new Set(tabItems.map((t) => t.key));
-                const active = visible.has(bleTab) ? bleTab : 'present';
-                switch (active) {
-                  case 'present':
-                    return renderPresent();
-                  case 'levelMismatch':
-                    return renderLevelMismatch();
-                  case 'nameMismatch':
-                    return renderNameMismatch();
-                  case 'pairChecks':
-                    return renderPairChecks();
-                }
-              };
-
-              return (
-                <>
-                  {/* 快捷操作按钮 */}
-                  <div className="flex items-center gap-2 flex-wrap px-6 pt-4">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-                    </Button>
-                    {bleQuality.parser.parserErrorCount > 0 && (
+	              return (
+	                <CardContent className="pt-4 space-y-4">
+	                  <div className="flex items-center gap-2 flex-wrap">
+	                    <Button variant="outline" size="sm" asChild>
+	                      <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
+	                    </Button>
+	                    {bleQuality.parser.parserErrorCount > 0 && (
                       <Button variant="outline" size="sm" asChild>
                         <Link href={makeLogsHref({ eventName: 'PARSER_ERROR' })}>
                           {t('logs.files.bleQuality.viewParserErrors')}
@@ -2120,40 +2111,35 @@ export default function LogFileDetailPage() {
                       {bleAdvanced
                         ? t('logs.files.bleQuality.hideAdvanced')
                         : t('logs.files.bleQuality.showAdvanced')}
-                      {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
-                    </Button>
-                  </div>
+	                      {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
+	                    </Button>
+	                  </div>
 
-                  <div style={{ marginTop: 14, paddingLeft: 24, paddingRight: 24 }}>
-                    <div className="text-sm font-medium">{t('logs.files.bleQuality.coverage')}</div>
-                    <div className="text-sm text-muted-foreground" style={{ marginTop: 6 }}>
-                      {hitTotal}/{bleQuality.summary.requiredTotal} ({hitPercent}%)
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 10,
-                        height: 8,
-                        borderRadius: 999,
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${hitPercent}%`,
-                          height: '100%',
-                          background: progressColor,
-                        }}
-                      />
-                    </div>
-                  </div>
+	                  <div className="space-y-2">
+	                    <div className="text-sm font-medium">{t('logs.files.bleQuality.coverage')}</div>
+	                    <div className="text-sm text-muted-foreground tabular-nums">
+	                      {hitTotal}/{bleQuality.summary.requiredTotal} ({hitPercent}%)
+	                    </div>
+	                    <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+	                      <div
+	                        className="h-full"
+	                        style={{
+	                          width: `${hitPercent}%`,
+	                          background: progressColor,
+	                        }}
+	                      />
+	                    </div>
+	                  </div>
 
-                  <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {bleAdvanced ? (
-                      <>
-                        <Badge
-                          className={bleQuality.summary.levelMismatchTotal > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}
-                          title={t('logs.files.bleQuality.levelMismatch')}
+	                  <div className="flex flex-wrap gap-2">
+		                    <Badge variant="secondary" title={t('logs.files.bleQuality.missing')}>
+		                      {t('logs.files.bleQuality.missing')}: {bleQuality.summary.missingTotal}
+		                    </Badge>
+		                    {bleAdvanced ? (
+	                      <>
+	                        <Badge
+	                          className={bleQuality.summary.levelMismatchTotal > 0 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : ''}
+	                          title={t('logs.files.bleQuality.levelMismatch')}
                         >
                           {t('logs.files.bleQuality.levelMismatch')}: {bleQuality.summary.levelMismatchTotal}
                         </Badge>
@@ -2178,21 +2164,64 @@ export default function LogFileDetailPage() {
                       {t('logs.files.bleQuality.logan')}:{' '}
                       {bleQuality.parser.logan
                         ? `${bleQuality.parser.logan.blocksFailed}/${bleQuality.parser.logan.blocksTotal} ${t('logs.files.bleQuality.loganFailedBlocks')}`
-                        : '-'}
-                    </Badge>
-                  </div>
+	                        : '-'}
+	                    </Badge>
+	                  </div>
 
-                  <div className="flex items-center gap-2" style={{ marginTop: 14 }}>
-                    {tabItems.map(tabButton)}
-                  </div>
+	                  <Tabs value={activeTab} onValueChange={(v) => setBleTab(v as BleQualityTab)} className="w-full">
+	                    <TabsList className="h-auto flex-wrap justify-start">
+	                      <TabsTrigger value="present" disabled={presentItems.length === 0} className="gap-2">
+	                        <span>{t('logs.files.bleQuality.tab.present')}</span>
+	                        {tabCount(presentItems.length)}
+	                      </TabsTrigger>
+	                      <TabsTrigger value="missing" disabled={missingItems.length === 0} className="gap-2">
+	                        <span>{t('logs.files.bleQuality.tab.missing')}</span>
+	                        {tabCount(missingItems.length)}
+	                      </TabsTrigger>
+	                      {bleAdvanced ? (
+	                        <TabsTrigger value="levelMismatch" disabled={levelMismatchItems.length === 0} className="gap-2">
+	                          <span>{t('logs.files.bleQuality.tab.levelMismatch')}</span>
+	                          {tabCount(levelMismatchItems.length)}
+	                        </TabsTrigger>
+	                      ) : null}
+	                      {bleAdvanced ? (
+	                        <TabsTrigger value="nameMismatch" disabled={nameMismatchItems.length === 0} className="gap-2">
+	                          <span>{t('logs.files.bleQuality.tab.nameMismatch')}</span>
+	                          {tabCount(nameMismatchItems.length)}
+	                        </TabsTrigger>
+	                      ) : null}
+	                      <TabsTrigger value="pairChecks" disabled={pendingPairs.length === 0} className="gap-2">
+	                        <span>{t('logs.files.bleQuality.tab.pairChecks')}</span>
+	                        {tabCount(pendingPairs.length)}
+	                      </TabsTrigger>
+	                    </TabsList>
 
-                  <div style={{ marginTop: 10 }}>{renderTabBody()}</div>
-                </>
-              );
-            })()}
-          </>
-        ) : null}
-      </Card>
+	                    <TabsContent value="present" className="mt-4">
+	                      {renderPresent()}
+	                    </TabsContent>
+	                    <TabsContent value="missing" className="mt-4">
+	                      {renderMissing()}
+	                    </TabsContent>
+	                    {bleAdvanced ? (
+	                      <TabsContent value="levelMismatch" className="mt-4">
+	                        {renderLevelMismatch()}
+	                      </TabsContent>
+	                    ) : null}
+	                    {bleAdvanced ? (
+	                      <TabsContent value="nameMismatch" className="mt-4">
+	                        {renderNameMismatch()}
+	                      </TabsContent>
+	                    ) : null}
+	                    <TabsContent value="pairChecks" className="mt-4">
+	                      {renderPairChecks()}
+	                    </TabsContent>
+	                  </Tabs>
+	                </CardContent>
+	              );
+	            })()}
+	          </>
+	        ) : null}
+	      </Card>
     </div>
   );
 }

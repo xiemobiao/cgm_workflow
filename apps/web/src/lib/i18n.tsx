@@ -221,7 +221,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'logs.files.streamSessionQuality.traceRequestId': '追踪 requestId',
     'logs.files.bleQuality.title': '蓝牙 SDK 性能日志事件统计',
     'logs.files.bleQuality.hint':
-      '用于性能测试：仅展示该日志文件中“事件清单”内已出现的事件，并检查等级/命名是否一致；流程对照用于发现开始但缺少结束日志的情况。',
+      '用于性能测试：默认展示该日志文件中“事件清单”内已出现的事件；可切换查看缺失事件，并检查等级/命名是否一致；流程对照用于发现开始但缺少结束日志的情况。',
     'logs.files.bleQuality.coverage': '命中数（出现/清单总数）',
     'logs.files.bleQuality.missing': '缺失（未出现）',
     'logs.files.bleQuality.levelMismatch': '等级不匹配',
@@ -710,7 +710,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'logs.files.streamSessionQuality.traceRequestId': 'Trace requestId',
     'logs.files.bleQuality.title': 'Bluetooth SDK performance log events',
     'logs.files.bleQuality.hint':
-      'For performance testing: shows only the events that appear in this log file and are listed in the event checklist, and checks level/name mismatches; flow checks find start-without-end patterns.',
+      'For performance testing: shows checklist events present in this log file by default, lets you view missing events, and checks level/name mismatches; flow checks find start-without-end patterns.',
     'logs.files.bleQuality.coverage': 'Hits (Present/Checklist total)',
     'logs.files.bleQuality.missing': 'Missing (not found)',
     'logs.files.bleQuality.levelMismatch': 'Level mismatch',
