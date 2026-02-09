@@ -1,4 +1,7 @@
-import { BLE_FLOW_PAIR_CHECKS, BLE_REQUIRED_EVENTS } from './ble-required-events';
+import {
+  BLE_FLOW_PAIR_CHECKS,
+  BLE_REQUIRED_EVENTS,
+} from './ble-required-events';
 
 export type LoganDecryptStats = {
   blocksTotal: number;
@@ -125,7 +128,9 @@ export function buildBleQualityReport(params: {
     byNormalizedName.set(norm, set);
   }
 
-  const aggregateCountsByExpectedName = (expectedName: string): AggregatedEventCounts | null => {
+  const aggregateCountsByExpectedName = (
+    expectedName: string,
+  ): AggregatedEventCounts | null => {
     const exact = byEventName.get(expectedName);
     if (exact) return exact;
 

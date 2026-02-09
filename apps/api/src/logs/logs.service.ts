@@ -9,8 +9,8 @@ import { buildBackendQualityReport } from './backend-quality';
 import { buildDataContinuityReport } from './data-continuity';
 import { buildBleQualityReport, type LoganDecryptStats } from './ble-quality';
 import { buildStreamSessionQualityReport } from './stream-session-quality';
-import { LogsParserService } from './logs.parser.service';
 import { KnownIssuesService } from '../known-issues/known-issues.service';
+import { LogProcessingService } from './log-processing.service';
 
 @Injectable()
 export class LogsService {
@@ -19,8 +19,8 @@ export class LogsService {
     private readonly rbac: RbacService,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
-    private readonly parser: LogsParserService,
     private readonly knownIssues: KnownIssuesService,
+    private readonly processing: LogProcessingService,
   ) {}
 
   private extractLoganDecryptStatsFromMsgJson(
@@ -33,15 +33,23 @@ export class LogsService {
     const loganRecord = logan as Record<string, unknown>;
 
     const blocksTotal =
-      typeof loganRecord.blocksTotal === 'number' ? loganRecord.blocksTotal : null;
+      typeof loganRecord.blocksTotal === 'number'
+        ? loganRecord.blocksTotal
+        : null;
     const blocksSucceeded =
       typeof loganRecord.blocksSucceeded === 'number'
         ? loganRecord.blocksSucceeded
         : null;
     const blocksFailed =
-      typeof loganRecord.blocksFailed === 'number' ? loganRecord.blocksFailed : null;
+      typeof loganRecord.blocksFailed === 'number'
+        ? loganRecord.blocksFailed
+        : null;
 
-    if (blocksTotal === null || blocksSucceeded === null || blocksFailed === null) {
+    if (
+      blocksTotal === null ||
+      blocksSucceeded === null ||
+      blocksFailed === null
+    ) {
       return null;
     }
 
@@ -106,9 +114,26 @@ export class LogsService {
     });
 
     try {
-      setImmediate(() => this.parser.enqueue(logFile.id));
-    } catch {
-      // ignore
+      await this.processing.enqueueLogFileProcessing(logFile.id);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await this.prisma.logFile.update({
+        where: { id: logFile.id },
+        data: { status: LogFileStatus.failed },
+      });
+      await this.audit.record({
+        projectId: params.projectId,
+        actorUserId: params.actorUserId,
+        action: 'logs.enqueue.failed',
+        targetType: 'LogFile',
+        targetId: logFile.id,
+        metadata: { message },
+      });
+      throw new ApiException({
+        code: 'LOG_PROCESSING_ENQUEUE_FAILED',
+        message: 'Failed to enqueue log processing',
+        status: 500,
+      });
     }
 
     return { logFileId: logFile.id, status: logFile.status };
@@ -184,7 +209,10 @@ export class LogsService {
     return Buffer.from(payload, 'utf8').toString('base64');
   }
 
-  private async assertLogFileInProject(params: { projectId: string; logFileId: string }) {
+  private async assertLogFileInProject(params: {
+    projectId: string;
+    logFileId: string;
+  }) {
     const found = await this.prisma.logFile.findFirst({
       where: { id: params.logFileId, projectId: params.projectId },
       select: { id: true },
@@ -212,7 +240,7 @@ export class LogsService {
 
     // Common JSON-like fields: "token":"...", "secret":"..."
     out = out.replace(
-      /(\"(?:accessToken|refreshToken|token|secret|password|pwd|apiKey|appKey|secretKey|clientSecret|authorization)\"\s*:\s*\")([^\"]+)(\")/gi,
+      /("(?:accessToken|refreshToken|token|secret|password|pwd|apiKey|appKey|secretKey|clientSecret|authorization)"\s*:\s*")([^"]+)(")/gi,
       '$1***$3',
     );
 
@@ -242,18 +270,43 @@ export class LogsService {
 
     if (k.includes('token') || k.includes('sdkauth')) return true;
     if (k.includes('secret')) return true;
-    if (k.includes('appid') || k.includes('clientid') || k.includes('clientsecret')) return true;
+    if (
+      k.includes('appid') ||
+      k.includes('clientid') ||
+      k.includes('clientsecret')
+    )
+      return true;
     if (k === 'username') return true;
     if ((k.includes('user') && k.includes('id')) || k === 'uid') return true;
     if (k.includes('password') || k.includes('pwd')) return true;
     if (k.includes('challenge')) return true;
-    if (k.includes('key') && !k.includes('keyboard') && !k.endsWith('keys')) return true;
+    if (k.includes('key') && !k.includes('keyboard') && !k.endsWith('keys'))
+      return true;
 
     return false;
   }
 
   private maskSecretValue(value: unknown): string {
-    const s = typeof value === 'string' ? value.trim() : String(value ?? '');
+    let s = '';
+    if (typeof value === 'string') s = value.trim();
+    else if (typeof value === 'number' || typeof value === 'boolean')
+      s = String(value);
+    else if (typeof value === 'bigint') s = value.toString();
+    else if (typeof value === 'symbol') s = value.toString();
+    else if (typeof value === 'function') {
+      const name = value.name ? ` ${value.name}` : '';
+      s = `[function${name}]`;
+    } else if (
+      value !== null &&
+      value !== undefined &&
+      typeof value === 'object'
+    ) {
+      try {
+        s = JSON.stringify(value);
+      } catch {
+        s = '';
+      }
+    }
     if (!s) return '***';
     if (s.length <= 8) return '***';
     return `${s.slice(0, 4)}…${s.slice(-4)}`;
@@ -262,7 +315,11 @@ export class LogsService {
   private sanitizeMsgJson(value: unknown): unknown {
     if (value === null || value === undefined) return value;
     if (typeof value === 'string') return this.sanitizeTextLine(value);
-    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    if (
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+    ) {
       return value;
     }
     if (Array.isArray(value)) {
@@ -275,7 +332,10 @@ export class LogsService {
     for (const [key, v] of Object.entries(obj)) {
       const k = this.normalizeKey(key);
       if (k === 'broker' || k === 'host') {
-        out[key] = typeof v === 'string' ? this.maskBrokerUrl(v) : this.maskSecretValue(v);
+        out[key] =
+          typeof v === 'string'
+            ? this.maskBrokerUrl(v)
+            : this.maskSecretValue(v);
         continue;
       }
       if (this.shouldRedactKey(key)) {
@@ -289,20 +349,32 @@ export class LogsService {
 
   private msgPreviewFromJson(value: unknown): string | null {
     if (value === null || value === undefined) return null;
-    if (typeof value === 'string') return this.truncateText(this.sanitizeTextLine(value), 240);
+    if (typeof value === 'string')
+      return this.truncateText(this.sanitizeTextLine(value), 240);
     if (typeof value === 'number' || typeof value === 'boolean') {
       return this.truncateText(String(value), 240);
     }
     if (Array.isArray(value)) {
       try {
-        return this.truncateText(JSON.stringify(this.sanitizeMsgJson(value)), 240);
+        return this.truncateText(
+          JSON.stringify(this.sanitizeMsgJson(value)),
+          240,
+        );
       } catch {
         return this.truncateText(String(value), 240);
       }
     }
     if (typeof value === 'object') {
       const obj = this.sanitizeMsgJson(value) as Record<string, unknown>;
-      const knownKeys = ['data', 'message', 'msg', 'error', 'err', 'reason', 'detail'];
+      const knownKeys = [
+        'data',
+        'message',
+        'msg',
+        'error',
+        'err',
+        'reason',
+        'detail',
+      ];
       for (const key of knownKeys) {
         const v = obj[key];
         if (typeof v === 'string' && v.trim()) {
@@ -312,10 +384,7 @@ export class LogsService {
       try {
         return this.truncateText(JSON.stringify(obj), 240);
       } catch {
-        return this.truncateText(
-          Object.prototype.toString.call(value) as string,
-          240,
-        );
+        return this.truncateText(Object.prototype.toString.call(value), 240);
       }
     }
     if (typeof value === 'bigint') {
@@ -328,10 +397,7 @@ export class LogsService {
       const name = value.name ? ` ${value.name}` : '';
       return this.truncateText(`[function${name}]`, 240);
     }
-    return this.truncateText(
-      Object.prototype.toString.call(value) as string,
-      240,
-    );
+    return this.truncateText(Object.prototype.toString.call(value), 240);
   }
 
   async searchEvents(params: {
@@ -401,8 +467,10 @@ export class LogsService {
     if (params.level) andFilters.push({ level: params.level });
 
     // Level range filters
-    if (params.levelGte !== undefined) andFilters.push({ level: { gte: params.levelGte } });
-    if (params.levelLte !== undefined) andFilters.push({ level: { lte: params.levelLte } });
+    if (params.levelGte !== undefined)
+      andFilters.push({ level: { gte: params.levelGte } });
+    if (params.levelLte !== undefined)
+      andFilters.push({ level: { lte: params.levelLte } });
 
     const stage = params.stage?.trim().toLowerCase();
     if (stage) andFilters.push({ stage });
@@ -735,9 +803,13 @@ export class LogsService {
       await tx.incidentLogLink.deleteMany({
         where: { logEvent: { logFileId: { in: fileIds } } },
       });
-      await tx.logEventStats.deleteMany({ where: { logFileId: { in: fileIds } } });
+      await tx.logEventStats.deleteMany({
+        where: { logFileId: { in: fileIds } },
+      });
       await tx.logEvent.deleteMany({ where: { logFileId: { in: fileIds } } });
-      await tx.logFileAnalysis.deleteMany({ where: { logFileId: { in: fileIds } } });
+      await tx.logFileAnalysis.deleteMany({
+        where: { logFileId: { in: fileIds } },
+      });
       await tx.logFile.deleteMany({ where: { id: { in: fileIds } } });
     });
 
@@ -823,7 +895,9 @@ export class LogsService {
       isMainThread: event.isMainThread,
       msg: this.msgPreviewFromJson(event.msgJson),
       msgJson: this.sanitizeMsgJson(event.msgJson),
-      rawLine: event.rawLine ? this.sanitizeTextLine(event.rawLine) : event.rawLine,
+      rawLine: event.rawLine
+        ? this.sanitizeTextLine(event.rawLine)
+        : event.rawLine,
       linkCode: event.linkCode,
       requestId: event.requestId,
       attemptId: event.attemptId,
@@ -1005,35 +1079,43 @@ export class LogsService {
         ? Number(range._max.timestampMs)
         : null;
 
-    const [deviceSnGroups, deviceMacGroups, linkCodeGroups] = await Promise.all([
-      this.prisma.logEvent.groupBy({
-        by: ['deviceSn'],
-        where: { logFileId: logFile.id, deviceSn: { not: null } },
-        _count: { _all: true },
-      }),
-      this.prisma.logEvent.groupBy({
-        by: ['deviceMac'],
-        where: { logFileId: logFile.id, deviceMac: { not: null } },
-        _count: { _all: true },
-      }),
-      this.prisma.logEvent.groupBy({
-        by: ['linkCode'],
-        where: { logFileId: logFile.id, linkCode: { not: null } },
-        _count: { _all: true },
-      }),
-    ]);
+    const [deviceSnGroups, deviceMacGroups, linkCodeGroups] = await Promise.all(
+      [
+        this.prisma.logEvent.groupBy({
+          by: ['deviceSn'],
+          where: { logFileId: logFile.id, deviceSn: { not: null } },
+          _count: { _all: true },
+        }),
+        this.prisma.logEvent.groupBy({
+          by: ['deviceMac'],
+          where: { logFileId: logFile.id, deviceMac: { not: null } },
+          _count: { _all: true },
+        }),
+        this.prisma.logEvent.groupBy({
+          by: ['linkCode'],
+          where: { logFileId: logFile.id, linkCode: { not: null } },
+          _count: { _all: true },
+        }),
+      ],
+    );
 
     const toTopList = (rows: Array<{ value: string; count: number }>) =>
       rows.sort((a, b) => b.count - a.count).slice(0, 5);
 
     const deviceSnAgg = deviceSnGroups
-      .filter((r) => typeof r.deviceSn === 'string' && r.deviceSn.trim().length > 0)
+      .filter(
+        (r) => typeof r.deviceSn === 'string' && r.deviceSn.trim().length > 0,
+      )
       .map((r) => ({ value: r.deviceSn as string, count: r._count._all }));
     const deviceMacAgg = deviceMacGroups
-      .filter((r) => typeof r.deviceMac === 'string' && r.deviceMac.trim().length > 0)
+      .filter(
+        (r) => typeof r.deviceMac === 'string' && r.deviceMac.trim().length > 0,
+      )
       .map((r) => ({ value: r.deviceMac as string, count: r._count._all }));
     const linkCodeAgg = linkCodeGroups
-      .filter((r) => typeof r.linkCode === 'string' && r.linkCode.trim().length > 0)
+      .filter(
+        (r) => typeof r.linkCode === 'string' && r.linkCode.trim().length > 0,
+      )
       .map((r) => ({ value: r.linkCode as string, count: r._count._all }));
 
     const sumCounts = (rows: Array<{ count: number }>) =>
@@ -1215,22 +1297,22 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
-	    const rows = await this.prisma.logEvent.findMany({
-	      where: {
-	        logFileId: logFile.id,
-	        errorCode: {
-	          in: [
-	            'DATA_STREAM_ORDER_BROKEN',
-	            'DATA_STREAM_OUT_OF_ORDER_BUFFERED',
-	            'DATA_STREAM_DUPLICATE_DROPPED',
-	            'DATA_PERSIST_TIMEOUT',
-	            'V3_RT_BUFFER_DROP',
-	          ],
-	        },
-	      },
-	      select: {
-	        timestampMs: true,
-	        deviceSn: true,
+    const rows = await this.prisma.logEvent.findMany({
+      where: {
+        logFileId: logFile.id,
+        errorCode: {
+          in: [
+            'DATA_STREAM_ORDER_BROKEN',
+            'DATA_STREAM_OUT_OF_ORDER_BUFFERED',
+            'DATA_STREAM_DUPLICATE_DROPPED',
+            'DATA_PERSIST_TIMEOUT',
+            'V3_RT_BUFFER_DROP',
+          ],
+        },
+      },
+      select: {
+        timestampMs: true,
+        deviceSn: true,
         linkCode: true,
         requestId: true,
         errorCode: true,
@@ -1251,7 +1333,10 @@ export class LogsService {
     return { logFileId: logFile.id, ...report };
   }
 
-  async getStreamSessionQualityReport(params: { actorUserId: string; id: string }) {
+  async getStreamSessionQualityReport(params: {
+    actorUserId: string;
+    id: string;
+  }) {
     const logFile = await this.prisma.logFile.findUnique({
       where: { id: params.id },
       select: { id: true, projectId: true },
@@ -1272,7 +1357,10 @@ export class LogsService {
     });
 
     const rows = await this.prisma.logEvent.findMany({
-      where: { logFileId: logFile.id, errorCode: 'DATA_STREAM_SESSION_SUMMARY' },
+      where: {
+        logFileId: logFile.id,
+        errorCode: 'DATA_STREAM_SESSION_SUMMARY',
+      },
       select: {
         timestampMs: true,
         deviceSn: true,
@@ -1477,6 +1565,76 @@ export class LogsService {
         threadName: e.threadName,
         deviceMac: e.deviceMac,
         deviceSn: e.deviceSn,
+        errorCode: e.errorCode,
+        msg: this.msgPreviewFromJson(e.msgJson),
+      })),
+    };
+  }
+
+  async traceByAttemptId(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    attemptId: string;
+    limit?: number;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    if (params.logFileId) {
+      await this.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
+    }
+
+    const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
+
+    const events = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        attemptId: params.attemptId,
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      take: limit,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        appId: true,
+        logFileId: true,
+        msgJson: true,
+        threadName: true,
+        linkCode: true,
+        deviceMac: true,
+        deviceSn: true,
+        requestId: true,
+        errorCode: true,
+      },
+    });
+
+    return {
+      attemptId: params.attemptId,
+      count: events.length,
+      items: events.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        sdkVersion: e.sdkVersion,
+        appId: e.appId,
+        logFileId: e.logFileId,
+        threadName: e.threadName,
+        linkCode: e.linkCode,
+        deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
+        requestId: e.requestId,
         errorCode: e.errorCode,
         msg: this.msgPreviewFromJson(e.msgJson),
       })),
@@ -1787,10 +1945,14 @@ export class LogsService {
     if (params.startTime || params.endTime) {
       whereClause.timestampMs = {};
       if (params.startTime) {
-        whereClause.timestampMs.gte = BigInt(new Date(params.startTime).getTime());
+        whereClause.timestampMs.gte = BigInt(
+          new Date(params.startTime).getTime(),
+        );
       }
       if (params.endTime) {
-        whereClause.timestampMs.lte = BigInt(new Date(params.endTime).getTime());
+        whereClause.timestampMs.lte = BigInt(
+          new Date(params.endTime).getTime(),
+        );
       }
     }
 
@@ -1834,13 +1996,18 @@ export class LogsService {
   // ========== Command Chain Analysis ==========
 
   // Helper to extract command info from msgJson
-  private extractCommandInfo(msgJson: unknown): { commandName: string | null; commandCode: string | null } {
+  private extractCommandInfo(msgJson: unknown): {
+    commandName: string | null;
+    commandCode: string | null;
+  } {
     if (!msgJson || typeof msgJson !== 'object') {
       return { commandName: null, commandCode: null };
     }
     const obj = msgJson as Record<string, unknown>;
-    const commandName = typeof obj.commandName === 'string' ? obj.commandName : null;
-    const commandCode = typeof obj.commandCode === 'string' ? obj.commandCode : null;
+    const commandName =
+      typeof obj.commandName === 'string' ? obj.commandName : null;
+    const commandCode =
+      typeof obj.commandCode === 'string' ? obj.commandCode : null;
     return { commandName, commandCode };
   }
 
@@ -1943,7 +2110,10 @@ export class LogsService {
     });
 
     // Group commands by commandName extracted from msgJson
-    return this.buildCommandChainsFromEvents(commandEvents.slice().reverse(), limit);
+    return this.buildCommandChainsFromEvents(
+      commandEvents.slice().reverse(),
+      limit,
+    );
   }
 
   private buildCommandChainsFromRequestId(
@@ -1987,7 +2157,9 @@ export class LogsService {
 
     const chains = Array.from(chainMap.values())
       .slice(0, limit)
-      .map((chain) => this.buildChainResult(chain.requestId, chain.deviceMac, chain.events));
+      .map((chain) =>
+        this.buildChainResult(chain.requestId, chain.deviceMac, chain.events),
+      );
 
     chains.sort((a, b) => b.startTime - a.startTime);
     return { count: chains.length, items: chains };
@@ -2022,7 +2194,9 @@ export class LogsService {
     let lastTimestamp = 0n;
 
     for (const event of events) {
-      const { commandName, commandCode } = this.extractCommandInfo(event.msgJson);
+      const { commandName, commandCode } = this.extractCommandInfo(
+        event.msgJson,
+      );
       const baseKey = commandName || commandCode || event.eventName;
 
       // Start new sequence if time gap is large
@@ -2078,7 +2252,8 @@ export class LogsService {
 
     const firstEvent = sortedEvents[0];
     const lastEvent = sortedEvents[sortedEvents.length - 1];
-    const duration = Number(lastEvent.timestampMs) - Number(firstEvent.timestampMs);
+    const duration =
+      Number(lastEvent.timestampMs) - Number(firstEvent.timestampMs);
 
     let status: 'success' | 'timeout' | 'error' | 'pending' = 'pending';
     const hasError = sortedEvents.some((e) => e.level >= 4 || e.errorCode);
@@ -2219,10 +2394,7 @@ export class LogsService {
 
   // ========== Diagnose API ==========
 
-  async diagnoseLogFile(params: {
-    actorUserId: string;
-    logFileId: string;
-  }) {
+  async diagnoseLogFile(params: { actorUserId: string; logFileId: string }) {
     // Get log file info
     const logFile = await this.prisma.logFile.findUnique({
       where: { id: params.logFileId },
@@ -2358,7 +2530,9 @@ export class LogsService {
       .map((issue) => ({
         ...issue,
         eventCount: issue.events.length,
-        severity: issue.events.some((e) => e.level >= 4) ? 'critical' : 'warning',
+        severity: issue.events.some((e) => e.level >= 4)
+          ? 'critical'
+          : 'warning',
       }))
       .sort((a, b) => b.eventCount - a.eventCount);
 
@@ -2376,7 +2550,9 @@ export class LogsService {
         deviceMac: e.deviceMac,
       }));
 
-    const criticalCount = issues.filter((i) => i.severity === 'critical').length;
+    const criticalCount = issues.filter(
+      (i) => i.severity === 'critical',
+    ).length;
     const warningCount = issues.filter((i) => i.severity === 'warning').length;
 
     return {

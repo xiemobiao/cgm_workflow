@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
-import { KnownIssuesController, ReportsController } from './known-issues.controller';
+import {
+  KnownIssuesController,
+  ReportsController,
+} from './known-issues.controller';
 import { KnownIssuesService } from './known-issues.service';
 
 @Module({

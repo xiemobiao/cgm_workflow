@@ -3,7 +3,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   IncidentSeverity,
   IncidentStatus,
-  IntegrationType,
   PrismaClient,
   ProjectStatus,
   ProjectType,
@@ -34,18 +33,16 @@ function unwrap<T>(body: unknown): T {
 
 async function resetDb(prisma: PrismaClient) {
   await prisma.incidentLogLink.deleteMany();
-  await prisma.incident.deleteMany();
+  await prisma.logFileAnalysis.deleteMany();
+  await prisma.analysisReport.deleteMany();
+  await prisma.knownIssue.deleteMany();
+  await prisma.anomalyPattern.deleteMany();
+  await prisma.deviceSession.deleteMany();
+  await prisma.logEventStats.deleteMany();
   await prisma.logEvent.deleteMany();
   await prisma.logFile.deleteMany();
+  await prisma.incident.deleteMany();
   await prisma.auditLog.deleteMany();
-  await prisma.gate.deleteMany();
-  await prisma.artifact.deleteMany();
-  await prisma.stageInstance.deleteMany();
-  await prisma.workflowInstance.deleteMany();
-  await prisma.workflowTemplate.deleteMany();
-  await prisma.requirement.deleteMany();
-  await prisma.pipelineRun.deleteMany();
-  await prisma.integrationConfig.deleteMany();
   await prisma.projectMember.deleteMany();
   await prisma.project.deleteMany();
   await prisma.user.deleteMany();
@@ -73,9 +70,7 @@ maybeDescribe('MVP flow (e2e + db)', () => {
 
   let adminToken = '';
   let devToken = '';
-  let viewerToken = '';
   let projectId = '';
-  let integrationId = '';
 
   beforeAll(async () => {
     prisma = new PrismaClient();
@@ -96,9 +91,6 @@ maybeDescribe('MVP flow (e2e + db)', () => {
     const devRole = await prisma.role.findUniqueOrThrow({
       where: { name: 'Dev' },
     });
-    const viewerRole = await prisma.role.findUniqueOrThrow({
-      where: { name: 'Viewer' },
-    });
 
     const adminUser = await prisma.user.create({
       data: {
@@ -116,14 +108,6 @@ maybeDescribe('MVP flow (e2e + db)', () => {
         status: 'active',
       },
     });
-    const viewerUser = await prisma.user.create({
-      data: {
-        email: 'viewer@local.dev',
-        name: 'Viewer',
-        passwordHash: await hash('viewer123456', 10),
-        status: 'active',
-      },
-    });
 
     const project = await prisma.project.create({
       data: {
@@ -138,7 +122,6 @@ maybeDescribe('MVP flow (e2e + db)', () => {
       data: [
         { projectId: project.id, userId: adminUser.id, roleId: adminRole.id },
         { projectId: project.id, userId: devUser.id, roleId: devRole.id },
-        { projectId: project.id, userId: viewerUser.id, roleId: viewerRole.id },
       ],
     });
 
@@ -164,98 +147,11 @@ maybeDescribe('MVP flow (e2e + db)', () => {
 
     adminToken = await login('admin@local.dev', 'admin123456');
     devToken = await login('dev@local.dev', 'dev123456');
-    viewerToken = await login('viewer@local.dev', 'viewer123456');
   });
 
   afterAll(async () => {
     if (app) await app.close();
     if (prisma) await prisma.$disconnect();
-  });
-
-  it('Auth -> Integrations -> Requirements Sync -> Workflow -> Gate', async () => {
-    const createIntegrationRes = await request(app.getHttpServer())
-      .post('/api/integrations')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        projectId,
-        type: IntegrationType.pingcode,
-        secretsRef: 'secret://demo',
-      })
-      .expect(200);
-    const createdIntegration = unwrap<{ id: string }>(
-      createIntegrationRes.body as unknown,
-    );
-    integrationId = createdIntegration.id;
-
-    const mapping = {
-      fieldMap: {
-        external_id: 'id',
-        title: 'title',
-        status: 'status',
-        type: 'type',
-        priority: 'priority',
-        owner: 'owner',
-        tags: 'tags',
-      },
-      statusMap: {
-        'In Progress': 'Development',
-        Testing: 'Test',
-        Done: 'Release',
-      },
-      filters: {
-        typeContains: 'Requirement',
-        tagContains: 'CGM',
-      },
-    };
-
-    await request(app.getHttpServer())
-      .put(`/api/integrations/${integrationId}/mapping`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send(mapping)
-      .expect(200);
-
-    const syncRes = await request(app.getHttpServer())
-      .post('/api/requirements/sync')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ projectId, integrationId })
-      .expect(200);
-    const syncData = unwrap<{ synced: number }>(syncRes.body as unknown);
-    expect(syncData.synced).toBeGreaterThan(0);
-
-    const workflowsRes = await request(app.getHttpServer())
-      .get(`/api/workflows?projectId=${projectId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    const workflows = unwrap<Array<{ id: string; requirementTitle: string }>>(
-      workflowsRes.body as unknown,
-    );
-    expect(workflows.length).toBeGreaterThan(0);
-
-    const workflowId = workflows[0].id;
-    const detail1 = await request(app.getHttpServer())
-      .get(`/api/workflows/${workflowId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    const detailData = unwrap<{
-      stages: Array<{
-        status: string;
-        gate: { id: string; status: string } | null;
-      }>;
-    }>(detail1.body as unknown);
-
-    const stage = detailData.stages.find((s) => s.status === 'in_progress');
-    expect(stage).toBeTruthy();
-    expect(stage?.gate?.status).toBe('pending');
-    const gateId = stage?.gate?.id;
-    expect(typeof gateId).toBe('string');
-
-    const approveRes = await request(app.getHttpServer())
-      .post(`/api/workflows/${workflowId}/gates/${String(gateId)}/approve`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({})
-      .expect(200);
-    const approvedGate = unwrap<{ status: string }>(approveRes.body as unknown);
-    expect(approvedGate.status).toBe('approved');
   });
 
   it('Logs upload -> Search -> Incident create/update', async () => {
@@ -358,62 +254,18 @@ maybeDescribe('MVP flow (e2e + db)', () => {
     expect(updatedIncident.status).toBe('resolved');
   });
 
-  it('Permissions: gate approval denied for Dev, integration update denied for Viewer', async () => {
-    const syncRes = await request(app.getHttpServer())
-      .post('/api/requirements/sync')
-      .set('Authorization', `Bearer ${adminToken}`)
+  it('Permissions: incident create denied for Dev', async () => {
+    await request(app.getHttpServer())
+      .post('/api/incidents')
+      .set('Authorization', `Bearer ${devToken}`)
       .send({
         projectId,
-        integrationId,
-        items: [
-          {
-            id: 'REQ-2',
-            title: 'Another requirement',
-            status: 'In Progress',
-            type: 'Requirement',
-            tags: ['CGM'],
-          },
-        ],
+        title: 'Should be forbidden',
+        severity: IncidentSeverity.low,
+        status: IncidentStatus.open,
+        startTime: new Date().toISOString(),
+        logEventIds: [],
       })
-      .expect(200);
-    unwrap<{ synced: number }>(syncRes.body as unknown);
-
-    const workflowsRes = await request(app.getHttpServer())
-      .get(`/api/workflows?projectId=${projectId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    const workflows = unwrap<Array<{ id: string; requirementTitle: string }>>(
-      workflowsRes.body as unknown,
-    );
-
-    const workflowId = workflows.find(
-      (w) => w.requirementTitle === 'Another requirement',
-    )?.id;
-    expect(workflowId).toBeTruthy();
-
-    const detail = await request(app.getHttpServer())
-      .get(`/api/workflows/${String(workflowId)}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    const detailData = unwrap<{
-      stages: Array<{ status: string; gate: { id: string } | null }>;
-    }>(detail.body as unknown);
-    const stage = detailData.stages.find((s) => s.status === 'in_progress');
-    const gateId = stage?.gate?.id;
-    expect(typeof gateId).toBe('string');
-
-    await request(app.getHttpServer())
-      .post(
-        `/api/workflows/${String(workflowId)}/gates/${String(gateId)}/approve`,
-      )
-      .set('Authorization', `Bearer ${devToken}`)
-      .send({})
-      .expect(403);
-
-    await request(app.getHttpServer())
-      .put(`/api/integrations/${integrationId}`)
-      .set('Authorization', `Bearer ${viewerToken}`)
-      .send({ status: 'enabled', secretsRef: 'secret://x' })
       .expect(403);
   });
 });

@@ -9,8 +9,18 @@ const PHASE_PATTERNS = {
   scan: ['SCAN_START', 'SCAN_DEVICE', 'DEVICE_FOUND', 'BLE scan'],
   pair: ['PAIR_START', 'PAIRING', 'BOND', 'BLE pair'],
   connect: ['CONNECT_START', 'CONNECTING', 'GATT_CONNECT', 'BLE connect'],
-  connected: ['CONNECTED', 'CONNECTION_SUCCESS', 'GATT_CONNECTED', 'BLE connected'],
-  disconnect: ['DISCONNECT', 'DISCONNECTED', 'CONNECTION_LOST', 'BLE disconnect'],
+  connected: [
+    'CONNECTED',
+    'CONNECTION_SUCCESS',
+    'GATT_CONNECTED',
+    'BLE connected',
+  ],
+  disconnect: [
+    'DISCONNECT',
+    'DISCONNECTED',
+    'CONNECTION_LOST',
+    'BLE disconnect',
+  ],
   error: ['ERROR', 'FAILED', 'TIMEOUT', 'Exception'],
 };
 
@@ -30,65 +40,80 @@ const KNOWN_ERROR_PATTERNS: Array<{
   severity: number;
   suggestion: string;
 }> = [
-    {
-      pattern: /GATT_ERROR|GATT_FAILURE/i,
-      category: 'gatt_error',
-      severity: 4,
-      suggestion: 'GATT operation failed. Check Bluetooth connection stability and retry.',
-    },
-    {
-      pattern: /CONNECTION_TIMEOUT|CONNECT_TIMEOUT/i,
-      category: 'connection_timeout',
-      severity: 3,
-      suggestion: 'Connection timeout. Ensure device is in range and not paired with other devices.',
-    },
-    {
-      pattern: /BOND_FAILED|PAIRING_FAILED/i,
-      category: 'pairing_failure',
-      severity: 4,
-      suggestion: 'Pairing failed. Remove device bond and try again.',
-    },
-    {
-      pattern: /SERVICE_NOT_FOUND|CHARACTERISTIC_NOT_FOUND/i,
-      category: 'service_missing',
-      severity: 5,
-      suggestion: 'BLE service/characteristic not found. Check device firmware version.',
-    },
-    {
-      pattern: /WRITE_FAILED|READ_FAILED/i,
-      category: 'io_error',
-      severity: 3,
-      suggestion: 'BLE read/write operation failed. Verify connection is still active.',
-    },
-    {
-      pattern: /DISCONNECTED_UNEXPECTEDLY|CONNECTION_LOST/i,
-      category: 'unexpected_disconnect',
-      severity: 4,
-      suggestion: 'Unexpected disconnection. Check for interference or low battery.',
-    },
-    {
-      pattern: /CRC_ERROR|CHECKSUM/i,
-      category: 'data_corruption',
-      severity: 5,
-      suggestion: 'Data corruption detected. Check for signal interference.',
-    },
-    {
-      pattern: /BLUETOOTH_OFF|ADAPTER_DISABLED/i,
-      category: 'bluetooth_disabled',
-      severity: 2,
-      suggestion: 'Bluetooth is disabled. Enable Bluetooth in system settings.',
-    },
-    {
-      pattern: /PERMISSION_DENIED|LOCATION_REQUIRED/i,
-      category: 'permission_error',
-      severity: 2,
-      suggestion: 'Missing permissions. Grant Bluetooth and location permissions.',
-    },
-  ];
+  {
+    pattern: /GATT_ERROR|GATT_FAILURE/i,
+    category: 'gatt_error',
+    severity: 4,
+    suggestion:
+      'GATT operation failed. Check Bluetooth connection stability and retry.',
+  },
+  {
+    pattern: /CONNECTION_TIMEOUT|CONNECT_TIMEOUT/i,
+    category: 'connection_timeout',
+    severity: 3,
+    suggestion:
+      'Connection timeout. Ensure device is in range and not paired with other devices.',
+  },
+  {
+    pattern: /BOND_FAILED|PAIRING_FAILED/i,
+    category: 'pairing_failure',
+    severity: 4,
+    suggestion: 'Pairing failed. Remove device bond and try again.',
+  },
+  {
+    pattern: /SERVICE_NOT_FOUND|CHARACTERISTIC_NOT_FOUND/i,
+    category: 'service_missing',
+    severity: 5,
+    suggestion:
+      'BLE service/characteristic not found. Check device firmware version.',
+  },
+  {
+    pattern: /WRITE_FAILED|READ_FAILED/i,
+    category: 'io_error',
+    severity: 3,
+    suggestion:
+      'BLE read/write operation failed. Verify connection is still active.',
+  },
+  {
+    pattern: /DISCONNECTED_UNEXPECTEDLY|CONNECTION_LOST/i,
+    category: 'unexpected_disconnect',
+    severity: 4,
+    suggestion:
+      'Unexpected disconnection. Check for interference or low battery.',
+  },
+  {
+    pattern: /CRC_ERROR|CHECKSUM/i,
+    category: 'data_corruption',
+    severity: 5,
+    suggestion: 'Data corruption detected. Check for signal interference.',
+  },
+  {
+    pattern: /BLUETOOTH_OFF|ADAPTER_DISABLED/i,
+    category: 'bluetooth_disabled',
+    severity: 2,
+    suggestion: 'Bluetooth is disabled. Enable Bluetooth in system settings.',
+  },
+  {
+    pattern: /PERMISSION_DENIED|LOCATION_REQUIRED/i,
+    category: 'permission_error',
+    severity: 2,
+    suggestion:
+      'Missing permissions. Grant Bluetooth and location permissions.',
+  },
+];
 
 // Connection flow patterns for context analysis
 const CONNECTION_FLOW_PATTERNS = {
-  normal: ['SCAN', 'FOUND', 'CONNECT', 'CONNECTED', 'DISCOVER', 'ENABLE', 'WRITE', 'READ'],
+  normal: [
+    'SCAN',
+    'FOUND',
+    'CONNECT',
+    'CONNECTED',
+    'DISCOVER',
+    'ENABLE',
+    'WRITE',
+    'READ',
+  ],
   disconnect: ['DISCONNECT', 'DISCONNECTED', 'CLOSE', 'RELEASE'],
   error: ['ERROR', 'FAILED', 'TIMEOUT', 'EXCEPTION'],
 };
@@ -127,7 +152,7 @@ export class BluetoothService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-  ) { }
+  ) {}
 
   // Aggregate sessions from log events
   async aggregateSessions(params: {
@@ -157,14 +182,18 @@ export class BluetoothService {
       distinct: ['linkCode'],
     });
 
-    const sessions: Awaited<ReturnType<typeof this.prisma.deviceSession.findUnique>>[] = [];
+    const sessions: Awaited<
+      ReturnType<typeof this.prisma.deviceSession.findUnique>
+    >[] = [];
 
     for (const { linkCode } of linkCodes) {
       if (!linkCode) continue;
 
       // Check if session already exists
       const existing = await this.prisma.deviceSession.findUnique({
-        where: { projectId_linkCode: { projectId: params.projectId, linkCode } },
+        where: {
+          projectId_linkCode: { projectId: params.projectId, linkCode },
+        },
       });
 
       if (existing && !params.forceRefresh) {
@@ -202,7 +231,9 @@ export class BluetoothService {
 
       // Upsert session
       const session = await this.prisma.deviceSession.upsert({
-        where: { projectId_linkCode: { projectId: params.projectId, linkCode } },
+        where: {
+          projectId_linkCode: { projectId: params.projectId, linkCode },
+        },
         create: {
           projectId: params.projectId,
           linkCode,
@@ -273,18 +304,25 @@ export class BluetoothService {
         connectStartMs = event.timestampMs;
         status = SessionStatus.connecting;
       }
-      if (this.isBleOp(event, 'connect', 'ok') || this.matchesPattern(name, PHASE_PATTERNS.connected)) {
+      if (
+        this.isBleOp(event, 'connect', 'ok') ||
+        this.matchesPattern(name, PHASE_PATTERNS.connected)
+      ) {
         connectedMs = event.timestampMs;
         status = SessionStatus.connected;
       }
-      if (this.isBleOp(event, 'disconnect') || this.matchesPattern(name, PHASE_PATTERNS.disconnect)) {
+      if (
+        this.isBleOp(event, 'disconnect') ||
+        this.matchesPattern(name, PHASE_PATTERNS.disconnect)
+      ) {
         disconnectMs = event.timestampMs;
         status = SessionStatus.disconnected;
       }
 
       // Track errors
       const isStructuredConnectFailure =
-        this.isBleOp(event, 'connect') && (result === 'fail' || result === 'timeout');
+        this.isBleOp(event, 'connect') &&
+        (result === 'fail' || result === 'timeout');
       if (
         event.level >= 4 ||
         this.matchesPattern(name, PHASE_PATTERNS.error) ||
@@ -317,9 +355,7 @@ export class BluetoothService {
     const startTimeMs = firstEvent.timestampMs;
     const endTimeMs = lastEvent.timestampMs;
     const durationMs =
-      startTimeMs && endTimeMs
-        ? Number(endTimeMs - startTimeMs)
-        : null;
+      startTimeMs && endTimeMs ? Number(endTimeMs - startTimeMs) : null;
 
     return {
       deviceMac,
@@ -401,7 +437,9 @@ export class BluetoothService {
     return n.includes('connection success') || n.includes('connect_success');
   }
 
-  private extractDisconnectReason(msgJson: Prisma.JsonValue | null): string | null {
+  private extractDisconnectReason(
+    msgJson: Prisma.JsonValue | null,
+  ): string | null {
     if (!msgJson) return null;
     if (typeof msgJson !== 'object' || Array.isArray(msgJson)) return null;
 
@@ -411,13 +449,42 @@ export class BluetoothService {
         ? (obj.data as Record<string, unknown>)
         : null;
 
-    const raw = obj.reason ?? obj.gattStatus ?? obj.hciReason ?? nestedData?.reason;
+    const raw =
+      obj.reasonCode ??
+      obj.reason_code ??
+      obj.reason ??
+      obj.gattStatus ??
+      obj.hciReason ??
+      nestedData?.reasonCode ??
+      nestedData?.reason_code ??
+      nestedData?.reason ??
+      nestedData?.gattStatus ??
+      nestedData?.hciReason;
     if (raw === undefined || raw === null) return null;
-    const s = typeof raw === 'string' ? raw.trim() : String(raw);
-    return s.length > 0 ? s : null;
+    let s = '';
+    if (typeof raw === 'string') s = raw;
+    else if (typeof raw === 'number' || typeof raw === 'boolean')
+      s = String(raw);
+    else if (typeof raw === 'bigint') s = raw.toString();
+    else if (typeof raw === 'symbol') s = raw.toString();
+    else if (typeof raw === 'function') {
+      const name = raw.name ? ` ${raw.name}` : '';
+      s = `[function${name}]`;
+    } else if (typeof raw === 'object') {
+      try {
+        s = JSON.stringify(raw);
+      } catch {
+        s = '';
+      }
+    }
+    const trimmed = s.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
-  private async assertLogFileInProject(params: { projectId: string; logFileId: string }) {
+  private async assertLogFileInProject(params: {
+    projectId: string;
+    logFileId: string;
+  }) {
     const found = await this.prisma.logFile.findFirst({
       where: { id: params.logFileId, projectId: params.projectId },
       select: { id: true },
@@ -523,7 +590,9 @@ export class BluetoothService {
     const startMs = params.startTime
       ? BigInt(new Date(params.startTime).getTime())
       : null;
-    const endMs = params.endTime ? BigInt(new Date(params.endTime).getTime()) : null;
+    const endMs = params.endTime
+      ? BigInt(new Date(params.endTime).getTime())
+      : null;
 
     const sessionGroups = await this.prisma.logEvent.groupBy({
       by: ['linkCode'],
@@ -543,8 +612,12 @@ export class BluetoothService {
         endTimeMs: g._max.timestampMs,
       }))
       .filter(
-        (g): g is { linkCode: string; startTimeMs: bigint; endTimeMs: bigint } =>
-          typeof g.linkCode === 'string' && g.startTimeMs !== null && g.endTimeMs !== null,
+        (
+          g,
+        ): g is { linkCode: string; startTimeMs: bigint; endTimeMs: bigint } =>
+          typeof g.linkCode === 'string' &&
+          g.startTimeMs !== null &&
+          g.endTimeMs !== null,
       )
       .filter((g) => {
         if (startMs !== null && g.startTimeMs < startMs) return false;
@@ -723,7 +796,9 @@ export class BluetoothService {
           commandCount: meta.commandCount,
           scanStartMs: meta.scanStartMs ? Number(meta.scanStartMs) : null,
           pairStartMs: meta.pairStartMs ? Number(meta.pairStartMs) : null,
-          connectStartMs: meta.connectStartMs ? Number(meta.connectStartMs) : null,
+          connectStartMs: meta.connectStartMs
+            ? Number(meta.connectStartMs)
+            : null,
           connectedMs: meta.connectedMs ? Number(meta.connectedMs) : null,
           disconnectMs: meta.disconnectMs ? Number(meta.disconnectMs) : null,
           sdkVersion: meta.sdkVersion,
@@ -793,9 +868,13 @@ export class BluetoothService {
         endTimeMs: session.endTimeMs ? Number(session.endTimeMs) : null,
         scanStartMs: session.scanStartMs ? Number(session.scanStartMs) : null,
         pairStartMs: session.pairStartMs ? Number(session.pairStartMs) : null,
-        connectStartMs: session.connectStartMs ? Number(session.connectStartMs) : null,
+        connectStartMs: session.connectStartMs
+          ? Number(session.connectStartMs)
+          : null,
         connectedMs: session.connectedMs ? Number(session.connectedMs) : null,
-        disconnectMs: session.disconnectMs ? Number(session.disconnectMs) : null,
+        disconnectMs: session.disconnectMs
+          ? Number(session.disconnectMs)
+          : null,
       },
       timeline,
       commandChains,
@@ -866,8 +945,14 @@ export class BluetoothService {
         eventStatus = 'error';
       }
 
-      if (event.level >= 4 || (event.errorCode && !this.isBleOp(event, 'disconnect'))) {
-        eventStatus = name.includes('TIMEOUT') || result === 'timeout' ? 'timeout' : 'error';
+      if (
+        event.level >= 4 ||
+        (event.errorCode && !this.isBleOp(event, 'disconnect'))
+      ) {
+        eventStatus =
+          name.includes('TIMEOUT') || result === 'timeout'
+            ? 'timeout'
+            : 'error';
       }
 
       const eventItem = {
@@ -1046,9 +1131,10 @@ export class BluetoothService {
       timeout: chains.filter((c) => c.status === 'timeout').length,
       error: chains.filter((c) => c.status === 'error').length,
       pending: chains.filter((c) => c.status === 'pending').length,
-      avgDurationMs: durations.length > 0
-        ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-        : null,
+      avgDurationMs:
+        durations.length > 0
+          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+          : null,
       p50: this.percentile(durations, 50),
       p90: this.percentile(durations, 90),
       p99: this.percentile(durations, 99),
@@ -1179,7 +1265,9 @@ export class BluetoothService {
     for (const [deviceKey, list] of byDeviceKey.entries()) {
       if (list.length === 0) continue;
 
-      const linkCodes = [...new Set(list.map((e) => e.linkCode).filter(Boolean))] as string[];
+      const linkCodes = [
+        ...new Set(list.map((e) => e.linkCode).filter(Boolean)),
+      ] as string[];
       const deviceMac = list.find((e) => e.deviceMac)?.deviceMac ?? null;
       const deviceSn = list.find((e) => e.deviceSn)?.deviceSn ?? null;
 
@@ -1201,7 +1289,7 @@ export class BluetoothService {
         if (!this.isDisconnectEvent(e)) continue;
 
         const disconnectAtMs = Number(e.timestampMs);
-        const reason = e.errorCode ?? this.extractDisconnectReason(e.msgJson);
+        const reason = this.extractDisconnectReason(e.msgJson) ?? e.errorCode;
         if (reason) {
           reasonsCount.set(reason, (reasonsCount.get(reason) ?? 0) + 1);
         }
@@ -1235,7 +1323,8 @@ export class BluetoothService {
           reason,
           reconnectEventId,
           reconnectAtMs,
-          reconnectDelayMs: reconnectAtMs !== null ? reconnectAtMs - disconnectAtMs : null,
+          reconnectDelayMs:
+            reconnectAtMs !== null ? reconnectAtMs - disconnectAtMs : null,
           attempts,
           attemptIds: Array.from(attemptIds.values()).slice(0, 10),
         });
@@ -1245,7 +1334,10 @@ export class BluetoothService {
 
       const delays = reconnectCases
         .map((c) => c.reconnectDelayMs)
-        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+        .filter(
+          (v): v is number =>
+            typeof v === 'number' && Number.isFinite(v) && v >= 0,
+        )
         .sort((a, b) => a - b);
 
       const attemptsList = reconnectCases
@@ -1253,19 +1345,27 @@ export class BluetoothService {
         .filter((v) => Number.isFinite(v) && v >= 0)
         .sort((a, b) => a - b);
 
-      const reconnectOk = reconnectCases.filter((c) => c.reconnectAtMs !== null).length;
+      const reconnectOk = reconnectCases.filter(
+        (c) => c.reconnectAtMs !== null,
+      ).length;
       const reconnectUnresolved = reconnectCases.length - reconnectOk;
 
       const reconnectDelayAvgMs =
-        delays.length > 0 ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) : null;
+        delays.length > 0
+          ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length)
+          : null;
       const reconnectDelayP95Ms = this.percentile(delays, 95);
-      const reconnectDelayMaxMs = delays.length > 0 ? delays[delays.length - 1] : null;
+      const reconnectDelayMaxMs =
+        delays.length > 0 ? delays[delays.length - 1] : null;
 
       const attemptsAvg =
         attemptsList.length > 0
-          ? Math.round(attemptsList.reduce((a, b) => a + b, 0) / attemptsList.length)
+          ? Math.round(
+              attemptsList.reduce((a, b) => a + b, 0) / attemptsList.length,
+            )
           : null;
-      const attemptsMax = attemptsList.length > 0 ? attemptsList[attemptsList.length - 1] : null;
+      const attemptsMax =
+        attemptsList.length > 0 ? attemptsList[attemptsList.length - 1] : null;
 
       const topReasons = Array.from(reasonsCount.entries())
         .map(([reasonKey, count]) => ({ reason: reasonKey, count }))
@@ -1312,7 +1412,10 @@ export class BluetoothService {
       })
       .slice(0, limit);
 
-    const totalDisconnects = sorted.reduce((sum, it) => sum + it.disconnects, 0);
+    const totalDisconnects = sorted.reduce(
+      (sum, it) => sum + it.disconnects,
+      0,
+    );
 
     return {
       items: sorted,
@@ -1393,7 +1496,9 @@ export class BluetoothService {
 
     // Detect frequent disconnects
     const disconnectEvents = events.filter((e) => this.isDisconnectEvent(e));
-    if (disconnectEvents.length >= ANOMALY_THRESHOLDS.frequentDisconnect.count) {
+    if (
+      disconnectEvents.length >= ANOMALY_THRESHOLDS.frequentDisconnect.count
+    ) {
       const affectedLinkCodes = new Set(
         disconnectEvents.map((e) => e.linkCode).filter(Boolean),
       );
@@ -1416,7 +1521,9 @@ export class BluetoothService {
         if (r === 'timeout' || r === 'retry' || r === 'fail') return true;
       }
       const upper = e.eventName.toUpperCase();
-      return upper.includes('TIMEOUT') || (e.level >= 4 && upper.includes('RETRY'));
+      return (
+        upper.includes('TIMEOUT') || (e.level >= 4 && upper.includes('RETRY'))
+      );
     });
     if (timeoutEvents.length >= ANOMALY_THRESHOLDS.timeoutRetry.count) {
       const affectedLinkCodes = new Set(
@@ -1655,7 +1762,10 @@ export class BluetoothService {
     ]);
 
     // Analyze the error pattern
-    const errorAnalysis = this.analyzeErrorPattern(targetEvent.eventName, targetEvent.errorCode);
+    const errorAnalysis = this.analyzeErrorPattern(
+      targetEvent.eventName,
+      targetEvent.errorCode,
+    );
 
     // Find related events (same linkCode or requestId)
     const relatedEvents = await this.findRelatedEvents(
@@ -1732,15 +1842,18 @@ export class BluetoothService {
     if (name.includes('TIMEOUT')) {
       category = 'timeout';
       severity = 3;
-      suggestion = 'Operation timed out. Check device responsiveness and connection quality.';
+      suggestion =
+        'Operation timed out. Check device responsiveness and connection quality.';
     } else if (name.includes('ERROR') || name.includes('FAILED')) {
       category = 'general_error';
       severity = 4;
-      suggestion = 'An error occurred. Review the message details for more information.';
+      suggestion =
+        'An error occurred. Review the message details for more information.';
     } else if (name.includes('DISCONNECT')) {
       category = 'disconnect';
       severity = 3;
-      suggestion = 'Device disconnected. Check if this was expected or triggered by an error.';
+      suggestion =
+        'Device disconnected. Check if this was expected or triggered by an error.';
     }
 
     return {
@@ -1833,7 +1946,10 @@ export class BluetoothService {
       }
 
       // Check if this is an error
-      if (event.level >= 4 || CONNECTION_FLOW_PATTERNS.error.some((e) => name.includes(e))) {
+      if (
+        event.level >= 4 ||
+        CONNECTION_FLOW_PATTERNS.error.some((e) => name.includes(e))
+      ) {
         flowType = 'error';
         errorPoint = event.eventName;
       }
@@ -1938,13 +2054,18 @@ export class BluetoothService {
     );
 
     for (const cluster of disconnectClusters) {
-      if (cluster.events.length >= ANOMALY_THRESHOLDS.frequentDisconnect.count) {
-        const affectedSessions = [...new Set(cluster.events.map((e) => e.linkCode).filter(Boolean))] as string[];
+      if (
+        cluster.events.length >= ANOMALY_THRESHOLDS.frequentDisconnect.count
+      ) {
+        const affectedSessions = [
+          ...new Set(cluster.events.map((e) => e.linkCode).filter(Boolean)),
+        ] as string[];
         anomalies.push({
           type: AnomalyType.frequent_disconnect,
           severity: cluster.events.length >= 5 ? 5 : 4,
           description: `${cluster.events.length} disconnects in ${Math.round(cluster.windowMs / 1000)}s`,
-          suggestion: 'Check for connection stability issues, signal interference, or device battery.',
+          suggestion:
+            'Check for connection stability issues, signal interference, or device battery.',
           occurrences: cluster.events.length,
           affectedSessions,
           timeWindowMs: cluster.windowMs,
@@ -1972,12 +2093,15 @@ export class BluetoothService {
 
     for (const cluster of timeoutClusters) {
       if (cluster.events.length >= ANOMALY_THRESHOLDS.timeoutRetry.count) {
-        const affectedSessions = [...new Set(cluster.events.map((e) => e.linkCode).filter(Boolean))] as string[];
+        const affectedSessions = [
+          ...new Set(cluster.events.map((e) => e.linkCode).filter(Boolean)),
+        ] as string[];
         anomalies.push({
           type: AnomalyType.timeout_retry,
           severity: cluster.events.length >= 4 ? 4 : 3,
           description: `${cluster.events.length} timeouts in ${Math.round(cluster.windowMs / 1000)}s`,
-          suggestion: 'Device may be unresponsive. Check device status and connection quality.',
+          suggestion:
+            'Device may be unresponsive. Check device status and connection quality.',
           occurrences: cluster.events.length,
           affectedSessions,
           timeWindowMs: cluster.windowMs,
@@ -1999,11 +2123,13 @@ export class BluetoothService {
 
     for (const cluster of errorClusters) {
       if (cluster.events.length >= ANOMALY_THRESHOLDS.errorBurst.count) {
-        const affectedSessions = [...new Set(cluster.events.map((e) => e.linkCode).filter(Boolean))] as string[];
+        const affectedSessions = [
+          ...new Set(cluster.events.map((e) => e.linkCode).filter(Boolean)),
+        ] as string[];
 
         // Analyze error patterns in the cluster
-        const errorCategories = cluster.events.map((e) =>
-          this.analyzeErrorPattern(e.eventName, e.errorCode).category
+        const errorCategories = cluster.events.map(
+          (e) => this.analyzeErrorPattern(e.eventName, e.errorCode).category,
         );
         const topCategory = this.getMostFrequent(errorCategories);
 
@@ -2011,7 +2137,8 @@ export class BluetoothService {
           type: AnomalyType.error_burst,
           severity: cluster.events.length >= 10 ? 5 : 4,
           description: `${cluster.events.length} errors in ${Math.round(cluster.windowMs / 1000)}s (mostly ${topCategory})`,
-          suggestion: 'Multiple errors occurred rapidly. Review the error sequence to identify root cause.',
+          suggestion:
+            'Multiple errors occurred rapidly. Review the error sequence to identify root cause.',
           occurrences: cluster.events.length,
           affectedSessions,
           timeWindowMs: cluster.windowMs,
@@ -2051,7 +2178,8 @@ export class BluetoothService {
         type: AnomalyType.slow_connection,
         severity: slowSessions.length >= 3 ? 4 : 3,
         description: `${slowSessions.length} sessions took >10s to connect`,
-        suggestion: 'Connection is slow. Check for interference, device distance, or pairing issues.',
+        suggestion:
+          'Connection is slow. Check for interference, device distance, or pairing issues.',
         occurrences: slowSessions.length,
         affectedSessions: slowSessions.map((s) => s.linkCode),
         timeWindowMs: Number(endMs - startMs),
@@ -2060,23 +2188,33 @@ export class BluetoothService {
     }
 
     // 5. Detect command failure patterns
-    const commandEvents = events.filter((e) => e.eventName.toUpperCase().includes('COMMAND') ||
-      e.eventName.toUpperCase().includes('REQUEST') ||
-      e.eventName.toUpperCase().includes('WRITE'));
+    const commandEvents = events.filter(
+      (e) =>
+        e.eventName.toUpperCase().includes('COMMAND') ||
+        e.eventName.toUpperCase().includes('REQUEST') ||
+        e.eventName.toUpperCase().includes('WRITE'),
+    );
 
     const failedCommands = commandEvents.filter((e) => e.level >= 4);
-    const failureRate = commandEvents.length > 0
-      ? failedCommands.length / commandEvents.length
-      : 0;
+    const failureRate =
+      commandEvents.length > 0
+        ? failedCommands.length / commandEvents.length
+        : 0;
 
-    if (failureRate > ANOMALY_THRESHOLDS.commandFailure.rate && commandEvents.length >= 5) {
+    if (
+      failureRate > ANOMALY_THRESHOLDS.commandFailure.rate &&
+      commandEvents.length >= 5
+    ) {
       anomalies.push({
         type: AnomalyType.command_failure,
         severity: failureRate > 0.5 ? 5 : 4,
         description: `${Math.round(failureRate * 100)}% command failure rate (${failedCommands.length}/${commandEvents.length})`,
-        suggestion: 'High command failure rate. Check device responsiveness and data format.',
+        suggestion:
+          'High command failure rate. Check device responsiveness and data format.',
         occurrences: failedCommands.length,
-        affectedSessions: [...new Set(failedCommands.map((e) => e.linkCode).filter(Boolean))] as string[],
+        affectedSessions: [
+          ...new Set(failedCommands.map((e) => e.linkCode).filter(Boolean)),
+        ] as string[],
         timeWindowMs: Number(endMs - startMs),
         sampleEvents: failedCommands.slice(0, 5).map((e) => ({
           id: e.id,
@@ -2096,7 +2234,9 @@ export class BluetoothService {
         criticalCount: anomalies.filter((a) => a.severity >= 5).length,
         highCount: anomalies.filter((a) => a.severity === 4).length,
         mediumCount: anomalies.filter((a) => a.severity === 3).length,
-        affectedSessionsCount: new Set(anomalies.flatMap((a) => a.affectedSessions)).size,
+        affectedSessionsCount: new Set(
+          anomalies.flatMap((a) => a.affectedSessions),
+        ).size,
       },
       recommendations: this.generateRecommendations(anomalies),
     };
@@ -2122,7 +2262,9 @@ export class BluetoothService {
         if (currentCluster.length >= 2) {
           clusters.push({
             events: currentCluster,
-            windowMs: Number(currentCluster[currentCluster.length - 1].timestampMs) - clusterStart,
+            windowMs:
+              Number(currentCluster[currentCluster.length - 1].timestampMs) -
+              clusterStart,
           });
         }
         currentCluster = [event];
@@ -2133,7 +2275,9 @@ export class BluetoothService {
     if (currentCluster.length >= 2) {
       clusters.push({
         events: currentCluster,
-        windowMs: Number(currentCluster[currentCluster.length - 1].timestampMs) - clusterStart,
+        windowMs:
+          Number(currentCluster[currentCluster.length - 1].timestampMs) -
+          clusterStart,
       });
     }
 
@@ -2157,7 +2301,11 @@ export class BluetoothService {
   }
 
   private generateRecommendations(
-    anomalies: Array<{ type: AnomalyType; severity: number; suggestion: string }>,
+    anomalies: Array<{
+      type: AnomalyType;
+      severity: number;
+      suggestion: string;
+    }>,
   ): string[] {
     const recommendations: string[] = [];
 
@@ -2167,20 +2315,29 @@ export class BluetoothService {
 
     const critical = anomalies.filter((a) => a.severity >= 5);
     if (critical.length > 0) {
-      recommendations.push('CRITICAL: Immediate attention required for high-severity issues.');
+      recommendations.push(
+        'CRITICAL: Immediate attention required for high-severity issues.',
+      );
     }
 
     const types = new Set(anomalies.map((a) => a.type));
 
-    if (types.has(AnomalyType.frequent_disconnect) && types.has(AnomalyType.timeout_retry)) {
-      recommendations.push('Multiple connection stability issues detected. Consider checking:');
+    if (
+      types.has(AnomalyType.frequent_disconnect) &&
+      types.has(AnomalyType.timeout_retry)
+    ) {
+      recommendations.push(
+        'Multiple connection stability issues detected. Consider checking:',
+      );
       recommendations.push('  - Device battery level');
       recommendations.push('  - Signal interference sources');
       recommendations.push('  - Distance between device and phone');
     }
 
     if (types.has(AnomalyType.command_failure)) {
-      recommendations.push('High command failure rate suggests communication issues:');
+      recommendations.push(
+        'High command failure rate suggests communication issues:',
+      );
       recommendations.push('  - Verify command format and parameters');
       recommendations.push('  - Check device firmware version compatibility');
     }

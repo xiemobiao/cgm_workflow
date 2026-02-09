@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "scripts": {
     "api:dev": "npm --prefix apps/api run start:dev",
+    "api:worker:dev": "npm --prefix apps/api run start:worker:dev",
     "api:build": "npm --prefix apps/api run build",
     "api:start": "npm --prefix apps/api run start:prod",
+    "api:worker": "npm --prefix apps/api run start:worker",
+    "logs:quick-trace": "npm --prefix apps/api run logs:quick-trace",
     "db:generate": "npm --prefix apps/api run db:generate",
     "db:migrate:dev": "npm --prefix apps/api run db:migrate:dev",
     "db:migrate:deploy": "npm --prefix apps/api run db:migrate:deploy",

@@ -8,373 +8,373 @@ import { LogsHelperService } from './logs-helper.service';
  */
 @Injectable()
 export class LogsTraceService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly rbac: RbacService,
-        private readonly helper: LogsHelperService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+    private readonly helper: LogsHelperService,
+  ) {}
 
-    async traceByLinkCode(params: {
-        actorUserId: string;
-        projectId: string;
-        logFileId?: string;
-        linkCode: string;
-        limit?: number;
-    }) {
-        await this.rbac.requireProjectRoles({
-            userId: params.actorUserId,
-            projectId: params.projectId,
-            allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-        });
+  async traceByLinkCode(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    linkCode: string;
+    limit?: number;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
 
-        if (params.logFileId) {
-            await this.helper.assertLogFileInProject({
-                projectId: params.projectId,
-                logFileId: params.logFileId,
-            });
-        }
-
-        const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
-
-        const events = await this.prisma.logEvent.findMany({
-            where: {
-                projectId: params.projectId,
-                ...(params.logFileId ? { logFileId: params.logFileId } : {}),
-                linkCode: params.linkCode,
-            },
-            orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
-            take: limit,
-            select: {
-                id: true,
-                eventName: true,
-                level: true,
-                timestampMs: true,
-                sdkVersion: true,
-                appId: true,
-                logFileId: true,
-                msgJson: true,
-                threadName: true,
-                deviceMac: true,
-                deviceSn: true,
-                requestId: true,
-                errorCode: true,
-            },
-        });
-
-        return {
-            linkCode: params.linkCode,
-            count: events.length,
-            items: events.map((e) => ({
-                id: e.id,
-                eventName: e.eventName,
-                level: e.level,
-                timestampMs: Number(e.timestampMs),
-                sdkVersion: e.sdkVersion,
-                appId: e.appId,
-                logFileId: e.logFileId,
-                threadName: e.threadName,
-                deviceMac: e.deviceMac,
-                deviceSn: e.deviceSn,
-                requestId: e.requestId,
-                errorCode: e.errorCode,
-                msg: this.helper.msgPreviewFromJson(e.msgJson),
-            })),
-        };
+    if (params.logFileId) {
+      await this.helper.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
     }
 
-    async traceByRequestId(params: {
-        actorUserId: string;
-        projectId: string;
-        logFileId?: string;
-        requestId: string;
-    }) {
-        await this.rbac.requireProjectRoles({
-            userId: params.actorUserId,
-            projectId: params.projectId,
-            allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-        });
+    const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
 
-        if (params.logFileId) {
-            await this.helper.assertLogFileInProject({
-                projectId: params.projectId,
-                logFileId: params.logFileId,
-            });
-        }
+    const events = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        linkCode: params.linkCode,
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      take: limit,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        appId: true,
+        logFileId: true,
+        msgJson: true,
+        threadName: true,
+        deviceMac: true,
+        deviceSn: true,
+        requestId: true,
+        errorCode: true,
+      },
+    });
 
-        const events = await this.prisma.logEvent.findMany({
-            where: {
-                projectId: params.projectId,
-                ...(params.logFileId ? { logFileId: params.logFileId } : {}),
-                requestId: params.requestId,
-            },
-            orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
-            take: 100,
-            select: {
-                id: true,
-                eventName: true,
-                level: true,
-                timestampMs: true,
-                sdkVersion: true,
-                logFileId: true,
-                msgJson: true,
-                threadName: true,
-                deviceMac: true,
-                deviceSn: true,
-                errorCode: true,
-            },
-        });
+    return {
+      linkCode: params.linkCode,
+      count: events.length,
+      items: events.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        sdkVersion: e.sdkVersion,
+        appId: e.appId,
+        logFileId: e.logFileId,
+        threadName: e.threadName,
+        deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
+        requestId: e.requestId,
+        errorCode: e.errorCode,
+        msg: this.helper.msgPreviewFromJson(e.msgJson),
+      })),
+    };
+  }
 
-        return {
-            requestId: params.requestId,
-            count: events.length,
-            items: events.map((e) => ({
-                id: e.id,
-                eventName: e.eventName,
-                level: e.level,
-                timestampMs: Number(e.timestampMs),
-                sdkVersion: e.sdkVersion,
-                logFileId: e.logFileId,
-                threadName: e.threadName,
-                deviceMac: e.deviceMac,
-                deviceSn: e.deviceSn,
-                errorCode: e.errorCode,
-                msg: this.helper.msgPreviewFromJson(e.msgJson),
-            })),
-        };
+  async traceByRequestId(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    requestId: string;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    if (params.logFileId) {
+      await this.helper.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
     }
 
-    async traceByDeviceMac(params: {
-        actorUserId: string;
-        projectId: string;
-        logFileId?: string;
-        deviceMac: string;
-        startTime: string;
-        endTime: string;
-        limit?: number;
-    }) {
-        await this.rbac.requireProjectRoles({
-            userId: params.actorUserId,
-            projectId: params.projectId,
-            allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-        });
+    const events = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        requestId: params.requestId,
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      take: 100,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        logFileId: true,
+        msgJson: true,
+        threadName: true,
+        deviceMac: true,
+        deviceSn: true,
+        errorCode: true,
+      },
+    });
 
-        if (params.logFileId) {
-            await this.helper.assertLogFileInProject({
-                projectId: params.projectId,
-                logFileId: params.logFileId,
-            });
-        }
+    return {
+      requestId: params.requestId,
+      count: events.length,
+      items: events.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        sdkVersion: e.sdkVersion,
+        logFileId: e.logFileId,
+        threadName: e.threadName,
+        deviceMac: e.deviceMac,
+        deviceSn: e.deviceSn,
+        errorCode: e.errorCode,
+        msg: this.helper.msgPreviewFromJson(e.msgJson),
+      })),
+    };
+  }
 
-        const startMs = BigInt(new Date(params.startTime).getTime());
-        const endMs = BigInt(new Date(params.endTime).getTime());
-        const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
+  async traceByDeviceMac(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    deviceMac: string;
+    startTime: string;
+    endTime: string;
+    limit?: number;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
 
-        const events = await this.prisma.logEvent.findMany({
-            where: {
-                projectId: params.projectId,
-                ...(params.logFileId ? { logFileId: params.logFileId } : {}),
-                deviceMac: params.deviceMac,
-                timestampMs: { gte: startMs, lte: endMs },
-            },
-            orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
-            take: limit,
-            select: {
-                id: true,
-                eventName: true,
-                level: true,
-                timestampMs: true,
-                sdkVersion: true,
-                logFileId: true,
-                msgJson: true,
-                threadName: true,
-                linkCode: true,
-                requestId: true,
-                deviceSn: true,
-                errorCode: true,
-            },
-        });
-
-        return {
-            deviceMac: params.deviceMac,
-            count: events.length,
-            items: events.map((e) => ({
-                id: e.id,
-                eventName: e.eventName,
-                level: e.level,
-                timestampMs: Number(e.timestampMs),
-                sdkVersion: e.sdkVersion,
-                logFileId: e.logFileId,
-                threadName: e.threadName,
-                linkCode: e.linkCode,
-                requestId: e.requestId,
-                deviceSn: e.deviceSn,
-                errorCode: e.errorCode,
-                msg: this.helper.msgPreviewFromJson(e.msgJson),
-            })),
-        };
+    if (params.logFileId) {
+      await this.helper.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
     }
 
-    async traceByDeviceSn(params: {
-        actorUserId: string;
-        projectId: string;
-        logFileId?: string;
-        deviceSn: string;
-        startTime: string;
-        endTime: string;
-        limit?: number;
-    }) {
-        await this.rbac.requireProjectRoles({
-            userId: params.actorUserId,
-            projectId: params.projectId,
-            allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-        });
+    const startMs = BigInt(new Date(params.startTime).getTime());
+    const endMs = BigInt(new Date(params.endTime).getTime());
+    const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
 
-        if (params.logFileId) {
-            await this.helper.assertLogFileInProject({
-                projectId: params.projectId,
-                logFileId: params.logFileId,
-            });
-        }
+    const events = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        deviceMac: params.deviceMac,
+        timestampMs: { gte: startMs, lte: endMs },
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      take: limit,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        logFileId: true,
+        msgJson: true,
+        threadName: true,
+        linkCode: true,
+        requestId: true,
+        deviceSn: true,
+        errorCode: true,
+      },
+    });
 
-        const startMs = BigInt(new Date(params.startTime).getTime());
-        const endMs = BigInt(new Date(params.endTime).getTime());
-        const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
+    return {
+      deviceMac: params.deviceMac,
+      count: events.length,
+      items: events.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        sdkVersion: e.sdkVersion,
+        logFileId: e.logFileId,
+        threadName: e.threadName,
+        linkCode: e.linkCode,
+        requestId: e.requestId,
+        deviceSn: e.deviceSn,
+        errorCode: e.errorCode,
+        msg: this.helper.msgPreviewFromJson(e.msgJson),
+      })),
+    };
+  }
 
-        const events = await this.prisma.logEvent.findMany({
-            where: {
-                projectId: params.projectId,
-                ...(params.logFileId ? { logFileId: params.logFileId } : {}),
-                deviceSn: params.deviceSn,
-                timestampMs: { gte: startMs, lte: endMs },
-            },
-            orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
-            take: limit,
-            select: {
-                id: true,
-                eventName: true,
-                level: true,
-                timestampMs: true,
-                sdkVersion: true,
-                logFileId: true,
-                msgJson: true,
-                threadName: true,
-                linkCode: true,
-                requestId: true,
-                deviceMac: true,
-                errorCode: true,
-            },
-        });
+  async traceByDeviceSn(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    deviceSn: string;
+    startTime: string;
+    endTime: string;
+    limit?: number;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
 
-        return {
-            deviceSn: params.deviceSn,
-            count: events.length,
-            items: events.map((e) => ({
-                id: e.id,
-                eventName: e.eventName,
-                level: e.level,
-                timestampMs: Number(e.timestampMs),
-                sdkVersion: e.sdkVersion,
-                logFileId: e.logFileId,
-                threadName: e.threadName,
-                linkCode: e.linkCode,
-                requestId: e.requestId,
-                deviceMac: e.deviceMac,
-                deviceSn: params.deviceSn,
-                errorCode: e.errorCode,
-                msg: this.helper.msgPreviewFromJson(e.msgJson),
-            })),
-        };
+    if (params.logFileId) {
+      await this.helper.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
     }
 
-    async getLinkCodeDevices(params: {
-        actorUserId: string;
-        projectId: string;
-        logFileId?: string;
-        linkCode: string;
-    }) {
-        await this.rbac.requireProjectRoles({
-            userId: params.actorUserId,
-            projectId: params.projectId,
-            allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-        });
+    const startMs = BigInt(new Date(params.startTime).getTime());
+    const endMs = BigInt(new Date(params.endTime).getTime());
+    const limit = Math.min(Math.max(params.limit ?? 500, 1), 2000);
 
-        if (params.logFileId) {
-            await this.helper.assertLogFileInProject({
-                projectId: params.projectId,
-                logFileId: params.logFileId,
-            });
-        }
+    const events = await this.prisma.logEvent.findMany({
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        deviceSn: params.deviceSn,
+        timestampMs: { gte: startMs, lte: endMs },
+      },
+      orderBy: [{ timestampMs: 'asc' }, { id: 'asc' }],
+      take: limit,
+      select: {
+        id: true,
+        eventName: true,
+        level: true,
+        timestampMs: true,
+        sdkVersion: true,
+        logFileId: true,
+        msgJson: true,
+        threadName: true,
+        linkCode: true,
+        requestId: true,
+        deviceMac: true,
+        errorCode: true,
+      },
+    });
 
-        const devices = await this.prisma.logEvent.groupBy({
-            by: ['deviceMac'],
-            where: {
-                projectId: params.projectId,
-                ...(params.logFileId ? { logFileId: params.logFileId } : {}),
-                linkCode: params.linkCode,
-                deviceMac: { not: null },
-            },
-            _count: { _all: true },
-            _min: { timestampMs: true },
-            _max: { timestampMs: true },
-        });
+    return {
+      deviceSn: params.deviceSn,
+      count: events.length,
+      items: events.map((e) => ({
+        id: e.id,
+        eventName: e.eventName,
+        level: e.level,
+        timestampMs: Number(e.timestampMs),
+        sdkVersion: e.sdkVersion,
+        logFileId: e.logFileId,
+        threadName: e.threadName,
+        linkCode: e.linkCode,
+        requestId: e.requestId,
+        deviceMac: e.deviceMac,
+        deviceSn: params.deviceSn,
+        errorCode: e.errorCode,
+        msg: this.helper.msgPreviewFromJson(e.msgJson),
+      })),
+    };
+  }
 
-        return {
-            linkCode: params.linkCode,
-            devices: devices.map((d) => ({
-                deviceMac: d.deviceMac,
-                eventCount: d._count._all,
-                firstSeenMs: d._min.timestampMs ? Number(d._min.timestampMs) : null,
-                lastSeenMs: d._max.timestampMs ? Number(d._max.timestampMs) : null,
-            })),
-        };
+  async getLinkCodeDevices(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    linkCode: string;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    if (params.logFileId) {
+      await this.helper.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
     }
 
-    async getDeviceSessions(params: {
-        actorUserId: string;
-        projectId: string;
-        logFileId?: string;
-        deviceMac: string;
-        startTime: string;
-        endTime: string;
-    }) {
-        await this.rbac.requireProjectRoles({
-            userId: params.actorUserId,
-            projectId: params.projectId,
-            allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-        });
+    const devices = await this.prisma.logEvent.groupBy({
+      by: ['deviceMac'],
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        linkCode: params.linkCode,
+        deviceMac: { not: null },
+      },
+      _count: { _all: true },
+      _min: { timestampMs: true },
+      _max: { timestampMs: true },
+    });
 
-        if (params.logFileId) {
-            await this.helper.assertLogFileInProject({
-                projectId: params.projectId,
-                logFileId: params.logFileId,
-            });
-        }
+    return {
+      linkCode: params.linkCode,
+      devices: devices.map((d) => ({
+        deviceMac: d.deviceMac,
+        eventCount: d._count._all,
+        firstSeenMs: d._min.timestampMs ? Number(d._min.timestampMs) : null,
+        lastSeenMs: d._max.timestampMs ? Number(d._max.timestampMs) : null,
+      })),
+    };
+  }
 
-        const startMs = BigInt(new Date(params.startTime).getTime());
-        const endMs = BigInt(new Date(params.endTime).getTime());
+  async getDeviceSessions(params: {
+    actorUserId: string;
+    projectId: string;
+    logFileId?: string;
+    deviceMac: string;
+    startTime: string;
+    endTime: string;
+  }) {
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: params.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
 
-        const sessions = await this.prisma.logEvent.groupBy({
-            by: ['linkCode'],
-            where: {
-                projectId: params.projectId,
-                ...(params.logFileId ? { logFileId: params.logFileId } : {}),
-                deviceMac: params.deviceMac,
-                linkCode: { not: null },
-                timestampMs: { gte: startMs, lte: endMs },
-            },
-            _count: { _all: true },
-            _min: { timestampMs: true },
-            _max: { timestampMs: true },
-        });
-
-        return {
-            deviceMac: params.deviceMac,
-            sessions: sessions.map((s) => ({
-                linkCode: s.linkCode,
-                eventCount: s._count._all,
-                startTimeMs: s._min.timestampMs ? Number(s._min.timestampMs) : null,
-                endTimeMs: s._max.timestampMs ? Number(s._max.timestampMs) : null,
-            })),
-        };
+    if (params.logFileId) {
+      await this.helper.assertLogFileInProject({
+        projectId: params.projectId,
+        logFileId: params.logFileId,
+      });
     }
+
+    const startMs = BigInt(new Date(params.startTime).getTime());
+    const endMs = BigInt(new Date(params.endTime).getTime());
+
+    const sessions = await this.prisma.logEvent.groupBy({
+      by: ['linkCode'],
+      where: {
+        projectId: params.projectId,
+        ...(params.logFileId ? { logFileId: params.logFileId } : {}),
+        deviceMac: params.deviceMac,
+        linkCode: { not: null },
+        timestampMs: { gte: startMs, lte: endMs },
+      },
+      _count: { _all: true },
+      _min: { timestampMs: true },
+      _max: { timestampMs: true },
+    });
+
+    return {
+      deviceMac: params.deviceMac,
+      sessions: sessions.map((s) => ({
+        linkCode: s.linkCode,
+        eventCount: s._count._all,
+        startTimeMs: s._min.timestampMs ? Number(s._min.timestampMs) : null,
+        endTimeMs: s._max.timestampMs ? Number(s._max.timestampMs) : null,
+      })),
+    };
+  }
 }

@@ -82,7 +82,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     apiFetch<Project[]>('/api/projects')
       .then((rows) => {
         if (cancelled) return;

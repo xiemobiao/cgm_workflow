@@ -80,7 +80,16 @@ function extractMessageText(msgJson: unknown): string {
 
   if (msgJson === null || msgJson === undefined) return '';
   try {
-    return String(msgJson);
+    if (typeof msgJson === 'number' || typeof msgJson === 'boolean') {
+      return String(msgJson);
+    }
+    if (typeof msgJson === 'bigint') return msgJson.toString();
+    if (typeof msgJson === 'symbol') return msgJson.toString();
+    if (typeof msgJson === 'function') {
+      const name = msgJson.name ? ` ${msgJson.name}` : '';
+      return `[function${name}]`;
+    }
+    return '';
   } catch {
     return '';
   }
@@ -203,7 +212,11 @@ function scoreSession(params: {
   return clampInt(score, 0, 100);
 }
 
-function classifyQuality(score: number, warnBelow: number, badBelow: number): StreamSessionQualityLevel {
+function classifyQuality(
+  score: number,
+  warnBelow: number,
+  badBelow: number,
+): StreamSessionQualityLevel {
   if (score < badBelow) return 'bad';
   if (score < warnBelow) return 'warn';
   return 'good';
@@ -211,12 +224,16 @@ function classifyQuality(score: number, warnBelow: number, badBelow: number): St
 
 function extractFields(msgJson: unknown) {
   const obj = asRecord(msgJson);
-  const tokensObj = parseKeyValueTokens(extractMessageText(msgJson)) as RecordLike;
+  const tokensObj = parseKeyValueTokens(
+    extractMessageText(msgJson),
+  ) as RecordLike;
 
   const getString = (keys: string[]) =>
-    (obj ? pickFirstString(obj, keys) : null) ?? pickFirstString(tokensObj, keys);
+    (obj ? pickFirstString(obj, keys) : null) ??
+    pickFirstString(tokensObj, keys);
   const getNumber = (keys: string[]) =>
-    (obj ? pickFirstNumber(obj, keys) : null) ?? pickFirstNumber(tokensObj, keys);
+    (obj ? pickFirstNumber(obj, keys) : null) ??
+    pickFirstNumber(tokensObj, keys);
 
   const reason =
     getString(['reason', 'closeReason', 'sessionReason']) ??
@@ -232,9 +249,18 @@ function extractFields(msgJson: unknown) {
   const persistedMax = getNumber(['persistedMax', 'persisted_max']);
   const pendingCallbacks = getNumber(['pendingCallbacks', 'pending_callbacks']);
 
-  const sessionStartIndex = getNumber(['sessionStartIndex', 'session_start_index']);
-  const sessionStartAtMs = getNumber(['sessionStartAtMs', 'session_start_at_ms']);
-  const sessionElapsedMs = getNumber(['sessionElapsedMs', 'session_elapsed_ms']);
+  const sessionStartIndex = getNumber([
+    'sessionStartIndex',
+    'session_start_index',
+  ]);
+  const sessionStartAtMs = getNumber([
+    'sessionStartAtMs',
+    'session_start_at_ms',
+  ]);
+  const sessionElapsedMs = getNumber([
+    'sessionElapsedMs',
+    'session_elapsed_ms',
+  ]);
 
   return {
     reason,
@@ -308,8 +334,10 @@ export function buildStreamSessionQualityReport(params: {
     if (!reason) summary.issuesMissingReason += 1;
     else bumpCount(byReason, reason);
 
-    if (fields.sessionStartIndex === null) summary.issuesMissingSessionStartIndex += 1;
-    if (fields.sessionStartAtMs === null) summary.issuesMissingSessionStartAtMs += 1;
+    if (fields.sessionStartIndex === null)
+      summary.issuesMissingSessionStartIndex += 1;
+    if (fields.sessionStartAtMs === null)
+      summary.issuesMissingSessionStartAtMs += 1;
 
     const score = scoreSession({
       deviceSn: sn || null,
@@ -350,23 +378,36 @@ export function buildStreamSessionQualityReport(params: {
     });
   }
 
-  summary.scoreAvg = summary.total > 0 ? Math.round(scoreSum / summary.total) : null;
+  summary.scoreAvg =
+    summary.total > 0 ? Math.round(scoreSum / summary.total) : null;
 
   const sortEntries = (m: Map<string, number>) =>
     Array.from(m.entries())
       .map(([key, total]) => ({ key, total }))
-      .sort((a, b) => (b.total !== a.total ? b.total - a.total : a.key.localeCompare(b.key)));
+      .sort((a, b) =>
+        b.total !== a.total ? b.total - a.total : a.key.localeCompare(b.key),
+      );
 
   const sessionRows = [...sessions]
-    .sort((a, b) => (b.timestampMs !== a.timestampMs ? b.timestampMs - a.timestampMs : 0))
+    .sort((a, b) =>
+      b.timestampMs !== a.timestampMs ? b.timestampMs - a.timestampMs : 0,
+    )
     .slice(0, sessionsLimit);
 
   return {
     summary,
-    byReason: sortEntries(byReason).slice(0, topLimit).map((r) => ({ reason: r.key, total: r.total })),
-    byDevice: sortEntries(byDevice).slice(0, topLimit).map((r) => ({ deviceSn: r.key, total: r.total })),
-    byLinkCode: sortEntries(byLinkCode).slice(0, topLimit).map((r) => ({ linkCode: r.key, total: r.total })),
-    byRequestId: sortEntries(byRequestId).slice(0, topLimit).map((r) => ({ requestId: r.key, total: r.total })),
+    byReason: sortEntries(byReason)
+      .slice(0, topLimit)
+      .map((r) => ({ reason: r.key, total: r.total })),
+    byDevice: sortEntries(byDevice)
+      .slice(0, topLimit)
+      .map((r) => ({ deviceSn: r.key, total: r.total })),
+    byLinkCode: sortEntries(byLinkCode)
+      .slice(0, topLimit)
+      .map((r) => ({ linkCode: r.key, total: r.total })),
+    byRequestId: sortEntries(byRequestId)
+      .slice(0, topLimit)
+      .map((r) => ({ requestId: r.key, total: r.total })),
     sessions: sessionRows,
   };
 }

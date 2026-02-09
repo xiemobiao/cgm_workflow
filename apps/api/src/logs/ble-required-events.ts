@@ -351,7 +351,12 @@ export const BLE_REQUIRED_EVENTS: BleRequiredEvent[] = [
   },
 
   // 通用/错误
-  { category: '通用/错误', description: '通用', eventName: 'COMMON', expectedLevel: 2 },
+  {
+    category: '通用/错误',
+    description: '通用',
+    eventName: 'COMMON',
+    expectedLevel: 2,
+  },
   {
     category: '通用/错误',
     description: '通用错误',
@@ -428,17 +433,26 @@ export const BLE_FLOW_PAIR_CHECKS: BleFlowPairCheck[] = [
   {
     name: '蓝牙设备灵敏度查询',
     startEventName: 'BLE query sensitivity',
-    endEventNames: ['BLE query sensitivity success', 'BLE query sensitivity failure'],
+    endEventNames: [
+      'BLE query sensitivity success',
+      'BLE query sensitivity failure',
+    ],
   },
   {
     name: '蓝牙设备激活时间查询',
     startEventName: 'BLE query active time',
-    endEventNames: ['BLE query active time success', 'BLE query active time failure'],
+    endEventNames: [
+      'BLE query active time success',
+      'BLE query active time failure',
+    ],
   },
   {
     name: '蓝牙设备初始化时长查询',
     startEventName: 'BLE query init time',
-    endEventNames: ['BLE query init time success', 'BLE query init time failure'],
+    endEventNames: [
+      'BLE query init time success',
+      'BLE query init time failure',
+    ],
   },
   {
     name: '蓝牙激活及ID绑定',
@@ -471,4 +485,3 @@ export const BLE_FLOW_PAIR_CHECKS: BleFlowPairCheck[] = [
     endEventNames: ['BLE latest valid data callback done'],
   },
 ];
-

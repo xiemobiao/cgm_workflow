@@ -24,7 +24,7 @@ type InnerLine = {
   appInfo?: string;
 };
 
-type TrackingFields = {
+export type TrackingFields = {
   linkCode: string | null;
   requestId: string | null;
   attemptId: string | null;
@@ -137,7 +137,9 @@ function extractDeviceSnFromUrl(url: string | null): string | null {
   }
 }
 
-function firstUniqueString(values: Array<string | null | undefined>): string | null {
+function firstUniqueString(
+  values: Array<string | null | undefined>,
+): string | null {
   const set = new Set<string>();
   for (const v of values) {
     if (!v || typeof v !== 'string') continue;
@@ -153,8 +155,14 @@ function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
   const snByLinkCode = new Map<string, Set<string>>();
   const snByDeviceMac = new Map<string, Set<string>>();
   const macBySn = new Map<string, Set<string>>();
+  const linkCodeBySn = new Map<string, Set<string>>();
+  const linkCodeByMac = new Map<string, Set<string>>();
 
-  const addToMap = (map: Map<string, Set<string>>, key: string, value: string) => {
+  const addToMap = (
+    map: Map<string, Set<string>>,
+    key: string,
+    value: string,
+  ) => {
     const set = map.get(key) ?? new Set<string>();
     set.add(value);
     map.set(key, set);
@@ -168,28 +176,44 @@ function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
     if (linkCode && deviceSn) addToMap(snByLinkCode, linkCode, deviceSn);
     if (deviceMac && deviceSn) addToMap(snByDeviceMac, deviceMac, deviceSn);
     if (deviceSn && deviceMac) addToMap(macBySn, deviceSn, deviceMac);
+    if (deviceSn && linkCode) addToMap(linkCodeBySn, deviceSn, linkCode);
+    if (deviceMac && linkCode) addToMap(linkCodeByMac, deviceMac, linkCode);
   }
 
-  const resolveUnique = (map: Map<string, Set<string>>, key: string): string | null => {
+  const resolveUnique = (
+    map: Map<string, Set<string>>,
+    key: string,
+  ): string | null => {
     const set = map.get(key);
     if (!set || set.size !== 1) return null;
     return Array.from(set.values())[0] ?? null;
   };
 
-  const uniqueSn = firstUniqueString(events.map((e) => e.deviceSn as string | null));
-  const uniqueMac = firstUniqueString(events.map((e) => e.deviceMac as string | null));
+  const uniqueSn = firstUniqueString(
+    events.map((e) => e.deviceSn as string | null),
+  );
+  const uniqueMac = firstUniqueString(
+    events.map((e) => e.deviceMac as string | null),
+  );
 
   for (const e of events) {
     if (e.eventName === 'PARSER_ERROR') continue;
 
-    const hasSn = typeof e.deviceSn === 'string' && e.deviceSn.trim().length > 0;
-    const hasMac = typeof e.deviceMac === 'string' && e.deviceMac.trim().length > 0;
+    const hasSn =
+      typeof e.deviceSn === 'string' && e.deviceSn.trim().length > 0;
+    const hasMac =
+      typeof e.deviceMac === 'string' && e.deviceMac.trim().length > 0;
+    const hasLinkCode =
+      typeof e.linkCode === 'string' && e.linkCode.trim().length > 0;
 
     if (!hasSn) {
       const linkCode = typeof e.linkCode === 'string' ? e.linkCode.trim() : '';
-      const deviceMac = typeof e.deviceMac === 'string' ? e.deviceMac.trim() : '';
+      const deviceMac =
+        typeof e.deviceMac === 'string' ? e.deviceMac.trim() : '';
       const fromLink = linkCode ? resolveUnique(snByLinkCode, linkCode) : null;
-      const fromMac = deviceMac ? resolveUnique(snByDeviceMac, deviceMac) : null;
+      const fromMac = deviceMac
+        ? resolveUnique(snByDeviceMac, deviceMac)
+        : null;
       e.deviceSn = fromLink ?? fromMac ?? uniqueSn;
     }
 
@@ -197,6 +221,19 @@ function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
       const deviceSn = typeof e.deviceSn === 'string' ? e.deviceSn.trim() : '';
       const fromSn = deviceSn ? resolveUnique(macBySn, deviceSn) : null;
       e.deviceMac = fromSn ?? uniqueMac;
+    }
+
+    // Backfill linkCode so storage/http/mqtt/ack events can be grouped into a
+    // single session timeline (best-effort, only when the mapping is unique).
+    if (!hasLinkCode) {
+      const deviceSn = typeof e.deviceSn === 'string' ? e.deviceSn.trim() : '';
+      const deviceMac =
+        typeof e.deviceMac === 'string' ? e.deviceMac.trim() : '';
+      const fromSn = deviceSn ? resolveUnique(linkCodeBySn, deviceSn) : null;
+      const fromMac = deviceMac
+        ? resolveUnique(linkCodeByMac, deviceMac)
+        : null;
+      e.linkCode = fromSn ?? fromMac;
     }
   }
 }
@@ -228,21 +265,31 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
   if (nestedData) candidates.push(nestedData);
 
   for (const obj of candidates) {
-    if (!result.stage) result.stage = normalizeLowerTrim(pickFirstString(obj, ['stage']));
-    if (!result.op) result.op = normalizeLowerTrim(pickFirstString(obj, ['op']));
-    if (!result.result) result.result = normalizeLowerTrim(pickFirstString(obj, ['result']));
+    if (!result.stage)
+      result.stage = normalizeLowerTrim(pickFirstString(obj, ['stage']));
+    if (!result.op)
+      result.op = normalizeLowerTrim(pickFirstString(obj, ['op']));
+    if (!result.result)
+      result.result = normalizeLowerTrim(pickFirstString(obj, ['result']));
 
-    if (!result.linkCode) result.linkCode = normalizeTrim(pickFirstString(obj, ['linkCode']));
-    if (!result.requestId) result.requestId = normalizeTrim(pickFirstString(obj, ['requestId']));
-    if (!result.attemptId) result.attemptId = normalizeTrim(pickFirstString(obj, ['attemptId']));
+    if (!result.linkCode)
+      result.linkCode = normalizeTrim(pickFirstString(obj, ['linkCode']));
+    if (!result.requestId)
+      result.requestId = normalizeTrim(
+        pickFirstString(obj, ['requestId', 'msgId']),
+      );
+    if (!result.attemptId)
+      result.attemptId = normalizeTrim(pickFirstString(obj, ['attemptId']));
 
     if (!result.deviceMac) {
-      const mac = normalizeTrim(pickFirstString(obj, ['deviceMac']));
+      const mac = normalizeTrim(pickFirstString(obj, ['deviceMac', 'mac']));
       result.deviceMac = mac && looksLikeMac(mac) ? mac : null;
     }
 
     if (!result.deviceSn) {
-      result.deviceSn = normalizeTrim(pickFirstString(obj, ['deviceSn']));
+      result.deviceSn = normalizeTrim(
+        pickFirstString(obj, ['deviceSn', 'sn', 'serialNumber', 'serial']),
+      );
       if (!result.deviceSn) {
         const topic = normalizeTrim(pickFirstString(obj, ['topic']));
         result.deviceSn = extractDeviceSnFromTopic(topic);
@@ -256,8 +303,10 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
     if (!result.errorCode) {
       const errorObj = asRecord(obj.error);
       const candidate =
-        pickFirstString(obj, ['errorCode']) ??
-        (errorObj ? pickFirstString(errorObj, ['code']) : null);
+        pickFirstString(obj, ['errorCode', 'code']) ??
+        (errorObj
+          ? pickFirstString(errorObj, ['errorCode', 'code'])
+          : null);
       result.errorCode = normalizeTrim(candidate);
     }
   }
@@ -276,15 +325,16 @@ export class LogsParserService {
   ) {}
 
   enqueue(logFileId: string) {
-    void this.parseAndPersist(logFileId);
+    void this.processLogFile(logFileId);
   }
 
-  private async parseAndPersist(logFileId: string) {
+  async processLogFile(logFileId: string, options?: { analyze?: boolean }) {
     const logFile = await this.prisma.logFile.findUnique({
       where: { id: logFileId },
     });
     if (!logFile) return;
 
+    const analyze = options?.analyze ?? true;
     let hadError = false;
 
     try {
@@ -301,9 +351,11 @@ export class LogsParserService {
       // Auto-detect and decrypt Logan encrypted binary files
       const isLoganEncrypted = this.loganDecrypt.isLoganEncrypted(buf);
       let text: string;
-      let loganStats:
-        | { blocksTotal: number; blocksSucceeded: number; blocksFailed: number }
-        | null = null;
+      let loganStats: {
+        blocksTotal: number;
+        blocksSucceeded: number;
+        blocksFailed: number;
+      } | null = null;
       if (isLoganEncrypted) {
         const decrypted = this.loganDecrypt.decrypt(buf);
         text = decrypted.text;
@@ -379,7 +431,14 @@ export class LogsParserService {
 
           // Skip clogan header line - it's not a real log event
           // Header format: {"c":"clogan header","f":1,"l":...,"n":"clogan","i":1,"m":true}
-          if (outer.c === 'clogan header' || outer.n === 'clogan') {
+          const cLower = outer.c.trim().toLowerCase();
+          const nLower = (outer.n ?? '').trim().toLowerCase();
+          if (
+            cLower === 'clogan header' ||
+            cLower === 'logan header' ||
+            nLower === 'clogan' ||
+            nLower === 'logan'
+          ) {
             continue;
           }
 
@@ -455,53 +514,58 @@ export class LogsParserService {
         // Use longer timeout for large files (28000+ events need more than 5s)
         await this.prisma.$transaction(
           async (tx) => {
-          // Delete existing events and stats for this file
-          await tx.logEventStats.deleteMany({ where: { logFileId: logFile.id } });
-          await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
+            // Delete existing events and stats for this file
+            await tx.logEventStats.deleteMany({
+              where: { logFileId: logFile.id },
+            });
+            await tx.logEvent.deleteMany({ where: { logFileId: logFile.id } });
 
-          const batchSize = 500;
-          for (let i = 0; i < events.length; i += batchSize) {
-            const batch = events.slice(i, i + batchSize);
-            if (batch.length === 0) continue;
-            await tx.logEvent.createMany({ data: batch });
-          }
+            const batchSize = 500;
+            for (let i = 0; i < events.length; i += batchSize) {
+              const batch = events.slice(i, i + batchSize);
+              if (batch.length === 0) continue;
+              await tx.logEvent.createMany({ data: batch });
+            }
 
-          // Generate event statistics
-          const statsMap = new Map<string, { eventName: string; level: number; count: number }>();
-          for (const event of events) {
-            const key = `${event.eventName}:${event.level}`;
-            const existing = statsMap.get(key);
-            if (existing) {
-              existing.count++;
-            } else {
-              statsMap.set(key, {
-                eventName: event.eventName,
-                level: event.level,
-                count: 1,
+            // Generate event statistics
+            const statsMap = new Map<
+              string,
+              { eventName: string; level: number; count: number }
+            >();
+            for (const event of events) {
+              const key = `${event.eventName}:${event.level}`;
+              const existing = statsMap.get(key);
+              if (existing) {
+                existing.count++;
+              } else {
+                statsMap.set(key, {
+                  eventName: event.eventName,
+                  level: event.level,
+                  count: 1,
+                });
+              }
+            }
+
+            // Insert statistics
+            if (statsMap.size > 0) {
+              await tx.logEventStats.createMany({
+                data: Array.from(statsMap.values()).map((s) => ({
+                  projectId: logFile.projectId,
+                  logFileId: logFile.id,
+                  eventName: s.eventName,
+                  level: s.level,
+                  count: s.count,
+                })),
               });
             }
-          }
 
-          // Insert statistics
-          if (statsMap.size > 0) {
-            await tx.logEventStats.createMany({
-              data: Array.from(statsMap.values()).map((s) => ({
-                projectId: logFile.projectId,
-                logFileId: logFile.id,
-                eventName: s.eventName,
-                level: s.level,
-                count: s.count,
-              })),
+            await tx.logFile.update({
+              where: { id: logFile.id },
+              data: {
+                status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
+                parserVersion: 'v3',
+              },
             });
-          }
-
-          await tx.logFile.update({
-            where: { id: logFile.id },
-            data: {
-              status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
-              parserVersion: 'v3',
-            },
-          });
           },
           { timeout: 60000 }, // 60 seconds for large files
         );
@@ -523,8 +587,12 @@ export class LogsParserService {
       });
 
       // Trigger automated analysis after successful parsing
-      if (!hadError && this.analyzer) {
-        void this.analyzer.analyzeLogFile(logFile.id);
+      if (analyze && !hadError && this.analyzer) {
+        try {
+          await this.analyzer.analyzeLogFile(logFile.id);
+        } catch {
+          // Analyzer errors are persisted as AnalysisStatus.failed; keep parsing result intact.
+        }
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

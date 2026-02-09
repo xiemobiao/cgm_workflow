@@ -8,44 +8,66 @@ describe('buildBackendQualityReport', () => {
           timestampMs: 1000,
           eventName: 'network_request_start',
           requestId: 'r1',
-          msgJson: { requestId: 'r1', url: 'https://api.example.com/v1/a?sn=SN1', method: 'GET' },
+          msgJson: {
+            requestId: 'r1',
+            url: 'https://api.example.com/v1/a?sn=SN1',
+            method: 'GET',
+          },
         },
         {
           timestampMs: 1100,
           eventName: 'network_request_success',
           requestId: 'r1',
-          msgJson: { requestId: 'r1', url: 'https://api.example.com/v1/a?sn=SN1', method: 'GET', statusCode: 200, tookMs: 100 },
+          msgJson: {
+            requestId: 'r1',
+            url: 'https://api.example.com/v1/a?sn=SN1',
+            method: 'GET',
+            statusCode: 200,
+            tookMs: 100,
+          },
         },
         {
           timestampMs: 2000,
           eventName: 'network_request_start',
           requestId: 'r2',
-          msgJson: { requestId: 'r2', url: 'https://api.example.com/v1/b', method: 'POST' },
+          msgJson: {
+            requestId: 'r2',
+            url: 'https://api.example.com/v1/b',
+            method: 'POST',
+          },
         },
         {
           timestampMs: 2100,
           eventName: 'network_request_failed',
           requestId: 'r2',
-          msgJson: { requestId: 'r2', url: 'https://api.example.com/v1/b', method: 'POST', statusCode: 500, tookMs: 100 },
+          msgJson: {
+            requestId: 'r2',
+            url: 'https://api.example.com/v1/b',
+            method: 'POST',
+            statusCode: 500,
+            tookMs: 100,
+          },
         },
         {
           timestampMs: 3000,
           eventName: 'network_request_start',
           requestId: 'r3',
-          msgJson: { requestId: 'r3', url: 'https://api.example.com/v1/c', method: 'GET' },
+          msgJson: {
+            requestId: 'r3',
+            url: 'https://api.example.com/v1/c',
+            method: 'GET',
+          },
         },
       ],
       mqttEvents: [],
     });
 
-    expect(report.summary.http).toEqual({
-      total: 3,
-      success: 1,
-      failed: 1,
-      missingEnd: 1,
-      tookMsAvg: expect.any(Number),
-      tookMsP95: expect.any(Number),
-    });
+    expect(report.summary.http.total).toBe(3);
+    expect(report.summary.http.success).toBe(1);
+    expect(report.summary.http.failed).toBe(1);
+    expect(report.summary.http.missingEnd).toBe(1);
+    expect(report.summary.http.tookMsAvg).toEqual(expect.any(Number));
+    expect(report.summary.http.tookMsP95).toEqual(expect.any(Number));
 
     expect(report.http.failedRequests[0]?.requestId).toBe('r2');
     expect(report.http.missingEndRequests[0]?.requestId).toBe('r3');
@@ -115,9 +137,14 @@ describe('buildBackendQualityReport', () => {
     expect(report.summary.mqtt.issuesMissingDeviceSn).toBe(0);
 
     expect(report.mqtt.ackTimeouts[0]?.deviceSn).toBe('SN-A');
-    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout).toBe(1);
+    expect(
+      report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout,
+    ).toBe(1);
     expect(report.mqtt.publishFailures[0]?.deviceSn).toBe('SN-B');
-    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')?.publishFailed).toBe(1);
+    expect(
+      report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')
+        ?.publishFailed,
+    ).toBe(1);
   });
 
   it('classifies MQTT events by structured stage/op/result fields', () => {
@@ -195,9 +222,13 @@ describe('buildBackendQualityReport', () => {
     expect(report.summary.mqtt.ackTimeout).toBe(1);
     expect(report.summary.mqtt.publishFailed).toBe(1);
 
-    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout).toBe(1);
-    expect(report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')?.publishFailed).toBe(1);
+    expect(
+      report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-A')?.ackTimeout,
+    ).toBe(1);
+    expect(
+      report.mqtt.issuesByDevice.find((d) => d.deviceSn === 'SN-B')
+        ?.publishFailed,
+    ).toBe(1);
     expect(report.mqtt.publishFailures[0]?.topic).toBe('data/SN-B');
   });
-
 });

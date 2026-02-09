@@ -8,6 +8,7 @@ import { LogsParserService } from './logs.parser.service';
 import { LogsService } from './logs.service';
 import { LogsAnalyzerService } from './logs-analyzer.service';
 import { EventFlowAnalyzerService } from './event-flow-analyzer.service';
+import { LogProcessingService } from './log-processing.service';
 // Refactored services
 import {
   LogsHelperService,
@@ -24,6 +25,7 @@ import {
     // Original service (facade for backward compatibility)
     LogsService,
     LogsParserService,
+    LogProcessingService,
     LoganDecryptService,
     BluetoothService,
     LogsAnalyzerService,
@@ -38,6 +40,7 @@ import {
   exports: [
     LogsService,
     LogsParserService,
+    LogProcessingService,
     BluetoothService,
     LogsAnalyzerService,
     EventFlowAnalyzerService,
@@ -49,4 +52,4 @@ import {
     LogsStatsService,
   ],
 })
-export class LogsModule { }
+export class LogsModule {}

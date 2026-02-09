@@ -69,7 +69,7 @@ type SessionDetail = {
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return '-';
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
 }
@@ -157,29 +157,33 @@ export default function SessionDetailPage() {
     if (!projectId || !linkCode) return;
 
     let cancelled = false;
-    setLoading(true);
-    setError('');
+    const id = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError('');
 
-    const qs = new URLSearchParams({ projectId });
-    if (logFileId) qs.set('logFileId', logFileId);
+      const qs = new URLSearchParams({ projectId });
+      if (logFileId) qs.set('logFileId', logFileId);
 
-    apiFetch<SessionDetail>(`/api/logs/bluetooth/session/${encodeURIComponent(linkCode)}?${qs.toString()}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDetail(data);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setError(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
+      apiFetch<SessionDetail>(`/api/logs/bluetooth/session/${encodeURIComponent(linkCode)}?${qs.toString()}`)
+        .then((data) => {
+          if (cancelled) return;
+          setDetail(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setLoading(false);
+        });
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(id);
     };
   }, [projectId, linkCode, logFileId]);
 

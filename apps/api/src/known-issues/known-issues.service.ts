@@ -8,7 +8,7 @@ export class KnownIssuesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-  ) { }
+  ) {}
 
   // Create a known issue
   async create(params: {
@@ -74,7 +74,11 @@ export class KnownIssuesService {
 
     const items = await this.prisma.knownIssue.findMany({
       where,
-      orderBy: [{ hitCount: 'desc' }, { severity: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [
+        { hitCount: 'desc' },
+        { severity: 'desc' },
+        { createdAt: 'desc' },
+      ],
       take: limit + 1,
       include: {
         creator: {
@@ -145,7 +149,8 @@ export class KnownIssuesService {
     if (params.category !== undefined) data.category = params.category;
     if (params.severity !== undefined) data.severity = params.severity;
     if (params.errorCode !== undefined) data.errorCode = params.errorCode;
-    if (params.eventPattern !== undefined) data.eventPattern = params.eventPattern;
+    if (params.eventPattern !== undefined)
+      data.eventPattern = params.eventPattern;
     if (params.msgPattern !== undefined) data.msgPattern = params.msgPattern;
     if (params.isActive !== undefined) data.isActive = params.isActive;
 
@@ -156,11 +161,7 @@ export class KnownIssuesService {
   }
 
   // Delete known issue
-  async delete(params: {
-    actorUserId: string;
-    projectId: string;
-    id: string;
-  }) {
+  async delete(params: { actorUserId: string; projectId: string; id: string }) {
     await this.rbac.requireProjectRoles({
       userId: params.actorUserId,
       projectId: params.projectId,
@@ -197,14 +198,18 @@ export class KnownIssuesService {
     });
 
     const matches: Array<{
-      issue: typeof issues[0];
+      issue: (typeof issues)[0];
       matchType: 'errorCode' | 'eventPattern' | 'msgPattern';
       confidence: number;
     }> = [];
 
     for (const issue of issues) {
       // Match by error code (exact match)
-      if (issue.errorCode && params.errorCode && issue.errorCode === params.errorCode) {
+      if (
+        issue.errorCode &&
+        params.errorCode &&
+        issue.errorCode === params.errorCode
+      ) {
         matches.push({
           issue,
           matchType: 'errorCode',
@@ -326,7 +331,11 @@ export class KnownIssuesService {
 
       for (const issue of issues) {
         // Match by error code
-        if (issue.errorCode && event.errorCode && issue.errorCode === event.errorCode) {
+        if (
+          issue.errorCode &&
+          event.errorCode &&
+          issue.errorCode === event.errorCode
+        ) {
           eventMatches.push({
             issueId: issue.id,
             title: issue.title,
@@ -438,18 +447,24 @@ export class KnownIssuesService {
     };
 
     switch (params.reportType) {
-      case ReportType.session_analysis:
+      case ReportType.session_analysis: {
         if (!params.linkCode) {
           throw new Error('linkCode is required for session_analysis report');
         }
-        const sessionReport = await this.generateSessionReport(params.projectId, params.linkCode);
+        const sessionReport = await this.generateSessionReport(
+          params.projectId,
+          params.linkCode,
+        );
         content = sessionReport.content;
         summary = sessionReport.summary;
         break;
+      }
 
-      case ReportType.error_distribution:
+      case ReportType.error_distribution: {
         if (!params.startTime || !params.endTime) {
-          throw new Error('startTime and endTime are required for error_distribution report');
+          throw new Error(
+            'startTime and endTime are required for error_distribution report',
+          );
         }
         const errorReport = await this.generateErrorReport(
           params.projectId,
@@ -460,12 +475,16 @@ export class KnownIssuesService {
         content = errorReport.content;
         summary = errorReport.summary;
         break;
+      }
 
       default:
-        throw new Error(`Report type ${params.reportType} is not yet implemented`);
+        throw new Error(
+          `Report type ${params.reportType} is not yet implemented`,
+        );
     }
 
-    const title = params.title ?? `${params.reportType} - ${new Date().toISOString()}`;
+    const title =
+      params.title ?? `${params.reportType} - ${new Date().toISOString()}`;
 
     const report = await this.prisma.analysisReport.create({
       data: {
@@ -506,32 +525,44 @@ export class KnownIssuesService {
     });
 
     const errorEvents = events.filter((e) => e.level >= 4);
-    const requestIds = new Set(events.filter((e) => e.requestId).map((e) => e.requestId));
+    const requestIds = new Set(
+      events.filter((e) => e.requestId).map((e) => e.requestId),
+    );
 
     const content = {
       session: session
         ? {
-          id: session.id,
-          projectId: session.projectId,
-          linkCode: session.linkCode,
-          deviceMac: session.deviceMac,
-          startTimeMs: Number(session.startTimeMs),
-          endTimeMs: session.endTimeMs ? Number(session.endTimeMs) : null,
-          durationMs: session.durationMs,
-          status: session.status,
-          eventCount: session.eventCount,
-          errorCount: session.errorCount,
-          commandCount: session.commandCount,
-          scanStartMs: session.scanStartMs ? Number(session.scanStartMs) : null,
-          pairStartMs: session.pairStartMs ? Number(session.pairStartMs) : null,
-          connectStartMs: session.connectStartMs ? Number(session.connectStartMs) : null,
-          connectedMs: session.connectedMs ? Number(session.connectedMs) : null,
-          disconnectMs: session.disconnectMs ? Number(session.disconnectMs) : null,
-          sdkVersion: session.sdkVersion,
-          appId: session.appId,
-          terminalInfo: session.terminalInfo,
-          createdAt: session.createdAt.toISOString(),
-        }
+            id: session.id,
+            projectId: session.projectId,
+            linkCode: session.linkCode,
+            deviceMac: session.deviceMac,
+            startTimeMs: Number(session.startTimeMs),
+            endTimeMs: session.endTimeMs ? Number(session.endTimeMs) : null,
+            durationMs: session.durationMs,
+            status: session.status,
+            eventCount: session.eventCount,
+            errorCount: session.errorCount,
+            commandCount: session.commandCount,
+            scanStartMs: session.scanStartMs
+              ? Number(session.scanStartMs)
+              : null,
+            pairStartMs: session.pairStartMs
+              ? Number(session.pairStartMs)
+              : null,
+            connectStartMs: session.connectStartMs
+              ? Number(session.connectStartMs)
+              : null,
+            connectedMs: session.connectedMs
+              ? Number(session.connectedMs)
+              : null,
+            disconnectMs: session.disconnectMs
+              ? Number(session.disconnectMs)
+              : null,
+            sdkVersion: session.sdkVersion,
+            appId: session.appId,
+            terminalInfo: session.terminalInfo,
+            createdAt: session.createdAt.toISOString(),
+          }
         : null,
       eventCount: events.length,
       errorCount: errorEvents.length,
@@ -603,7 +634,10 @@ export class KnownIssuesService {
     // Group by event name
     const byEventName = new Map<string, number>();
     for (const event of events) {
-      byEventName.set(event.eventName, (byEventName.get(event.eventName) ?? 0) + 1);
+      byEventName.set(
+        event.eventName,
+        (byEventName.get(event.eventName) ?? 0) + 1,
+      );
     }
 
     // Group by level
@@ -612,8 +646,12 @@ export class KnownIssuesService {
       byLevel.set(event.level, (byLevel.get(event.level) ?? 0) + 1);
     }
 
-    const affectedSessions = new Set(events.filter((e) => e.linkCode).map((e) => e.linkCode));
-    const affectedDevices = new Set(events.filter((e) => e.deviceMac).map((e) => e.deviceMac));
+    const affectedSessions = new Set(
+      events.filter((e) => e.linkCode).map((e) => e.linkCode),
+    );
+    const affectedDevices = new Set(
+      events.filter((e) => e.deviceMac).map((e) => e.deviceMac),
+    );
 
     const content = {
       totalErrors: events.length,
@@ -638,7 +676,9 @@ export class KnownIssuesService {
       })),
     };
 
-    const topError = Array.from(byErrorCode.entries()).sort((a, b) => b[1] - a[1])[0];
+    const topError = Array.from(byErrorCode.entries()).sort(
+      (a, b) => b[1] - a[1],
+    )[0];
     const summary = `Error Distribution Report: ${events.length} total errors. Top error: ${topError?.[0] ?? 'N/A'} (${topError?.[1] ?? 0} occurrences). Affected ${affectedSessions.size} sessions and ${affectedDevices.size} devices.`;
 
     return { content, summary };
@@ -731,8 +771,18 @@ export class KnownIssuesService {
   async compareSessions(params: {
     actorUserId: string;
     projectId: string;
-    sessionA: { linkCode?: string; deviceMac?: string; startTime?: string; endTime?: string };
-    sessionB: { linkCode?: string; deviceMac?: string; startTime?: string; endTime?: string };
+    sessionA: {
+      linkCode?: string;
+      deviceMac?: string;
+      startTime?: string;
+      endTime?: string;
+    };
+    sessionB: {
+      linkCode?: string;
+      deviceMac?: string;
+      startTime?: string;
+      endTime?: string;
+    };
   }) {
     await this.rbac.requireProjectRoles({
       userId: params.actorUserId,
@@ -842,7 +892,12 @@ export class KnownIssuesService {
 
   private async getEventsForComparison(
     projectId: string,
-    session: { linkCode?: string; deviceMac?: string; startTime?: string; endTime?: string },
+    session: {
+      linkCode?: string;
+      deviceMac?: string;
+      startTime?: string;
+      endTime?: string;
+    },
   ) {
     const where: Prisma.LogEventWhereInput = { projectId };
 

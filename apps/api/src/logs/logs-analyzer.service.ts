@@ -4,7 +4,7 @@ import { BluetoothService } from './bluetooth.service';
 import { KnownIssuesService } from '../known-issues/known-issues.service';
 import { LogsService } from './logs.service';
 import { EventFlowAnalyzerService } from './event-flow-analyzer.service';
-import { AnalysisStatus } from '@prisma/client';
+import { AnalysisStatus, Prisma } from '@prisma/client';
 
 type AnomalyDetectionResult = {
   type: string;
@@ -32,6 +32,23 @@ type KnownIssueMatch = {
   confidence: number;
   eventIds: string[];
 };
+
+type QuickMetrics = {
+  totalEvents: number;
+  errorEvents: number;
+  warningEvents: number;
+  sessionCount: number;
+  deviceCount: number;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null;
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
 
 @Injectable()
 export class LogsAnalyzerService {
@@ -92,7 +109,7 @@ export class LogsAnalyzerService {
         this.analyzeBackendQuality(logFileId),
         this.detectAnomalies(logFileId, logFile.projectId),
         this.matchKnownIssues(logFileId, logFile.projectId),
-        this.calculateMetrics(logFileId, logFile.projectId),
+        this.calculateMetrics(logFileId),
         this.eventFlowAnalyzerService.analyzeMainFlow(logFileId),
         this.eventFlowAnalyzerService.analyzeEventCoverage(logFileId),
       ]);
@@ -110,12 +127,15 @@ export class LogsAnalyzerService {
         data: {
           status: AnalysisStatus.completed,
           qualityScore,
-          bleQuality: bleQuality as any,
-          backendQuality: backendQuality as any,
-          anomalies: anomalies as any,
-          knownIssueMatches: knownIssueMatches as any,
-          mainFlowAnalysis: mainFlowAnalysis as any,
-          eventCoverageAnalysis: eventCoverageAnalysis as any,
+          bleQuality: bleQuality as Prisma.InputJsonValue,
+          backendQuality: backendQuality as Prisma.InputJsonValue,
+          anomalies: anomalies as unknown as Prisma.InputJsonValue,
+          knownIssueMatches:
+            knownIssueMatches as unknown as Prisma.InputJsonValue,
+          mainFlowAnalysis:
+            mainFlowAnalysis as unknown as Prisma.InputJsonValue,
+          eventCoverageAnalysis:
+            eventCoverageAnalysis as unknown as Prisma.InputJsonValue,
           totalEvents: metrics.totalEvents,
           errorEvents: metrics.errorEvents,
           warningEvents: metrics.warningEvents,
@@ -135,18 +155,16 @@ export class LogsAnalyzerService {
         where: { logFileId },
         create: {
           logFileId,
-          projectId: (
-            await this.prisma.logFile.findUnique({ where: { id: logFileId } })
-          )!.projectId,
+          projectId: (await this.prisma.logFile.findUnique({
+            where: { id: logFileId },
+          }))!.projectId,
           qualityScore: 0,
           status: AnalysisStatus.failed,
-          errorMessage:
-            error instanceof Error ? error.message : String(error),
+          errorMessage: error instanceof Error ? error.message : String(error),
         },
         update: {
           status: AnalysisStatus.failed,
-          errorMessage:
-            error instanceof Error ? error.message : String(error),
+          errorMessage: error instanceof Error ? error.message : String(error),
         },
       });
     }
@@ -155,7 +173,7 @@ export class LogsAnalyzerService {
   /**
    * Analyze BLE log quality (uses existing report)
    */
-  private async analyzeBleQuality(logFileId: string): Promise<any> {
+  private async analyzeBleQuality(logFileId: string): Promise<unknown> {
     try {
       const logFile = await this.prisma.logFile.findUnique({
         where: { id: logFileId },
@@ -179,7 +197,7 @@ export class LogsAnalyzerService {
   /**
    * Analyze backend quality (HTTP, MQTT)
    */
-  private async analyzeBackendQuality(logFileId: string): Promise<any> {
+  private async analyzeBackendQuality(logFileId: string): Promise<unknown> {
     try {
       const logFile = await this.prisma.logFile.findUnique({
         where: { id: logFileId },
@@ -316,8 +334,7 @@ export class LogsAnalyzerService {
 
       // Sort by severity (descending) and confidence (descending)
       return matches.sort(
-        (a, b) =>
-          b.severity - a.severity || b.confidence - a.confidence,
+        (a, b) => b.severity - a.severity || b.confidence - a.confidence,
       );
     } catch (error) {
       this.logger.warn(`Known issue matching failed: ${error}`);
@@ -328,7 +345,7 @@ export class LogsAnalyzerService {
   /**
    * Calculate quick metrics
    */
-  private async calculateMetrics(logFileId: string, projectId: string) {
+  private async calculateMetrics(logFileId: string): Promise<QuickMetrics> {
     const [totalEvents, errorEvents, warningEvents, sessionCount, deviceCount] =
       await Promise.all([
         this.prisma.logEvent.count({ where: { logFileId } }),
@@ -370,15 +387,9 @@ export class LogsAnalyzerService {
    * Compute overall quality score (0-100)
    */
   private computeQualityScore(params: {
-    bleQuality: any;
-    backendQuality: any;
-    metrics: {
-      totalEvents: number;
-      errorEvents: number;
-      warningEvents: number;
-      sessionCount: number;
-      deviceCount: number;
-    };
+    bleQuality: unknown;
+    backendQuality: unknown;
+    metrics: QuickMetrics;
   }): number {
     const { bleQuality, backendQuality, metrics } = params;
 
@@ -386,19 +397,26 @@ export class LogsAnalyzerService {
 
     // BLE quality deduction (max -40 points)
     if (bleQuality) {
-      const coverageRatio = bleQuality.summary?.coverageRatio ?? 1;
+      const ble = asRecord(bleQuality);
+      const bleSummary = ble ? asRecord(ble.summary) : null;
+      const coverageRatio = bleSummary
+        ? (asNumber(bleSummary.coverageRatio) ?? 1)
+        : 1;
       score -= Math.round((1 - coverageRatio) * 40);
 
-      // Deduct for parser errors
-      if (bleQuality.parser?.parserErrorCount > 0) {
-        score -= Math.min(10, bleQuality.parser.parserErrorCount);
+      const parser = ble ? asRecord(ble.parser) : null;
+      const parserErrorCount = parser
+        ? (asNumber(parser.parserErrorCount) ?? 0)
+        : 0;
+      if (parserErrorCount > 0) {
+        score -= Math.min(10, parserErrorCount);
       }
 
-      // Deduct for Logan decrypt failures
-      if (bleQuality.parser?.logan) {
-        const loganFailRate =
-          bleQuality.parser.logan.blocksFailed /
-          Math.max(1, bleQuality.parser.logan.blocksTotal);
+      const logan = parser ? asRecord(parser.logan) : null;
+      const blocksFailed = logan ? (asNumber(logan.blocksFailed) ?? 0) : 0;
+      const blocksTotal = logan ? (asNumber(logan.blocksTotal) ?? 0) : 0;
+      if (blocksTotal > 0 && blocksFailed > 0) {
+        const loganFailRate = blocksFailed / Math.max(1, blocksTotal);
         score -= Math.round(loganFailRate * 10);
       }
     }
@@ -406,19 +424,24 @@ export class LogsAnalyzerService {
     // Backend quality deduction (max -20 points)
     if (backendQuality) {
       // Use summary.http instead of http directly
-      const httpSummary = backendQuality.summary?.http;
+      const backend = asRecord(backendQuality);
+      const backendSummary = backend ? asRecord(backend.summary) : null;
+      const httpSummary = backendSummary ? asRecord(backendSummary.http) : null;
       if (httpSummary) {
-        const httpSuccessRate =
-          httpSummary.total > 0
-            ? (httpSummary.success / httpSummary.total) * 100
-            : 100;
+        const total = asNumber(httpSummary.total) ?? 0;
+        const success = asNumber(httpSummary.success) ?? 0;
+        const httpSuccessRate = total > 0 ? (success / total) * 100 : 100;
         const httpFailRate = 1 - httpSuccessRate / 100;
         score -= Math.round(httpFailRate * 10);
       }
 
       // Use mqtt.issuesByDevice instead of mqtt.issues
-      const mqttIssues = backendQuality.mqtt?.issuesByDevice ?? [];
-      score -= Math.min(10, mqttIssues.length);
+      const mqtt = backend ? asRecord(backend.mqtt) : null;
+      const issuesByDevice = mqtt ? mqtt.issuesByDevice : null;
+      const mqttIssuesCount = Array.isArray(issuesByDevice)
+        ? issuesByDevice.length
+        : 0;
+      score -= Math.min(10, mqttIssuesCount);
     }
 
     // Error rate deduction (max -40 points)

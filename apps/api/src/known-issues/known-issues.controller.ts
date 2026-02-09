@@ -58,14 +58,17 @@ const matchEventSchema = z.object({
 
 const matchBatchSchema = z.object({
   projectId: z.string().uuid(),
-  events: z.array(
-    z.object({
-      id: z.string(),
-      eventName: z.string().min(1),
-      errorCode: z.string().optional(),
-      msg: z.string().optional(),
-    }),
-  ).min(1).max(100),
+  events: z
+    .array(
+      z.object({
+        id: z.string(),
+        eventName: z.string().min(1),
+        errorCode: z.string().optional(),
+        msg: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(100),
 });
 
 const generateReportSchema = z.object({
@@ -112,10 +115,7 @@ export class KnownIssuesController {
   constructor(private readonly service: KnownIssuesService) {}
 
   @Post()
-  async create(
-    @CurrentUser() user: CurrentUserPayload,
-    @Body() body: unknown,
-  ) {
+  async create(@CurrentUser() user: CurrentUserPayload, @Body() body: unknown) {
     const dto = createIssueSchema.parse(body);
     return this.service.create({
       actorUserId: user.userId,
@@ -124,10 +124,7 @@ export class KnownIssuesController {
   }
 
   @Get()
-  async list(
-    @CurrentUser() user: CurrentUserPayload,
-    @Query() query: unknown,
-  ) {
+  async list(@CurrentUser() user: CurrentUserPayload, @Query() query: unknown) {
     const dto = listIssuesSchema.parse(query);
     return this.service.list({
       actorUserId: user.userId,
@@ -237,10 +234,7 @@ export class ReportsController {
   }
 
   @Get()
-  async list(
-    @CurrentUser() user: CurrentUserPayload,
-    @Query() query: unknown,
-  ) {
+  async list(@CurrentUser() user: CurrentUserPayload, @Query() query: unknown) {
     const dto = listReportsSchema.parse(query);
     return this.service.listReports({
       actorUserId: user.userId,

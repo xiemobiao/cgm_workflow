@@ -27,6 +27,65 @@ services:
     volumes:
       - cgm_workflow_minio:/data
 
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      WEB_BASE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://cgm_user:cgm_pass@postgres:5432/cgm_workflow
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: minio
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+      MINIO_BUCKET: cgm-logs
+      JWT_SECRET: ${JWT_SECRET:-replace_with_strong_secret}
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+      - redis
+      - minio
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/worker"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://cgm_user:cgm_pass@postgres:5432/cgm_workflow
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: minio
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+      MINIO_BUCKET: cgm-logs
+      JWT_SECRET: ${JWT_SECRET:-replace_with_strong_secret}
+      LOG_PROCESSING_CONCURRENCY: ${LOG_PROCESSING_CONCURRENCY:-2}
+    depends_on:
+      - postgres
+      - redis
+      - minio
+
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
 volumes:
   cgm_workflow_pgdata:
   cgm_workflow_minio:

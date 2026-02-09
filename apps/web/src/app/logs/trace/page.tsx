@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle, Tag } from 'lucide-react';
+import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle, Tag, Fingerprint } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +36,7 @@ type TraceItem = {
 type TraceResponse = {
   linkCode?: string;
   requestId?: string;
+  attemptId?: string;
   deviceMac?: string;
   deviceSn?: string;
   count: number;
@@ -142,6 +143,7 @@ function getLevelConfig(level: number): { label: string; color: string; bgClass:
 const traceTypeOptions = [
   { value: 'linkCode', label: 'Link Code', icon: Link2, placeholder: 'e.g. abc123' },
   { value: 'requestId', label: 'Request ID', icon: Hash, placeholder: 'e.g. req-001' },
+  { value: 'attemptId', label: 'Attempt ID', icon: Fingerprint, placeholder: 'e.g. 123e4567-e89b-12d3-a456-426614174000' },
   { value: 'deviceMac', label: 'Device MAC', icon: Bluetooth, placeholder: 'e.g. AA:BB:CC:DD:EE:FF' },
   { value: 'deviceSn', label: 'Device SN', icon: Tag, placeholder: 'e.g. SN12345678' },
 ] as const;
@@ -151,7 +153,7 @@ export default function TracePage() {
   const searchParams = useSearchParams();
   const lastProjectIdRef = useRef<string | null>(null);
   const [projectId, setProjectId] = useState('');
-  const [traceType, setTraceType] = useState<'linkCode' | 'requestId' | 'deviceMac' | 'deviceSn'>('linkCode');
+  const [traceType, setTraceType] = useState<'linkCode' | 'requestId' | 'attemptId' | 'deviceMac' | 'deviceSn'>('linkCode');
   const [traceValue, setTraceValue] = useState('');
   const [logFileId, setLogFileId] = useState('');
   const [startLocal, setStartLocal] = useState('');
@@ -171,7 +173,7 @@ export default function TracePage() {
       setProjectId(qpProjectId?.trim() || (getProjectId() ?? ''));
 
       const qpType = searchParams.get('type');
-      if (qpType === 'linkCode' || qpType === 'requestId' || qpType === 'deviceMac' || qpType === 'deviceSn') {
+      if (qpType === 'linkCode' || qpType === 'requestId' || qpType === 'attemptId' || qpType === 'deviceMac' || qpType === 'deviceSn') {
         setTraceType(qpType);
       }
 
@@ -248,6 +250,8 @@ export default function TracePage() {
         url = `/api/logs/trace/link-code/${encodeURIComponent(traceValue.trim())}`;
       } else if (traceType === 'requestId') {
         url = `/api/logs/trace/request-id/${encodeURIComponent(traceValue.trim())}`;
+      } else if (traceType === 'attemptId') {
+        url = `/api/logs/trace/attempt/${encodeURIComponent(traceValue.trim())}`;
       } else if (traceType === 'deviceMac') {
         url = `/api/logs/trace/device/${encodeURIComponent(traceValue.trim())}`;
         if (startLocal && endLocal) {

@@ -48,16 +48,17 @@ The `c` field is a JSON-encoded string. After parsing, it has these keys:
 - `appInfo` (string, optional): app id if provided during init
 
 Notes:
-- `msg` is not always an object. It may be a string/number if caller passes
-  a single `data` field.
+- Current SDK writes `msg` as a JSON object (at least `{}`).
+- Older SDK versions may still emit primitive `msg` (string/number); treat it
+  as an opaque JSON blob and rely on best-effort field extraction.
 - `appInfo` is optional and may be absent in SDK-only usage.
 - Source (BLE/APP/SYS) is not written into JSON; derive it from event mapping
   if needed.
 
 ## Log Level Mapping
 `f` maps to levels defined by LogEvent:
-- `1` = INFO
-- `2` = DEBUG
+- `1` = DEBUG
+- `2` = INFO
 - `3` = WARN
 - `4` = ERROR
 
@@ -65,6 +66,10 @@ Notes:
 **Step 1: parse outer JSON** to get `c`, `f`, `l`, `n`, `i`, `m`.
 **Step 2: parse inner JSON** from `c` into `event`, `msg`, `sdkInfo`,
 `terminalInfo`, `appInfo`.
+
+Parser should also skip Logan header lines (not real events), typically:
+- `c == "clogan header"` (or `n == "clogan"`)
+- `c == "Logan header"` (or `n == "Logan"`)
 
 Pseudocode (high level):
 
@@ -89,6 +94,15 @@ Recommended normalized fields for the web platform:
 - `msg_json` (json) from `msg`
 - `source` (enum, optional) derived by event mapping
 - `raw_line` (string) optional for debugging
+
+Recommended tracking fields (extracted, optional):
+- `linkCode` (string): connection session identifier
+- `requestId` (string): request identifier for command/publish/ack chain (MQTT can reuse msgId)
+- `attemptId` (string): per-connect-attempt identifier (preferred end-to-end trace key)
+- `deviceMac` (string): device MAC address
+- `deviceSn` (string): device SN / serial number
+- `errorCode` (string): stable error code for aggregation
+- `stage` / `op` / `result` (string): stage-aware flow fields (e.g. `ble/connect/start`)
 
 ## Storage Schema Draft
 ### Table: log_file
@@ -115,6 +129,15 @@ Recommended normalized fields for the web platform:
 - `is_main_thread` (bool)
 - `msg_json` (json)
 - `raw_line` (string, optional)
+- `link_code` (string, nullable)
+- `request_id` (string, nullable)
+- `attempt_id` (string, nullable)
+- `device_mac` (string, nullable)
+- `device_sn` (string, nullable)
+- `error_code` (string, nullable)
+- `stage` (string, nullable)
+- `op` (string, nullable)
+- `result` (string, nullable)
 - `created_at` (timestamp)
 
 ### Table: incident (minimal for diagnosis)
@@ -136,6 +159,12 @@ Recommended normalized fields for the web platform:
 - `log_event(app_id, timestamp_ms)`
 - `log_event(sdk_version, event_name)`
 - `log_event(log_file_id)`
+- `log_event(project_id, attempt_id)`
+- `log_event(link_code, timestamp_ms)`
+- `log_event(request_id, timestamp_ms)`
+- `log_event(device_mac, timestamp_ms)`
+- `log_event(device_sn, timestamp_ms)`
+- `log_event(error_code)`
 
 ## Caveats and Quality Checks
 - If inner JSON parsing fails, keep `raw_line` and mark status `failed`.

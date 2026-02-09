@@ -45,6 +45,7 @@ type SearchItem = {
   msg: string | null;
   linkCode: string | null;
   requestId: string | null;
+  attemptId: string | null;
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
@@ -85,11 +86,14 @@ type LogEventDetail = {
   rawLine: string | null;
   linkCode: string | null;
   requestId: string | null;
+  attemptId: string | null;
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
   createdAt: string;
 };
+
+const MAX_RESULTS_PER_PAGE = 200;
 
 function toIsoFromDatetimeLocal(value: string) {
   const d = new Date(value);
@@ -218,6 +222,7 @@ export default function LogsPage() {
   }, []);
 
   const canSearch = useMemo(() => Boolean(projectId), [projectId]);
+  const enableRowAnimations = results.length <= MAX_RESULTS_PER_PAGE;
 
   useEffect(() => {
     if (!projectId) return;
@@ -278,7 +283,7 @@ export default function LogsPage() {
   useEffect(() => {
     const saved = localStorage.getItem('cgm_logs_limit');
     const n = saved ? Number(saved) : NaN;
-    if (Number.isFinite(n) && n >= 1 && n <= 1000) {
+    if (Number.isFinite(n) && n >= 1 && n <= MAX_RESULTS_PER_PAGE) {
       setLimit(Math.trunc(n));
     }
   }, []);
@@ -745,12 +750,14 @@ export default function LogsPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={1000}
+                  max={MAX_RESULTS_PER_PAGE}
                   value={limit}
                   onChange={(e) => {
                     const n = e.currentTarget.valueAsNumber;
                     if (!Number.isFinite(n)) return;
-                    setLimit(Math.min(Math.max(Math.trunc(n), 1), 1000));
+                    setLimit(
+                      Math.min(Math.max(Math.trunc(n), 1), MAX_RESULTS_PER_PAGE),
+                    );
                   }}
                   className="h-9"
                 />
@@ -993,14 +1000,14 @@ export default function LogsPage() {
                         )}
                       </td>
                     </tr>
-                  ) : (
+                  ) : enableRowAnimations ? (
                     <AnimatePresence>
-                      {results.map((e, i) => (
+                      {results.map((e) => (
                         <motion.tr
                           key={e.id}
-                          initial={{ opacity: 0, y: 10 }}
+                          initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.02 }}
+                          transition={{ duration: 0.12 }}
                           className="border-b border-border/30 hover:bg-primary/5 cursor-pointer transition-colors"
                           onClick={() => setSelectedEventId(e.id)}
                         >
@@ -1017,32 +1024,53 @@ export default function LogsPage() {
                                   {t('logs.parserError')}
                                 </Badge>
                               )}
-                              <span className="font-medium">{renderHighlighted(e.eventName, keyword)}</span>
+                              <span className="font-medium">
+                                {renderHighlighted(e.eventName, keyword)}
+                              </span>
                             </div>
-                            {(e.linkCode || e.requestId || e.deviceMac || e.deviceSn || e.errorCode) && (
+                            {(e.linkCode ||
+                              e.requestId ||
+                              e.deviceMac ||
+                              e.deviceSn ||
+                              e.errorCode) && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {e.linkCode && (
-                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
                                     LC:{e.linkCode}
                                   </Badge>
                                 )}
                                 {e.requestId && (
-                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
                                     RID:{e.requestId}
                                   </Badge>
                                 )}
                                 {e.deviceMac && (
-                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
                                     MAC:{e.deviceMac}
                                   </Badge>
                                 )}
                                 {e.deviceSn && (
-                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
                                     SN:{e.deviceSn}
                                   </Badge>
                                 )}
                                 {e.errorCode && (
-                                  <Badge variant="outline" className="text-[10px] font-mono">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
                                     ERR:{e.errorCode}
                                   </Badge>
                                 )}
@@ -1055,11 +1083,104 @@ export default function LogsPage() {
                             )}
                           </td>
                           <td className="p-3">{getLevelBadge(e.level)}</td>
-                          <td className="p-3 text-sm text-muted-foreground">{e.sdkVersion ?? '-'}</td>
-                          <td className="p-3 text-sm text-muted-foreground">{e.appId ?? '-'}</td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            {e.sdkVersion ?? '-'}
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            {e.appId ?? '-'}
+                          </td>
                         </motion.tr>
                       ))}
                     </AnimatePresence>
+                  ) : (
+                    <>
+                      {results.map((e) => (
+                        <tr
+                          key={e.id}
+                          className="border-b border-border/30 hover:bg-primary/5 cursor-pointer transition-colors"
+                          onClick={() => setSelectedEventId(e.id)}
+                        >
+                          <td className="p-3 whitespace-nowrap text-sm">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Clock size={14} />
+                              {new Date(e.timestampMs).toLocaleString(localeTag)}
+                            </div>
+                          </td>
+                          <td className="p-3 min-w-[260px]">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {e.eventName === 'PARSER_ERROR' && (
+                                <Badge variant="destructive" className="text-xs">
+                                  {t('logs.parserError')}
+                                </Badge>
+                              )}
+                              <span className="font-medium">
+                                {renderHighlighted(e.eventName, keyword)}
+                              </span>
+                            </div>
+                            {(e.linkCode ||
+                              e.requestId ||
+                              e.deviceMac ||
+                              e.deviceSn ||
+                              e.errorCode) && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {e.linkCode && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    LC:{e.linkCode}
+                                  </Badge>
+                                )}
+                                {e.requestId && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    RID:{e.requestId}
+                                  </Badge>
+                                )}
+                                {e.deviceMac && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    MAC:{e.deviceMac}
+                                  </Badge>
+                                )}
+                                {e.deviceSn && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    SN:{e.deviceSn}
+                                  </Badge>
+                                )}
+                                {e.errorCode && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    ERR:{e.errorCode}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+                            {e.msg && (
+                              <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                {renderHighlighted(shortenText(e.msg, 140), keyword)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3">{getLevelBadge(e.level)}</td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            {e.sdkVersion ?? '-'}
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            {e.appId ?? '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </>
                   )}
                 </tbody>
               </table>
@@ -1143,6 +1264,8 @@ export default function LogsPage() {
 	                      <span className="font-mono text-xs truncate">{detail.linkCode ?? '-'}</span>
 	                      <span className="text-muted-foreground">requestId</span>
 	                      <span className="font-mono text-xs truncate">{detail.requestId ?? '-'}</span>
+	                      <span className="text-muted-foreground">attemptId</span>
+	                      <span className="font-mono text-xs truncate">{detail.attemptId ?? '-'}</span>
 	                      <span className="text-muted-foreground">deviceMac</span>
 	                      <span className="font-mono text-xs truncate">{detail.deviceMac ?? '-'}</span>
 	                      <span className="text-muted-foreground">deviceSn</span>
@@ -1198,6 +1321,21 @@ export default function LogsPage() {
 		                            }).toString()}`}
 		                          >
 		                            Trace requestId
+		                          </Link>
+		                        </Button>
+		                      )}
+		                      {detail.attemptId && projectId && (
+		                        <Button asChild variant="outline" size="sm">
+		                          <Link
+		                            href={`/logs/trace?${new URLSearchParams({
+		                              projectId,
+		                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+		                              type: 'attemptId',
+		                              value: detail.attemptId,
+		                              auto: '1',
+		                            }).toString()}`}
+		                          >
+		                            Trace attemptId
 		                          </Link>
 		                        </Button>
 		                      )}

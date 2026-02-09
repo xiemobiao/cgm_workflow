@@ -112,11 +112,13 @@ function pickFirstString(obj: RecordLike, keys: string[]): string | null {
   return null;
 }
 
-function normalizeDeviceSnCandidate(value: string | null | undefined): string | null {
+function normalizeDeviceSnCandidate(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   let t = value.trim();
   if (!t) return null;
-  t = t.replace(/^[\"'([{<]+/, '').replace(/[\"')\]}>]+$/, '');
+  t = t.replace(/^["'([{<]+/, '').replace(/["')\]}>]+$/, '');
   t = t.replace(/[,:;]+$/, '').trim();
   return t ? t.slice(0, 128) : null;
 }
@@ -156,7 +158,16 @@ function extractMessageText(msgJson: unknown): string {
 
   if (msgJson === null || msgJson === undefined) return '';
   try {
-    return String(msgJson);
+    if (typeof msgJson === 'number' || typeof msgJson === 'boolean') {
+      return String(msgJson);
+    }
+    if (typeof msgJson === 'bigint') return msgJson.toString();
+    if (typeof msgJson === 'symbol') return msgJson.toString();
+    if (typeof msgJson === 'function') {
+      const name = msgJson.name ? ` ${msgJson.name}` : '';
+      return `[function${name}]`;
+    }
+    return '';
   } catch {
     return '';
   }
@@ -176,7 +187,10 @@ function normalizeUrlPath(url: string | null): string {
 function percentile(values: number[], p: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(Math.max(Math.ceil((p / 100) * sorted.length) - 1, 0), sorted.length - 1);
+  const idx = Math.min(
+    Math.max(Math.ceil((p / 100) * sorted.length) - 1, 0),
+    sorted.length - 1,
+  );
   const v = sorted[idx];
   return Number.isFinite(v) ? v : null;
 }
@@ -292,7 +306,10 @@ function extractMqttFields(msgJson: unknown): ExtractedMqttFields {
   };
 }
 
-function classifyMqttMessage(fields: ExtractedMqttFields, errorCode: string | null): {
+function classifyMqttMessage(
+  fields: ExtractedMqttFields,
+  errorCode: string | null,
+): {
   kind: MqttKind;
   msgId: string | null;
   topic: string | null;
@@ -316,7 +333,12 @@ function classifyMqttMessage(fields: ExtractedMqttFields, errorCode: string | nu
       return { kind: 'publishFailed', msgId, topic, deviceSnCandidate };
     }
     if (result === 'skip') {
-      return { kind: 'uploadSkippedNotConnected', msgId, topic, deviceSnCandidate };
+      return {
+        kind: 'uploadSkippedNotConnected',
+        msgId,
+        topic,
+        deviceSnCandidate,
+      };
     }
     return { kind: 'other', msgId, topic, deviceSnCandidate };
   }
@@ -371,9 +393,10 @@ export function buildBackendQualityReport(params: {
     const msgObj = asRecord(e.msgJson);
     const method =
       (msgObj ? pickFirstString(msgObj, ['method']) : null) ?? null;
-    const url = (msgObj ? pickFirstString(msgObj, ['url', 'requestUrl']) : null) ?? null;
-    const statusCode = msgObj ? asNumber(msgObj.statusCode) ?? null : null;
-    const tookMs = msgObj ? asNumber(msgObj.tookMs) ?? null : null;
+    const url =
+      (msgObj ? pickFirstString(msgObj, ['url', 'requestUrl']) : null) ?? null;
+    const statusCode = msgObj ? (asNumber(msgObj.statusCode) ?? null) : null;
+    const tookMs = msgObj ? (asNumber(msgObj.tookMs) ?? null) : null;
 
     const agg: HttpAgg = httpById.get(requestId) ?? {
       requestId,
@@ -392,19 +415,28 @@ export function buildBackendQualityReport(params: {
     if (!agg.url && url) agg.url = url;
 
     if (e.eventName === 'network_request_start') {
-      if (agg.startTimestampMs === null || e.timestampMs < agg.startTimestampMs) {
+      if (
+        agg.startTimestampMs === null ||
+        e.timestampMs < agg.startTimestampMs
+      ) {
         agg.startTimestampMs = e.timestampMs;
       }
     } else if (e.eventName === 'network_request_success') {
       agg.hasSuccess = true;
-      if (agg.successTimestampMs === null || e.timestampMs > agg.successTimestampMs) {
+      if (
+        agg.successTimestampMs === null ||
+        e.timestampMs > agg.successTimestampMs
+      ) {
         agg.successTimestampMs = e.timestampMs;
       }
       if (statusCode !== null) agg.statusCode = statusCode;
       if (tookMs !== null) agg.tookMs = tookMs;
     } else if (e.eventName === 'network_request_failed') {
       agg.hasFailure = true;
-      if (agg.failedTimestampMs === null || e.timestampMs > agg.failedTimestampMs) {
+      if (
+        agg.failedTimestampMs === null ||
+        e.timestampMs > agg.failedTimestampMs
+      ) {
         agg.failedTimestampMs = e.timestampMs;
       }
       if (statusCode !== null) agg.statusCode = statusCode;
@@ -418,9 +450,19 @@ export function buildBackendQualityReport(params: {
   let httpFailed = 0;
   let httpMissingEnd = 0;
   const httpTookValues: number[] = [];
-  const endpointAgg = new Map<string, { method: string | null; path: string; total: number; success: number; failed: number }>();
+  const endpointAgg = new Map<
+    string,
+    {
+      method: string | null;
+      path: string;
+      total: number;
+      success: number;
+      failed: number;
+    }
+  >();
   const failedRequests: BackendQualityReport['http']['failedRequests'] = [];
-  const missingEndRequests: BackendQualityReport['http']['missingEndRequests'] = [];
+  const missingEndRequests: BackendQualityReport['http']['missingEndRequests'] =
+    [];
 
   for (const agg of httpById.values()) {
     const totalKey = `${agg.method ?? ''} ${normalizeUrlPath(agg.url)}`;
@@ -436,11 +478,13 @@ export function buildBackendQualityReport(params: {
     if (agg.hasSuccess) {
       httpSuccess += 1;
       endpoint.success += 1;
-      if (typeof agg.tookMs === 'number' && Number.isFinite(agg.tookMs)) httpTookValues.push(agg.tookMs);
+      if (typeof agg.tookMs === 'number' && Number.isFinite(agg.tookMs))
+        httpTookValues.push(agg.tookMs);
     } else if (agg.hasFailure) {
       httpFailed += 1;
       endpoint.failed += 1;
-      if (typeof agg.tookMs === 'number' && Number.isFinite(agg.tookMs)) httpTookValues.push(agg.tookMs);
+      if (typeof agg.tookMs === 'number' && Number.isFinite(agg.tookMs))
+        httpTookValues.push(agg.tookMs);
       failedRequests.push({
         requestId: agg.requestId,
         timestampMs: agg.failedTimestampMs ?? agg.startTimestampMs ?? 0,
@@ -462,9 +506,15 @@ export function buildBackendQualityReport(params: {
     endpointAgg.set(totalKey, endpoint);
   }
 
-  const endpoints = Array.from(endpointAgg.values()).sort((a, b) => b.failed - a.failed || b.total - a.total).slice(0, 20);
-  const failedRequestsTop = failedRequests.sort((a, b) => b.timestampMs - a.timestampMs).slice(0, listLimit);
-  const missingEndTop = missingEndRequests.sort((a, b) => b.startTimestampMs - a.startTimestampMs).slice(0, listLimit);
+  const endpoints = Array.from(endpointAgg.values())
+    .sort((a, b) => b.failed - a.failed || b.total - a.total)
+    .slice(0, 20);
+  const failedRequestsTop = failedRequests
+    .sort((a, b) => b.timestampMs - a.timestampMs)
+    .slice(0, listLimit);
+  const missingEndTop = missingEndRequests
+    .sort((a, b) => b.startTimestampMs - a.startTimestampMs)
+    .slice(0, listLimit);
 
   // ========== MQTT ==========
   const mqttSummary: BackendQualityMqttSummary = {
@@ -481,7 +531,16 @@ export function buildBackendQualityReport(params: {
     connected: 0,
   };
 
-  const issuesByDevice = new Map<string, { deviceSn: string; uploadSkippedNotConnected: number; publishFailed: number; ackFailed: number; ackTimeout: number }>();
+  const issuesByDevice = new Map<
+    string,
+    {
+      deviceSn: string;
+      uploadSkippedNotConnected: number;
+      publishFailed: number;
+      ackFailed: number;
+      ackTimeout: number;
+    }
+  >();
   const ackTimeouts: BackendQualityReport['mqtt']['ackTimeouts'] = [];
   const publishFailures: BackendQualityReport['mqtt']['publishFailures'] = [];
 
@@ -489,7 +548,10 @@ export function buildBackendQualityReport(params: {
     const fields = extractMqttFields(e.msgJson);
     if (!fields.text) continue;
 
-    const { kind, msgId, topic, deviceSnCandidate } = classifyMqttMessage(fields, e.errorCode);
+    const { kind, msgId, topic, deviceSnCandidate } = classifyMqttMessage(
+      fields,
+      e.errorCode,
+    );
     const text = fields.text;
 
     const deviceSn =
@@ -529,7 +591,7 @@ export function buildBackendQualityReport(params: {
         publishFailures.push({
           timestampMs: e.timestampMs,
           deviceSn,
-          msgId: msgId ?? (e.requestId ?? null),
+          msgId: msgId ?? e.requestId ?? null,
           topic,
           message: text,
         });
@@ -547,7 +609,7 @@ export function buildBackendQualityReport(params: {
         ackTimeouts.push({
           timestampMs: e.timestampMs,
           deviceSn,
-          msgId: msgId ?? (e.requestId ?? null),
+          msgId: msgId ?? e.requestId ?? null,
           message: text,
         });
         break;
@@ -571,14 +633,23 @@ export function buildBackendQualityReport(params: {
     .filter((d) => d.deviceSn !== '(unknown)')
     .sort(
       (a, b) =>
-        (b.ackTimeout + b.ackFailed + b.publishFailed + b.uploadSkippedNotConnected) -
-          (a.ackTimeout + a.ackFailed + a.publishFailed + a.uploadSkippedNotConnected) ||
-        b.ackTimeout - a.ackTimeout,
+        b.ackTimeout +
+          b.ackFailed +
+          b.publishFailed +
+          b.uploadSkippedNotConnected -
+          (a.ackTimeout +
+            a.ackFailed +
+            a.publishFailed +
+            a.uploadSkippedNotConnected) || b.ackTimeout - a.ackTimeout,
     )
     .slice(0, 20);
 
-  const ackTimeoutsTop = ackTimeouts.sort((a, b) => b.timestampMs - a.timestampMs).slice(0, listLimit);
-  const publishFailuresTop = publishFailures.sort((a, b) => b.timestampMs - a.timestampMs).slice(0, listLimit);
+  const ackTimeoutsTop = ackTimeouts
+    .sort((a, b) => b.timestampMs - a.timestampMs)
+    .slice(0, listLimit);
+  const publishFailuresTop = publishFailures
+    .sort((a, b) => b.timestampMs - a.timestampMs)
+    .slice(0, listLimit);
 
   const httpSummary: BackendQualityHttpSummary = {
     total: httpById.size,

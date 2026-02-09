@@ -195,125 +195,281 @@ export const BLE_KNOWN_EVENTS: KnownEventCategory[] = [
   {
     category: 'SDK初始化',
     events: [
-      { eventName: 'SDK init start', level: 'INFO', description: 'SDK初始化开始' },
-      { eventName: 'SDK init success', level: 'INFO', description: 'SDK初始化成功' },
-      { eventName: 'SDK init failure', level: 'ERROR', description: 'SDK初始化失败' },
+      {
+        eventName: 'SDK init start',
+        level: 'INFO',
+        description: 'SDK初始化开始',
+      },
+      {
+        eventName: 'SDK init success',
+        level: 'INFO',
+        description: 'SDK初始化成功',
+      },
+      {
+        eventName: 'SDK init failure',
+        level: 'ERROR',
+        description: 'SDK初始化失败',
+      },
     ],
   },
   {
     category: '蓝牙库信息',
     events: [
-      { eventName: 'BLE library version', level: 'INFO', description: '蓝牙库版本信息' },
+      {
+        eventName: 'BLE library version',
+        level: 'INFO',
+        description: '蓝牙库版本信息',
+      },
     ],
   },
   {
     category: '蓝牙扫描',
     events: [
-      { eventName: 'BLE start searching', level: 'INFO', description: '开始扫描设备' },
-      { eventName: 'BLE search success', level: 'INFO', description: '扫描成功' },
-      { eventName: 'BLE search failure', level: 'ERROR', description: '扫描失败' },
+      {
+        eventName: 'BLE start searching',
+        level: 'INFO',
+        description: '开始扫描设备',
+      },
+      {
+        eventName: 'BLE search success',
+        level: 'INFO',
+        description: '扫描成功',
+      },
+      {
+        eventName: 'BLE search failure',
+        level: 'ERROR',
+        description: '扫描失败',
+      },
     ],
   },
   {
     category: '蓝牙鉴权及ID校验',
     events: [
-      { eventName: 'BLE auth sendKey', level: 'INFO', description: '发送鉴权密钥' },
+      {
+        eventName: 'BLE auth sendKey',
+        level: 'INFO',
+        description: '发送鉴权密钥',
+      },
       { eventName: 'BLE auth success', level: 'INFO', description: '鉴权成功' },
-      { eventName: 'BLE auth failure', level: 'ERROR', description: '鉴权失败' },
+      {
+        eventName: 'BLE auth failure',
+        level: 'ERROR',
+        description: '鉴权失败',
+      },
     ],
   },
   {
     category: '蓝牙设备状态查询',
     events: [
-      { eventName: 'BLE query device status', level: 'INFO', description: '查询设备状态' },
-      { eventName: 'BLE query device status success', level: 'INFO', description: '查询设备状态成功' },
-      { eventName: 'BLE query device status failure', level: 'ERROR', description: '查询设备状态失败' },
+      {
+        eventName: 'BLE query device status',
+        level: 'INFO',
+        description: '查询设备状态',
+      },
+      {
+        eventName: 'BLE query device status success',
+        level: 'INFO',
+        description: '查询设备状态成功',
+      },
+      {
+        eventName: 'BLE query device status failure',
+        level: 'ERROR',
+        description: '查询设备状态失败',
+      },
     ],
   },
   {
     category: '蓝牙设备SN码查询',
     events: [
       { eventName: 'BLE query sn', level: 'INFO', description: '查询设备SN码' },
-      { eventName: 'BLE query sn success', level: 'INFO', description: '查询SN码成功' },
-      { eventName: 'BLE query sn failure', level: 'ERROR', description: '查询SN码失败' },
+      {
+        eventName: 'BLE query sn success',
+        level: 'INFO',
+        description: '查询SN码成功',
+      },
+      {
+        eventName: 'BLE query sn failure',
+        level: 'ERROR',
+        description: '查询SN码失败',
+      },
     ],
   },
   {
     category: '蓝牙设备灵敏度查询',
     events: [
-      { eventName: 'BLE query sensitivity', level: 'INFO', description: '查询设备灵敏度' },
-      { eventName: 'BLE query sensitivity success', level: 'INFO', description: '查询灵敏度成功' },
-      { eventName: 'BLE query sensitivity failure', level: 'ERROR', description: '查询灵敏度失败' },
+      {
+        eventName: 'BLE query sensitivity',
+        level: 'INFO',
+        description: '查询设备灵敏度',
+      },
+      {
+        eventName: 'BLE query sensitivity success',
+        level: 'INFO',
+        description: '查询灵敏度成功',
+      },
+      {
+        eventName: 'BLE query sensitivity failure',
+        level: 'ERROR',
+        description: '查询灵敏度失败',
+      },
     ],
   },
   {
     category: '蓝牙设备激活时间查询',
     events: [
-      { eventName: 'BLE query activate time', level: 'INFO', description: '查询设备激活时间' },
-      { eventName: 'BLE query activate time success', level: 'INFO', description: '查询激活时间成功' },
-      { eventName: 'BLE query activate time failure', level: 'ERROR', description: '查询激活时间失败' },
+      {
+        eventName: 'BLE query activate time',
+        level: 'INFO',
+        description: '查询设备激活时间',
+      },
+      {
+        eventName: 'BLE query activate time success',
+        level: 'INFO',
+        description: '查询激活时间成功',
+      },
+      {
+        eventName: 'BLE query activate time failure',
+        level: 'ERROR',
+        description: '查询激活时间失败',
+      },
     ],
   },
   {
     category: '蓝牙设备初始化时长查询',
     events: [
-      { eventName: 'BLE query init duration', level: 'INFO', description: '查询设备初始化时长' },
-      { eventName: 'BLE query init duration success', level: 'INFO', description: '查询初始化时长成功' },
-      { eventName: 'BLE query init duration failure', level: 'ERROR', description: '查询初始化时长失败' },
+      {
+        eventName: 'BLE query init duration',
+        level: 'INFO',
+        description: '查询设备初始化时长',
+      },
+      {
+        eventName: 'BLE query init duration success',
+        level: 'INFO',
+        description: '查询初始化时长成功',
+      },
+      {
+        eventName: 'BLE query init duration failure',
+        level: 'ERROR',
+        description: '查询初始化时长失败',
+      },
     ],
   },
   {
     category: '蓝牙激活及ID绑定',
     events: [
       { eventName: 'BLE activate', level: 'INFO', description: '激活设备' },
-      { eventName: 'BLE activate success', level: 'INFO', description: '激活成功' },
-      { eventName: 'BLE activate failure', level: 'ERROR', description: '激活失败' },
+      {
+        eventName: 'BLE activate success',
+        level: 'INFO',
+        description: '激活成功',
+      },
+      {
+        eventName: 'BLE activate failure',
+        level: 'ERROR',
+        description: '激活失败',
+      },
     ],
   },
   {
     category: '蓝牙设备停用',
     events: [
       { eventName: 'BLE deactivate', level: 'INFO', description: '停用设备' },
-      { eventName: 'BLE deactivate success', level: 'INFO', description: '停用成功' },
-      { eventName: 'BLE deactivate failure', level: 'ERROR', description: '停用失败' },
+      {
+        eventName: 'BLE deactivate success',
+        level: 'INFO',
+        description: '停用成功',
+      },
+      {
+        eventName: 'BLE deactivate failure',
+        level: 'ERROR',
+        description: '停用失败',
+      },
     ],
   },
   {
     category: '蓝牙连接',
     events: [
-      { eventName: 'BLE start connection', level: 'INFO', description: '开始连接' },
-      { eventName: 'BLE connection success', level: 'INFO', description: '连接成功' },
-      { eventName: 'BLE connection failure', level: 'ERROR', description: '连接失败' },
+      {
+        eventName: 'BLE start connection',
+        level: 'INFO',
+        description: '开始连接',
+      },
+      {
+        eventName: 'BLE connection success',
+        level: 'INFO',
+        description: '连接成功',
+      },
+      {
+        eventName: 'BLE connection failure',
+        level: 'ERROR',
+        description: '连接失败',
+      },
       { eventName: 'BLE disconnect', level: 'INFO', description: '断开连接' },
     ],
   },
   {
     category: '历史数据查询',
     events: [
-      { eventName: 'BLE query history data', level: 'INFO', description: '查询历史数据' },
-      { eventName: 'BLE query history data done', level: 'INFO', description: '历史数据查询完成' },
+      {
+        eventName: 'BLE query history data',
+        level: 'INFO',
+        description: '查询历史数据',
+      },
+      {
+        eventName: 'BLE query history data done',
+        level: 'INFO',
+        description: '历史数据查询完成',
+      },
     ],
   },
   {
     category: '历史数据回调',
     events: [
-      { eventName: 'BLE history data callback start', level: 'DEBUG', description: '历史数据回调开始' },
-      { eventName: 'BLE history data callback done', level: 'DEBUG', description: '历史数据回调完成' },
-      { eventName: 'BLE history data callback failure', level: 'ERROR', description: '历史数据回调失败' },
+      {
+        eventName: 'BLE history data callback start',
+        level: 'DEBUG',
+        description: '历史数据回调开始',
+      },
+      {
+        eventName: 'BLE history data callback done',
+        level: 'DEBUG',
+        description: '历史数据回调完成',
+      },
+      {
+        eventName: 'BLE history data callback failure',
+        level: 'ERROR',
+        description: '历史数据回调失败',
+      },
     ],
   },
   {
     category: '实时数据回调',
     events: [
-      { eventName: 'BLE real time data callback start', level: 'DEBUG', description: '实时数据回调开始' },
-      { eventName: 'BLE real time data callback done', level: 'DEBUG', description: '实时数据回调完成' },
+      {
+        eventName: 'BLE real time data callback start',
+        level: 'DEBUG',
+        description: '实时数据回调开始',
+      },
+      {
+        eventName: 'BLE real time data callback done',
+        level: 'DEBUG',
+        description: '实时数据回调完成',
+      },
     ],
   },
   {
     category: '最新一笔有效数据回调',
     events: [
-      { eventName: 'BLE latest valid data callback start', level: 'DEBUG', description: '最新有效数据回调开始' },
-      { eventName: 'BLE latest valid data callback done', level: 'DEBUG', description: '最新有效数据回调完成' },
+      {
+        eventName: 'BLE latest valid data callback start',
+        level: 'DEBUG',
+        description: '最新有效数据回调开始',
+      },
+      {
+        eventName: 'BLE latest valid data callback done',
+        level: 'DEBUG',
+        description: '最新有效数据回调完成',
+      },
     ],
   },
   {
@@ -325,10 +481,26 @@ export const BLE_KNOWN_EVENTS: KnownEventCategory[] = [
   {
     category: 'APP 状态',
     events: [
-      { eventName: 'APP starts to launch', level: 'INFO', description: 'APP开始启动' },
-      { eventName: 'APP startup completed', level: 'INFO', description: 'APP启动完成' },
-      { eventName: 'APP enter foreground', level: 'INFO', description: 'APP进入前台' },
-      { eventName: 'APP enter background', level: 'INFO', description: 'APP进入后台' },
+      {
+        eventName: 'APP starts to launch',
+        level: 'INFO',
+        description: 'APP开始启动',
+      },
+      {
+        eventName: 'APP startup completed',
+        level: 'INFO',
+        description: 'APP启动完成',
+      },
+      {
+        eventName: 'APP enter foreground',
+        level: 'INFO',
+        description: 'APP进入前台',
+      },
+      {
+        eventName: 'APP enter background',
+        level: 'INFO',
+        description: 'APP进入后台',
+      },
     ],
   },
   {
@@ -342,13 +514,37 @@ export const BLE_KNOWN_EVENTS: KnownEventCategory[] = [
     category: '通用/错误',
     events: [
       { eventName: 'BLE exception', level: 'ERROR', description: '蓝牙异常' },
-      { eventName: 'BLE command timeout', level: 'ERROR', description: '命令超时' },
+      {
+        eventName: 'BLE command timeout',
+        level: 'ERROR',
+        description: '命令超时',
+      },
       { eventName: 'BLE retry', level: 'WARN', description: '重试' },
-      { eventName: 'BLE permission denied', level: 'ERROR', description: '权限拒绝' },
-      { eventName: 'HTTP request start', level: 'DEBUG', description: 'HTTP请求开始' },
-      { eventName: 'HTTP request success', level: 'DEBUG', description: 'HTTP请求成功' },
-      { eventName: 'HTTP request failure', level: 'ERROR', description: 'HTTP请求失败' },
-      { eventName: 'MQTT connected', level: 'INFO', description: 'MQTT连接成功' },
+      {
+        eventName: 'BLE permission denied',
+        level: 'ERROR',
+        description: '权限拒绝',
+      },
+      {
+        eventName: 'HTTP request start',
+        level: 'DEBUG',
+        description: 'HTTP请求开始',
+      },
+      {
+        eventName: 'HTTP request success',
+        level: 'DEBUG',
+        description: 'HTTP请求成功',
+      },
+      {
+        eventName: 'HTTP request failure',
+        level: 'ERROR',
+        description: 'HTTP请求失败',
+      },
+      {
+        eventName: 'MQTT connected',
+        level: 'INFO',
+        description: 'MQTT连接成功',
+      },
     ],
   },
 ];

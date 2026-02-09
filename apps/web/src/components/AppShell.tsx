@@ -76,11 +76,17 @@ function AppShellInner(props: { children: React.ReactNode }) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMenuState, setMobileMenuState] = useState<{ pathname: string; open: boolean }>({
+    pathname,
+    open: false,
+  });
+  const mobileMenuOpen = mobileMenuState.pathname === pathname ? mobileMenuState.open : false;
+  const setMobileMenuOpen = (open: boolean) => setMobileMenuState({ pathname, open });
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const { t } = useI18n();
 
   const isPublic = useMemo(() => PUBLIC_PATHS.has(pathname), [pathname]);
+  const expandedItemForRender = pathname?.startsWith('/logs') ? '/logs' : expandedItem;
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -99,18 +105,6 @@ function AppShellInner(props: { children: React.ReactNode }) {
     }, 0);
     return () => window.clearTimeout(id);
   }, [isPublic, router]);
-
-  // Auto-expand logs submenu when on logs pages
-  useEffect(() => {
-    if (pathname?.startsWith('/logs')) {
-      setExpandedItem('/logs');
-    }
-  }, [pathname]);
-
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   const showNav = !isPublic;
 
@@ -169,14 +163,14 @@ function AppShellInner(props: { children: React.ReactNode }) {
                     </button>
                   </div>
                   <nav className="flex-1 overflow-y-auto p-3">
-                    <NavContent
-                      items={NAV_ITEMS}
-                      t={t}
-                      isActive={isActive}
-                      collapsed={false}
-                      expandedItem={expandedItem}
-                      setExpandedItem={setExpandedItem}
-                    />
+	                    <NavContent
+	                      items={NAV_ITEMS}
+	                      t={t}
+	                      isActive={isActive}
+	                      collapsed={false}
+	                      expandedItem={expandedItemForRender}
+	                      setExpandedItem={setExpandedItem}
+	                    />
                   </nav>
                   <div className="p-3 border-t border-border/50">
                     <Button
@@ -229,14 +223,14 @@ function AppShellInner(props: { children: React.ReactNode }) {
 
             {/* Nav Items */}
             <nav className="flex-1 overflow-y-auto p-3">
-              <NavContent
-                items={NAV_ITEMS}
-                t={t}
-                isActive={isActive}
-                collapsed={sidebarCollapsed}
-                expandedItem={expandedItem}
-                setExpandedItem={setExpandedItem}
-              />
+	              <NavContent
+	                items={NAV_ITEMS}
+	                t={t}
+	                isActive={isActive}
+	                collapsed={sidebarCollapsed}
+	                expandedItem={expandedItemForRender}
+	                setExpandedItem={setExpandedItem}
+	              />
             </nav>
 
             {/* Footer */}

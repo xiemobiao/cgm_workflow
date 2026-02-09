@@ -537,7 +537,9 @@ export default function LogFileDetailPage() {
 
   useEffect(() => {
     if (bleAdvanced) return;
-    if (bleTab === 'levelMismatch' || bleTab === 'nameMismatch') setBleTab('present');
+    if (bleTab !== 'levelMismatch' && bleTab !== 'nameMismatch') return;
+    const id = window.setTimeout(() => setBleTab('present'), 0);
+    return () => window.clearTimeout(id);
   }, [bleAdvanced, bleTab]);
 
   useEffect(() => {
@@ -550,8 +552,11 @@ export default function LogFileDetailPage() {
     const first: BleQualityTab =
       presentTotal > 0 ? 'present' : missingTotal > 0 ? 'missing' : pendingTotal > 0 ? 'pairChecks' : 'present';
 
-    setBleTab(first);
-    setBleTabInitialized(true);
+    const id = window.setTimeout(() => {
+      setBleTab(first);
+      setBleTabInitialized(true);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [bleQuality, bleTabInitialized, bleAdvanced]);
 
   const levelBadge = (label: BleQualityItem['expectedLevelLabel']) => {

@@ -26,7 +26,9 @@ describe('buildBleQualityReport', () => {
     expect(sdkInitStart?.status).toBe('ok');
     expect(sdkInitStart?.expectedLevelLabel).toBe('INFO');
 
-    const sdkInfo = report.requiredEvents.find((e) => e.eventName === 'BLE sdk info');
+    const sdkInfo = report.requiredEvents.find(
+      (e) => e.eventName === 'BLE sdk info',
+    );
     expect(sdkInfo?.status).toBe('level_mismatch');
     expect(sdkInfo?.expectedLevelLabel).toBe('DEBUG');
     expect(sdkInfo?.totalCount).toBe(1);
@@ -37,7 +39,9 @@ describe('buildBleQualityReport', () => {
       (e) => e.eventName === 'BLE current Status Value',
     );
     expect(statusValue?.status).toBe('name_mismatch');
-    expect(statusValue?.matchedEventNames).toContain('BLE current status value');
+    expect(statusValue?.matchedEventNames).toContain(
+      'BLE current status value',
+    );
 
     const scanPair = report.pairChecks.find(
       (p) => p.startEventName === 'BLE start searching',

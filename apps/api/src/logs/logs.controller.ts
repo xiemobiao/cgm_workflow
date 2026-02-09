@@ -86,6 +86,12 @@ const traceRequestIdSchema = z.object({
   logFileId: z.string().uuid().optional(),
 });
 
+const traceAttemptIdSchema = z.object({
+  projectId: z.string().uuid(),
+  logFileId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(2000).optional(),
+});
+
 const traceDeviceMacSchema = z.object({
   projectId: z.string().uuid(),
   logFileId: z.string().uuid().optional(),
@@ -198,7 +204,12 @@ const bluetoothReconnectSummarySchema = z.object({
   endTime: z.string().datetime(),
   deviceMac: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  reconnectWindowMs: z.coerce.number().int().min(1000).max(30 * 60 * 1000).optional(),
+  reconnectWindowMs: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(30 * 60 * 1000)
+    .optional(),
 });
 
 const bluetoothErrorsSchema = z.object({
@@ -229,7 +240,7 @@ export class LogsController {
     private readonly logs: LogsService,
     private readonly bluetooth: BluetoothService,
     private readonly analyzer: LogsAnalyzerService,
-  ) { }
+  ) {}
 
   @Post('upload')
   @HttpCode(200)
@@ -314,7 +325,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getBleQualityReport({ actorUserId: user.userId, id: fileId });
+    return this.logs.getBleQualityReport({
+      actorUserId: user.userId,
+      id: fileId,
+    });
   }
 
   @Get('files/:id/backend-quality')
@@ -323,7 +337,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getBackendQualityReport({ actorUserId: user.userId, id: fileId });
+    return this.logs.getBackendQualityReport({
+      actorUserId: user.userId,
+      id: fileId,
+    });
   }
 
   @Get('files/:id/data-continuity')
@@ -332,7 +349,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getDataContinuityReport({ actorUserId: user.userId, id: fileId });
+    return this.logs.getDataContinuityReport({
+      actorUserId: user.userId,
+      id: fileId,
+    });
   }
 
   @Get('files/:id/stream-session-quality')
@@ -341,7 +361,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getStreamSessionQualityReport({ actorUserId: user.userId, id: fileId });
+    return this.logs.getStreamSessionQualityReport({
+      actorUserId: user.userId,
+      id: fileId,
+    });
   }
 
   @Get('files/:id/analysis')
@@ -350,7 +373,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getLogFileAnalysis({ actorUserId: user.userId, logFileId: fileId });
+    return this.logs.getLogFileAnalysis({
+      actorUserId: user.userId,
+      logFileId: fileId,
+    });
   }
 
   @Get('files/:id/event-flow-analysis')
@@ -364,17 +390,9 @@ export class LogsController {
       logFileId: fileId,
     });
 
-    if (!analysis) {
-      throw new ApiException({
-        code: 'LOG_FILE_ANALYSIS_NOT_FOUND',
-        message: 'Log file analysis not found',
-        status: 404,
-      });
-    }
-
     return {
-      mainFlowAnalysis: (analysis as any).mainFlowAnalysis,
-      eventCoverageAnalysis: (analysis as any).eventCoverageAnalysis,
+      mainFlowAnalysis: analysis.mainFlowAnalysis,
+      eventCoverageAnalysis: analysis.eventCoverageAnalysis,
     };
   }
 
@@ -385,6 +403,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
+    await this.logs.getLogFileDetail({ actorUserId: user.userId, id: fileId });
     // Trigger analysis asynchronously
     void this.analyzer.analyzeLogFile(fileId);
     return { message: 'Analysis triggered', logFileId: fileId };
@@ -406,7 +425,10 @@ export class LogsController {
     @Body() body: unknown,
   ) {
     const dto = batchDeleteSchema.parse(body);
-    return this.logs.batchDeleteLogFiles({ actorUserId: user.userId, ids: dto.ids });
+    return this.logs.batchDeleteLogFiles({
+      actorUserId: user.userId,
+      ids: dto.ids,
+    });
   }
 
   @Get('files/:id/diagnose')
@@ -415,7 +437,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.diagnoseLogFile({ actorUserId: user.userId, logFileId: fileId });
+    return this.logs.diagnoseLogFile({
+      actorUserId: user.userId,
+      logFileId: fileId,
+    });
   }
 
   // ========== Tracing APIs ==========
@@ -448,6 +473,22 @@ export class LogsController {
       projectId: dto.projectId,
       logFileId: dto.logFileId,
       requestId,
+    });
+  }
+
+  @Get('trace/attempt/:attemptId')
+  async traceByAttemptId(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('attemptId') attemptId: string,
+    @Query() query: unknown,
+  ) {
+    const dto = traceAttemptIdSchema.parse(query);
+    return this.logs.traceByAttemptId({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      logFileId: dto.logFileId,
+      attemptId,
+      limit: dto.limit,
     });
   }
 

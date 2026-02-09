@@ -11,7 +11,7 @@
 
 ## 核心功能
 - **日志系统**: JSONL 日志上传、解析、多维搜索
-- **追踪分析**: 按 requestId/linkCode/deviceMac 追踪命令链路
+- **追踪分析**: 按 attemptId/requestId/linkCode/deviceMac/deviceSn 追踪链路
 - **蓝牙调试**: 设备会话时间线、连接状态分析
 - **异常检测**: 自动识别频繁断连、超时重试等模式
 - **问题库**: 已知问题管理与智能诊断匹配
@@ -35,6 +35,11 @@
 ### 1) 启动依赖服务
 ```bash
 docker compose up -d
+```
+
+如需用 Docker 启动完整平台（包含 `api` + `worker` + `web`），使用：
+```bash
+docker compose --profile app up -d --build
 ```
 
 ### 2) 配置环境变量
@@ -62,8 +67,14 @@ npm run db:seed
 ### 5) 启动开发服务
 ```bash
 npm run api:dev   # API: http://localhost:3001
+npm run api:worker:dev  # Worker: log parsing/analysis
 npm run web:dev   # Web: http://localhost:3000
 ```
+
+## 生产部署注意
+- **必须部署 `worker`**：启用 Redis 队列（`REDIS_URL`）后，如果没有运行 `worker`，日志文件会一直处于 `queued` 状态，解析不会完成。
+- **建议 `api` / `worker` 分离部署并水平扩展**：同一镜像即可，通过不同启动命令区分：`node dist/main`（API） / `node dist/worker`（Worker）。
+- **并发控制**：可通过 `LOG_PROCESSING_CONCURRENCY` 控制单个 worker 的并发数（建议从 CPU 核数开始调）。
 
 ### 健康检查
 - API: `http://localhost:3001/health`
@@ -106,3 +117,4 @@ docs/
 
 ## 文档
 - `docs/logging/cgm_log_format_spec.md` - 日志格式规范
+- `docs/logging/quick_trace.md` - 最短排查路径（离线一条命令）

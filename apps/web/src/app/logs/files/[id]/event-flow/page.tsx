@@ -132,13 +132,13 @@ type ExtraEventResult = {
 // Format duration in ms to readable string
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return 'N/A';
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}min`;
 }
 
 // Get severity badge color
-function getSeverityColor(severity: number): string {
+function getSeverityColor(severity: number): 'destructive' | 'default' | 'secondary' {
   if (severity >= 4) return 'destructive';
   if (severity >= 3) return 'default';
   return 'secondary';
@@ -167,14 +167,19 @@ export default function EventFlowAnalysisPage() {
 
         setMainFlow(data.mainFlowAnalysis);
         setCoverage(data.eventCoverageAnalysis);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('=== Fetch Error ===', err);
+        const status =
+          typeof err === 'object' && err !== null && 'status' in err && typeof (err as { status?: unknown }).status === 'number'
+            ? (err as { status: number }).status
+            : undefined;
+        const message = err instanceof Error ? err.message : String(err);
         // If analysis not found (404), don't set error - show "no data" UI instead
-        if (err?.status === 404 || err?.message?.includes('not found')) {
+        if (status === 404 || message.includes('not found')) {
           // Leave mainFlow and coverage as null to trigger "no data" UI
           console.log('Analysis not found - showing trigger button');
         } else {
-          setError(err instanceof Error ? err.message : 'Unknown error');
+          setError(message || 'Unknown error');
         }
       } finally {
         setLoading(false);
@@ -516,7 +521,7 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle className="flex items-center gap-2">
                   {issue.description}
-                  <Badge variant={getSeverityColor(issue.severity) as any}>
+                  <Badge variant={getSeverityColor(issue.severity)}>
                     严重度: {issue.severity}
                   </Badge>
                 </AlertTitle>

@@ -1,9 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import {
-  MAIN_FLOW_TEMPLATE,
-  BLE_KNOWN_EVENTS,
-} from './event-flow-templates';
+import { MAIN_FLOW_TEMPLATE, BLE_KNOWN_EVENTS } from './event-flow-templates';
 import type {
   MainFlowAnalysisResult,
   StageAnalysisResult,
@@ -28,7 +25,7 @@ import type {
 export class EventFlowAnalyzerService {
   private readonly logger = new Logger(EventFlowAnalyzerService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Analyze main flow for a log file
@@ -119,7 +116,9 @@ export class EventFlowAnalyzerService {
         for (const stageEvent of stage.events) {
           if (
             stageEvent.required &&
-            !stageTiming.events.some((e) => e.eventName === stageEvent.eventName)
+            !stageTiming.events.some(
+              (e) => e.eventName === stageEvent.eventName,
+            )
           ) {
             missedEvents.push(stageEvent.eventName);
           }
@@ -128,9 +127,10 @@ export class EventFlowAnalyzerService {
     }
 
     const totalDurationMs =
-      stageTimings[0]?.startTime && stageTimings[stageTimings.length - 1]?.endTime
+      stageTimings[0]?.startTime &&
+      stageTimings[stageTimings.length - 1]?.endTime
         ? Number(stageTimings[stageTimings.length - 1].endTime) -
-        Number(stageTimings[0].startTime)
+          Number(stageTimings[0].startTime)
         : null;
 
     const coverageRate =
@@ -238,43 +238,52 @@ export class EventFlowAnalyzerService {
 
     const avgTotalDurationMs =
       completedDurations.length > 0
-        ? completedDurations.reduce((a, b) => a + b, 0) / completedDurations.length
+        ? completedDurations.reduce((a, b) => a + b, 0) /
+          completedDurations.length
         : null;
 
     // Aggregate stage results
     const stages: StageAnalysisResult[] = MAIN_FLOW_TEMPLATE.stages.map(
       (stage) => {
-        const eventResults: EventAnalysisResult[] = stage.events.map((event) => {
-          const sessionHitCount = sessions.filter((s) =>
-            s.stageTimings
-              .find((t) => t.stageId === stage.id)
-              ?.events.some((e) => e.eventName === event.eventName),
-          ).length;
+        const eventResults: EventAnalysisResult[] = stage.events.map(
+          (event) => {
+            const sessionHitCount = sessions.filter((s) =>
+              s.stageTimings
+                .find((t) => t.stageId === stage.id)
+                ?.events.some((e) => e.eventName === event.eventName),
+            ).length;
 
-          const occurrenceCount = sessions.reduce((count, s) => {
-            const stageEvents =
-              s.stageTimings.find((t) => t.stageId === stage.id)?.events ?? [];
-            return (
-              count + stageEvents.filter((e) => e.eventName === event.eventName).length
-            );
-          }, 0);
+            const occurrenceCount = sessions.reduce((count, s) => {
+              const stageEvents =
+                s.stageTimings.find((t) => t.stageId === stage.id)?.events ??
+                [];
+              return (
+                count +
+                stageEvents.filter((e) => e.eventName === event.eventName)
+                  .length
+              );
+            }, 0);
 
-          const missedCount = totalSessions - sessionHitCount;
-          const hitRate = totalSessions > 0 ? (sessionHitCount / totalSessions) * 100 : 0;
+            const missedCount = totalSessions - sessionHitCount;
+            const hitRate =
+              totalSessions > 0 ? (sessionHitCount / totalSessions) * 100 : 0;
 
-          return {
-            eventName: event.eventName,
-            required: event.required,
-            occurrenceCount,
-            sessionHitCount,
-            missedCount,
-            hitRate,
-          };
-        });
+            return {
+              eventName: event.eventName,
+              required: event.required,
+              occurrenceCount,
+              sessionHitCount,
+              missedCount,
+              hitRate,
+            };
+          },
+        );
 
         // Calculate stage coverage
         const sessionsCovered = sessions.filter((s) => {
-          const stageTiming = s.stageTimings.find((t) => t.stageId === stage.id);
+          const stageTiming = s.stageTimings.find(
+            (t) => t.stageId === stage.id,
+          );
           return stageTiming && stageTiming.events.length > 0;
         }).length;
 
@@ -283,7 +292,10 @@ export class EventFlowAnalyzerService {
 
         // Calculate durations
         const durations = sessions
-          .map((s) => s.stageTimings.find((t) => t.stageId === stage.id)?.durationMs)
+          .map(
+            (s) =>
+              s.stageTimings.find((t) => t.stageId === stage.id)?.durationMs,
+          )
           .filter((d): d is number => d !== null && d !== undefined);
 
         const avgDurationMs =
@@ -307,7 +319,9 @@ export class EventFlowAnalyzerService {
         ) {
           const affectedSessions = sessions
             .filter((s) => {
-              const d = s.stageTimings.find((t) => t.stageId === stage.id)?.durationMs;
+              const d = s.stageTimings.find(
+                (t) => t.stageId === stage.id,
+              )?.durationMs;
               return d !== null && d !== undefined && d > stage.maxDurationMs!;
             })
             .map((s) => s.linkCode);

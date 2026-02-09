@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ApiClientError, apiFetch } from '@/lib/api';
+import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 
 type LogEventDetail = {
@@ -23,6 +24,12 @@ type LogEventDetail = {
   msg: string | null;
   msgJson: unknown | null;
   rawLine: string | null;
+  linkCode: string | null;
+  requestId: string | null;
+  attemptId: string | null;
+  deviceMac: string | null;
+  deviceSn: string | null;
+  errorCode: string | null;
   createdAt: string;
 };
 
@@ -142,27 +149,31 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (!eventId) return;
     let cancelled = false;
-    setLoading(true);
-    setError('');
-    setDetail(null);
+    const id = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError('');
+      setDetail(null);
 
-    apiFetch<LogEventDetail>(`/api/logs/events/${eventId}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDetail(data);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setError(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-      });
+      apiFetch<LogEventDetail>(`/api/logs/events/${eventId}`)
+        .then((data) => {
+          if (cancelled) return;
+          setDetail(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setLoading(false);
+        });
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(id);
     };
   }, [eventId]);
 
@@ -170,27 +181,31 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (!eventId) return;
     let cancelled = false;
-    setContextLoading(true);
-    setContextError('');
-    setContext(null);
+    const id = window.setTimeout(() => {
+      if (cancelled) return;
+      setContextLoading(true);
+      setContextError('');
+      setContext(null);
 
-    apiFetch<EventContextResponse>(`/api/logs/events/${eventId}/context?before=10&after=10`)
-      .then((data) => {
-        if (cancelled) return;
-        setContext(data);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-        setContextError(msg);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setContextLoading(false);
-      });
+      apiFetch<EventContextResponse>(`/api/logs/events/${eventId}/context?before=10&after=10`)
+        .then((data) => {
+          if (cancelled) return;
+          setContext(data);
+        })
+        .catch((e: unknown) => {
+          if (cancelled) return;
+          const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+          setContextError(msg);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setContextLoading(false);
+        });
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(id);
     };
   }, [eventId]);
 
@@ -242,6 +257,7 @@ export default function EventDetailPage() {
   }
 
   const hue = hueForEvent(detail.eventName);
+  const projectId = getProjectId() ?? '';
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -355,32 +371,160 @@ export default function EventDetailPage() {
       )}
 
       {/* IDs and Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('logs.detail.ids')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-muted-foreground text-xs mb-1">Event ID</div>
-              <div className="font-mono text-xs break-all">{detail.id}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground text-xs mb-1">Log File ID</div>
-              <div className="font-mono text-xs break-all">{detail.logFileId}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => void copyText(detail.id)}>
-              {t('logs.detail.copyEventId')}
+	      <Card>
+	        <CardHeader>
+	          <CardTitle className="text-base">{t('logs.detail.ids')}</CardTitle>
+	        </CardHeader>
+	        <CardContent className="space-y-4">
+	          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Event ID</div>
+	              <div className="font-mono text-xs break-all">{detail.id}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Log File ID</div>
+	              <div className="font-mono text-xs break-all">{detail.logFileId}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Link Code</div>
+	              <div className="font-mono text-xs break-all">{detail.linkCode || '-'}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Request ID</div>
+	              <div className="font-mono text-xs break-all">{detail.requestId || '-'}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Attempt ID</div>
+	              <div className="font-mono text-xs break-all">{detail.attemptId || '-'}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Device MAC</div>
+	              <div className="font-mono text-xs break-all">{detail.deviceMac || '-'}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Device SN</div>
+	              <div className="font-mono text-xs break-all">{detail.deviceSn || '-'}</div>
+	            </div>
+	            <div>
+	              <div className="text-muted-foreground text-xs mb-1">Error Code</div>
+	              <div className="font-mono text-xs break-all">{detail.errorCode || '-'}</div>
+	            </div>
+	          </div>
+	          <div className="flex items-center gap-2 flex-wrap">
+	            <Button variant="outline" size="sm" onClick={() => void copyText(detail.id)}>
+	              {t('logs.detail.copyEventId')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void copyText(detail.logFileId)}>
-              {t('logs.detail.copyLogFileId')}
-            </Button>
-            {copyHint && <span className="text-green-400 text-sm">{copyHint}</span>}
-          </div>
-        </CardContent>
-      </Card>
+	            <Button variant="outline" size="sm" onClick={() => void copyText(detail.logFileId)}>
+	              {t('logs.detail.copyLogFileId')}
+	            </Button>
+	            {detail.attemptId && (
+	              <Button variant="outline" size="sm" onClick={() => void copyText(detail.attemptId!)}>
+	                Copy attemptId
+	              </Button>
+	            )}
+	            {copyHint && <span className="text-green-400 text-sm">{copyHint}</span>}
+	          </div>
+	          {/* Quick jump */}
+	          <div className="flex flex-wrap items-center gap-2">
+	            {detail.linkCode && projectId && (
+	              <Button asChild variant="outline" size="sm">
+	                <Link
+	                  href={`/logs/trace?${new URLSearchParams({
+	                    projectId,
+	                    logFileId: detail.logFileId,
+	                    type: 'linkCode',
+	                    value: detail.linkCode,
+	                    auto: '1',
+	                  }).toString()}`}
+	                >
+	                  Trace linkCode
+	                </Link>
+	              </Button>
+	            )}
+	            {detail.requestId && projectId && (
+	              <Button asChild variant="outline" size="sm">
+	                <Link
+	                  href={`/logs/trace?${new URLSearchParams({
+	                    projectId,
+	                    logFileId: detail.logFileId,
+	                    type: 'requestId',
+	                    value: detail.requestId,
+	                    auto: '1',
+	                  }).toString()}`}
+	                >
+	                  Trace requestId
+	                </Link>
+	              </Button>
+	            )}
+	            {detail.attemptId && projectId && (
+	              <Button asChild variant="outline" size="sm">
+	                <Link
+	                  href={`/logs/trace?${new URLSearchParams({
+	                    projectId,
+	                    logFileId: detail.logFileId,
+	                    type: 'attemptId',
+	                    value: detail.attemptId,
+	                    auto: '1',
+	                  }).toString()}`}
+	                >
+	                  Trace attemptId
+	                </Link>
+	              </Button>
+	            )}
+	            {detail.deviceMac && projectId && (
+	              <>
+	                <Button asChild variant="outline" size="sm">
+	                  <Link
+	                    href={`/logs/trace?${new URLSearchParams({
+	                      projectId,
+	                      logFileId: detail.logFileId,
+	                      type: 'deviceMac',
+	                      value: detail.deviceMac,
+	                      startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                      endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                      auto: '1',
+	                    }).toString()}`}
+	                  >
+	                    Trace deviceMac
+	                  </Link>
+	                </Button>
+	                <Button asChild variant="outline" size="sm">
+	                  <Link
+	                    href={`/logs/commands?${new URLSearchParams({
+	                      projectId,
+	                      logFileId: detail.logFileId,
+	                      deviceMac: detail.deviceMac,
+	                      startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                      endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                      limit: '100',
+	                      auto: '1',
+	                    }).toString()}`}
+	                  >
+	                    Commands
+	                  </Link>
+	                </Button>
+	              </>
+	            )}
+	            {detail.deviceSn && projectId && (
+	              <Button asChild variant="outline" size="sm">
+	                <Link
+	                  href={`/logs/trace?${new URLSearchParams({
+	                    projectId,
+	                    logFileId: detail.logFileId,
+	                    type: 'deviceSn',
+	                    value: detail.deviceSn,
+	                    startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
+	                    endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+	                    auto: '1',
+	                  }).toString()}`}
+	                >
+	                  Trace deviceSn
+	                </Link>
+	              </Button>
+	            )}
+	          </div>
+	        </CardContent>
+	      </Card>
 
       {/* Context */}
       <Card>
