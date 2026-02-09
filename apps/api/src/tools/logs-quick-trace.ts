@@ -159,7 +159,9 @@ function isHeaderLine(outerC: string, outerN: string | undefined): boolean {
 
 function parseLogBuffer(buf: Buffer, limit: number): NormalizedEvent[] {
   const decrypt = new LoganDecryptService();
-  const text = decrypt.isLoganEncrypted(buf) ? decrypt.decrypt(buf).text : buf.toString('utf8');
+  const text = decrypt.isLoganEncrypted(buf)
+    ? decrypt.decrypt(buf).text
+    : buf.toString('utf8');
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
 
   const out: NormalizedEvent[] = [];
@@ -232,10 +234,16 @@ function pickMilestones(events: NormalizedEvent[]) {
   };
 
   const connectStart = findFirst(
-    (e) => e.tracking.stage === 'ble' && e.tracking.op === 'connect' && e.tracking.result === 'start',
+    (e) =>
+      e.tracking.stage === 'ble' &&
+      e.tracking.op === 'connect' &&
+      e.tracking.result === 'start',
   );
   const authOk = findFirst(
-    (e) => e.tracking.stage === 'ble' && e.tracking.op === 'auth' && e.tracking.result === 'ok',
+    (e) =>
+      e.tracking.stage === 'ble' &&
+      e.tracking.op === 'auth' &&
+      e.tracking.result === 'ok',
   );
   const readyOk = findFirst((e) => {
     if (e.tracking.stage !== 'ble') return false;
@@ -243,27 +251,50 @@ function pickMilestones(events: NormalizedEvent[]) {
     return reason === 'READY';
   });
   const getDataStart = findFirst(
-    (e) => e.tracking.stage === 'ble' && e.tracking.op === 'getdata' && e.tracking.result === 'start',
+    (e) =>
+      e.tracking.stage === 'ble' &&
+      e.tracking.op === 'getdata' &&
+      e.tracking.result === 'start',
   );
   const historyDone = findFirst(
-    (e) => e.tracking.stage === 'ble' && e.tracking.op === 'receivedata' && e.tracking.result === 'ok',
+    (e) =>
+      e.tracking.stage === 'ble' &&
+      e.tracking.op === 'receivedata' &&
+      e.tracking.result === 'ok',
   );
-  const stallTimeout = findFirst((e) => e.tracking.errorCode === 'DATA_STREAM_STALL_TIMEOUT');
-  const persistTimeout = findFirst((e) => e.tracking.errorCode === 'DATA_PERSIST_TIMEOUT');
-  const indexGapBlocked = findFirst((e) => e.tracking.errorCode === 'INDEX_GAP_BLOCKED');
+  const stallTimeout = findFirst(
+    (e) => e.tracking.errorCode === 'DATA_STREAM_STALL_TIMEOUT',
+  );
+  const persistTimeout = findFirst(
+    (e) => e.tracking.errorCode === 'DATA_PERSIST_TIMEOUT',
+  );
+  const indexGapBlocked = findFirst(
+    (e) => e.tracking.errorCode === 'INDEX_GAP_BLOCKED',
+  );
 
   const publishStart = findFirst(
-    (e) => e.tracking.stage === 'mqtt' && e.tracking.op === 'publish' && e.tracking.result === 'start',
+    (e) =>
+      e.tracking.stage === 'mqtt' &&
+      e.tracking.op === 'publish' &&
+      e.tracking.result === 'start',
   );
   const publishOk = findFirst(
-    (e) => e.tracking.stage === 'mqtt' && e.tracking.op === 'publish' && e.tracking.result === 'ok',
+    (e) =>
+      e.tracking.stage === 'mqtt' &&
+      e.tracking.op === 'publish' &&
+      e.tracking.result === 'ok',
   );
   const ackOk = findFirst(
-    (e) => e.tracking.stage === 'mqtt' && e.tracking.op === 'ack' && e.tracking.result === 'ok',
+    (e) =>
+      e.tracking.stage === 'mqtt' &&
+      e.tracking.op === 'ack' &&
+      e.tracking.result === 'ok',
   );
   const ackTimeout = findFirst(
     (e) =>
-      (e.tracking.stage === 'mqtt' && e.tracking.op === 'ack' && e.tracking.result === 'timeout') ||
+      (e.tracking.stage === 'mqtt' &&
+        e.tracking.op === 'ack' &&
+        e.tracking.result === 'timeout') ||
       e.tracking.errorCode === 'ACK_TIMEOUT',
   );
   const ackPending = findFirst((e) => e.tracking.errorCode === 'ACK_PENDING');
@@ -316,7 +347,9 @@ function main() {
     }))
     .sort((a, b) => (b.events.length ?? 0) - (a.events.length ?? 0));
 
-  console.log(`parsed=${all.length} matched=${events.length} groups=${groups.length}`);
+  console.log(
+    `parsed=${all.length} matched=${events.length} groups=${groups.length}`,
+  );
 
   // Top errorCode stats
   const errorCodeCount = new Map<string, number>();
@@ -338,7 +371,9 @@ function main() {
   console.log('\nSessions (top 20):');
   for (const g of groups.slice(0, 20)) {
     const m = pickMilestones(g.events);
-    const sample = g.events.find((e) => e.tracking.deviceSn || e.tracking.deviceMac || e.tracking.linkCode);
+    const sample = g.events.find(
+      (e) => e.tracking.deviceSn || e.tracking.deviceMac || e.tracking.linkCode,
+    );
     const t = sample?.tracking ?? ({} as TrackingFields);
     const status = m.ackOk
       ? 'ack_ok'
@@ -377,7 +412,9 @@ function main() {
     );
   }
 
-  console.log('\nTip: add --attemptId/--linkCode/--deviceSn to narrow down and re-run.');
+  console.log(
+    '\nTip: add --attemptId/--linkCode/--deviceSn to narrow down and re-run.',
+  );
 }
 
 try {

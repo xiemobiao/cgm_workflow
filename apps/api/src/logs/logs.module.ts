@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { StorageModule } from '../storage/storage.module';
 import { KnownIssuesModule } from '../known-issues/known-issues.module';
 import { BluetoothService } from './bluetooth.service';
+import { BluetoothAnomalyService } from './bluetooth-anomaly.service';
+import { BluetoothCommandService } from './bluetooth-command.service';
+import { BluetoothSessionService } from './bluetooth-session.service';
 import { LoganDecryptService } from './logan-decrypt.service';
 import { LogsController } from './logs.controller';
 import { LogsParserService } from './logs.parser.service';
@@ -28,6 +31,9 @@ import {
     LogProcessingService,
     LoganDecryptService,
     BluetoothService,
+    BluetoothSessionService,
+    BluetoothAnomalyService,
+    BluetoothCommandService,
     LogsAnalyzerService,
     EventFlowAnalyzerService,
     // Refactored services
@@ -42,6 +48,9 @@ import {
     LogsParserService,
     LogProcessingService,
     BluetoothService,
+    BluetoothSessionService,
+    BluetoothAnomalyService,
+    BluetoothCommandService,
     LogsAnalyzerService,
     EventFlowAnalyzerService,
     // Export refactored services for other modules

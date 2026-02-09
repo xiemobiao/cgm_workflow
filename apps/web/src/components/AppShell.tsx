@@ -167,6 +167,7 @@ function AppShellInner(props: { children: React.ReactNode }) {
 	                      items={NAV_ITEMS}
 	                      t={t}
 	                      isActive={isActive}
+	                      pathname={pathname}
 	                      collapsed={false}
 	                      expandedItem={expandedItemForRender}
 	                      setExpandedItem={setExpandedItem}
@@ -227,6 +228,7 @@ function AppShellInner(props: { children: React.ReactNode }) {
 	                items={NAV_ITEMS}
 	                t={t}
 	                isActive={isActive}
+	                pathname={pathname}
 	                collapsed={sidebarCollapsed}
 	                expandedItem={expandedItemForRender}
 	                setExpandedItem={setExpandedItem}
@@ -306,6 +308,7 @@ function NavContent({
   items,
   t,
   isActive,
+  pathname,
   collapsed,
   expandedItem,
   setExpandedItem,
@@ -313,6 +316,7 @@ function NavContent({
   items: NavItem[];
   t: (key: string) => string;
   isActive: (href: string) => boolean;
+  pathname: string;
   collapsed: boolean;
   expandedItem: string | null;
   setExpandedItem: (item: string | null) => void;
@@ -393,7 +397,7 @@ function NavContent({
                                 'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200',
                                 isActive(child.href) && child.href !== '/logs'
                                   ? 'bg-primary/15 text-primary'
-                                  : child.href === '/logs' && location.pathname === '/logs'
+                                  : child.href === '/logs' && pathname === '/logs'
                                   ? 'bg-primary/15 text-primary'
                                   : 'hover:bg-accent/10 text-muted-foreground hover:text-foreground'
                               )}
