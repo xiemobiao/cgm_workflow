@@ -14,6 +14,13 @@ import type {
   ExtraEventResult,
 } from './event-flow-types';
 
+type SessionEventRow = {
+  id: string;
+  eventName: string;
+  timestampMs: bigint;
+  deviceMac: string | null;
+};
+
 /**
  * Event Flow Analyzer Service
  *
@@ -54,10 +61,42 @@ export class EventFlowAnalyzerService {
 
     this.logger.log(`Found ${linkCodes.length} sessions to analyze`);
 
+    // Load all session events in one query to avoid N+1 database round trips.
+    const allSessionEvents = await this.prisma.logEvent.findMany({
+      where: {
+        logFileId,
+        linkCode: { in: linkCodes },
+      },
+      orderBy: [{ linkCode: 'asc' }, { timestampMs: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        eventName: true,
+        timestampMs: true,
+        deviceMac: true,
+        linkCode: true,
+      },
+    });
+
+    const eventsByLinkCode = new Map<string, SessionEventRow[]>();
+    for (const event of allSessionEvents) {
+      if (!event.linkCode) continue;
+      const bucket = eventsByLinkCode.get(event.linkCode) ?? [];
+      bucket.push({
+        id: event.id,
+        eventName: event.eventName,
+        timestampMs: event.timestampMs,
+        deviceMac: event.deviceMac,
+      });
+      eventsByLinkCode.set(event.linkCode, bucket);
+    }
+
     // Analyze each session
     const sessionAnalyses: SessionAnalysis[] = [];
     for (const linkCode of linkCodes) {
-      const analysis = await this.analyzeSession(logFileId, linkCode);
+      const analysis = this.analyzeSession(
+        linkCode,
+        eventsByLinkCode.get(linkCode) ?? [],
+      );
       sessionAnalyses.push(analysis);
     }
 
@@ -74,25 +113,10 @@ export class EventFlowAnalyzerService {
   /**
    * Analyze a single session (linkCode)
    */
-  private async analyzeSession(
-    logFileId: string,
+  private analyzeSession(
     linkCode: string,
-  ): Promise<SessionAnalysis> {
-    // Get all events for this session, ordered by time
-    const events = await this.prisma.logEvent.findMany({
-      where: {
-        logFileId,
-        linkCode,
-      },
-      orderBy: { timestampMs: 'asc' },
-      select: {
-        id: true,
-        eventName: true,
-        timestampMs: true,
-        deviceMac: true,
-      },
-    });
-
+    events: SessionEventRow[],
+  ): SessionAnalysis {
     if (events.length === 0) {
       return this.getEmptySessionAnalysis(linkCode);
     }
@@ -155,12 +179,7 @@ export class EventFlowAnalyzerService {
    */
   private analyzeStage(
     stageId: string,
-    events: Array<{
-      id: string;
-      eventName: string;
-      timestampMs: bigint;
-      deviceMac: string | null;
-    }>,
+    events: SessionEventRow[],
   ): StageTiming {
     const stage = MAIN_FLOW_TEMPLATE.stages.find((s) => s.id === stageId);
     if (!stage) {

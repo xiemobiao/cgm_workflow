@@ -1990,6 +1990,26 @@ export class BluetoothService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    return this.detectAnomaliesEnhancedInternal({
+      projectId: params.projectId,
+      logFileId: params.logFileId,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      deviceMac: params.deviceMac,
+    });
+  }
+
+  /**
+   * Internal anomaly detection API for backend automation.
+   * RBAC is intentionally skipped; caller must pass a validated project scope.
+   */
+  async detectAnomaliesEnhancedInternal(params: {
+    projectId: string;
+    logFileId?: string;
+    startTime: string;
+    endTime: string;
+    deviceMac?: string;
+  }) {
     if (params.logFileId) {
       await this.assertLogFileInProject({
         projectId: params.projectId,

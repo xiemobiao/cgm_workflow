@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiClientError, apiFetch } from '@/lib/api';
-import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { fadeIn } from '@/lib/animations';
 
@@ -127,7 +126,7 @@ function getSeverityBadge(severity: number) {
 }
 
 export default function AnalysisPage() {
-  const { t, localeTag } = useI18n();
+  const { localeTag } = useI18n();
   const params = useParams();
   const router = useRouter();
   const logFileId = params?.id as string | undefined;
@@ -136,8 +135,6 @@ export default function AnalysisPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retrying, setRetrying] = useState(false);
-
-  const projectId = getProjectId() ?? '';
 
   useEffect(() => {
     if (!logFileId) return;
@@ -157,7 +154,6 @@ export default function AnalysisPage() {
         // If analysis not found (404), don't set error - show trigger button instead
         if (e instanceof ApiClientError && (e.status === 404 || e.code === 'ANALYSIS_NOT_FOUND')) {
           // Leave analysis as null to show "No analysis yet" UI
-          console.log('Analysis not found - showing trigger button');
         } else {
           const msg =
             e instanceof ApiClientError

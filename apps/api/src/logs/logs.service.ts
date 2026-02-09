@@ -1152,9 +1152,9 @@ export class LogsService {
     };
   }
 
-  async getBleQualityReport(params: { actorUserId: string; id: string }) {
+  private async getLogFileBasicOrThrow(id: string) {
     const logFile = await this.prisma.logFile.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { id: true, projectId: true },
     });
 
@@ -1166,22 +1166,20 @@ export class LogsService {
       });
     }
 
-    await this.rbac.requireProjectRoles({
-      userId: params.actorUserId,
-      projectId: logFile.projectId,
-      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
-    });
+    return logFile;
+  }
 
+  private async buildBleQualityReportForLogFile(logFileId: string) {
     const [statsRows, parserErrorCount, lastParserError] = await Promise.all([
       this.prisma.logEventStats.findMany({
-        where: { logFileId: logFile.id },
+        where: { logFileId },
         select: { eventName: true, level: true, count: true },
       }),
       this.prisma.logEvent.count({
-        where: { logFileId: logFile.id, eventName: 'PARSER_ERROR' },
+        where: { logFileId, eventName: 'PARSER_ERROR' },
       }),
       this.prisma.logEvent.findFirst({
-        where: { logFileId: logFile.id, eventName: 'PARSER_ERROR' },
+        where: { logFileId, eventName: 'PARSER_ERROR' },
         orderBy: [{ timestampMs: 'desc' }, { id: 'desc' }],
         select: { msgJson: true },
       }),
@@ -1197,22 +1195,20 @@ export class LogsService {
       logan: loganStats,
     });
 
-    return { logFileId: logFile.id, ...report };
+    return { logFileId, ...report };
   }
 
-  async getBackendQualityReport(params: { actorUserId: string; id: string }) {
-    const logFile = await this.prisma.logFile.findUnique({
-      where: { id: params.id },
-      select: { id: true, projectId: true },
-    });
+  /**
+   * Internal report API for backend automation.
+   * RBAC is intentionally skipped; caller must ensure scope safety.
+   */
+  async getBleQualityReportInternal(params: { id: string }) {
+    const logFile = await this.getLogFileBasicOrThrow(params.id);
+    return this.buildBleQualityReportForLogFile(logFile.id);
+  }
 
-    if (!logFile) {
-      throw new ApiException({
-        code: 'LOG_FILE_NOT_FOUND',
-        message: 'Log file not found',
-        status: 404,
-      });
-    }
+  async getBleQualityReport(params: { actorUserId: string; id: string }) {
+    const logFile = await this.getLogFileBasicOrThrow(params.id);
 
     await this.rbac.requireProjectRoles({
       userId: params.actorUserId,
@@ -1220,10 +1216,14 @@ export class LogsService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    return this.buildBleQualityReportForLogFile(logFile.id);
+  }
+
+  private async buildBackendQualityReportForLogFile(logFileId: string) {
     const [httpRows, mqttRows] = await Promise.all([
       this.prisma.logEvent.findMany({
         where: {
-          logFileId: logFile.id,
+          logFileId,
           eventName: {
             in: [
               'network_request_start',
@@ -1242,7 +1242,7 @@ export class LogsService {
       }),
       this.prisma.logEvent.findMany({
         where: {
-          logFileId: logFile.id,
+          logFileId,
           stage: 'mqtt',
         },
         select: {
@@ -1274,7 +1274,28 @@ export class LogsService {
       })),
     });
 
-    return { logFileId: logFile.id, ...report };
+    return { logFileId, ...report };
+  }
+
+  /**
+   * Internal report API for backend automation.
+   * RBAC is intentionally skipped; caller must ensure scope safety.
+   */
+  async getBackendQualityReportInternal(params: { id: string }) {
+    const logFile = await this.getLogFileBasicOrThrow(params.id);
+    return this.buildBackendQualityReportForLogFile(logFile.id);
+  }
+
+  async getBackendQualityReport(params: { actorUserId: string; id: string }) {
+    const logFile = await this.getLogFileBasicOrThrow(params.id);
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    return this.buildBackendQualityReportForLogFile(logFile.id);
   }
 
   async getDataContinuityReport(params: { actorUserId: string; id: string }) {

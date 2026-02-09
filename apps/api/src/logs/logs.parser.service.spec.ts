@@ -99,6 +99,30 @@ describe('extractTrackingFields', () => {
     });
   });
 
+  it('extracts fallback fields from deviceId', () => {
+    expect(
+      extractTrackingFields({
+        data: {
+          deviceId: 'AA:BB:CC:DD:EE:FF',
+        },
+      }),
+    ).toEqual({
+      ...empty,
+      deviceMac: 'AA:BB:CC:DD:EE:FF',
+    });
+
+    expect(
+      extractTrackingFields({
+        data: {
+          deviceId: 'SN-FROM-DEVICE-ID',
+        },
+      }),
+    ).toEqual({
+      ...empty,
+      deviceSn: 'SN-FROM-DEVICE-ID',
+    });
+  });
+
   it('extracts error code from nested error object', () => {
     expect(
       extractTrackingFields({

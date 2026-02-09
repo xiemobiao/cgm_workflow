@@ -189,6 +189,24 @@ export class KnownIssuesService {
       allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
     });
 
+    return this.matchEventInternal({
+      projectId: params.projectId,
+      eventName: params.eventName,
+      errorCode: params.errorCode,
+      msg: params.msg,
+    });
+  }
+
+  /**
+   * Internal matching API used by backend automation flows.
+   * RBAC is intentionally skipped here; callers must ensure scope safety.
+   */
+  async matchEventInternal(params: {
+    projectId: string;
+    eventName: string;
+    errorCode?: string;
+    msg?: string;
+  }) {
     const issues = await this.prisma.knownIssue.findMany({
       where: {
         projectId: params.projectId,

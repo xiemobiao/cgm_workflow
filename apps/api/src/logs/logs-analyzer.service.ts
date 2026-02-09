@@ -68,6 +68,7 @@ export class LogsAnalyzerService {
    */
   async analyzeLogFile(logFileId: string): Promise<void> {
     this.logger.log(`Starting analysis for log file: ${logFileId}`);
+    let projectId: string | null = null;
 
     try {
       // Get log file details
@@ -79,6 +80,7 @@ export class LogsAnalyzerService {
         this.logger.warn(`Log file not found: ${logFileId}`);
         return;
       }
+      projectId = logFile.projectId;
 
       // Create or update analysis record with pending status
       await this.prisma.logFileAnalysis.upsert({
@@ -151,13 +153,27 @@ export class LogsAnalyzerService {
     } catch (error) {
       this.logger.error(`Analysis failed for log file: ${logFileId}`, error);
 
+      const resolvedProjectId =
+        projectId ??
+        (
+          await this.prisma.logFile.findUnique({
+            where: { id: logFileId },
+            select: { projectId: true },
+          })
+        )?.projectId ??
+        null;
+      if (!resolvedProjectId) {
+        this.logger.warn(
+          `Skip persisting failed analysis because log file is missing: ${logFileId}`,
+        );
+        return;
+      }
+
       await this.prisma.logFileAnalysis.upsert({
         where: { logFileId },
         create: {
           logFileId,
-          projectId: (await this.prisma.logFile.findUnique({
-            where: { id: logFileId },
-          }))!.projectId,
+          projectId: resolvedProjectId,
           qualityScore: 0,
           status: AnalysisStatus.failed,
           errorMessage: error instanceof Error ? error.message : String(error),
@@ -182,8 +198,7 @@ export class LogsAnalyzerService {
       if (!logFile) return null;
 
       // Call existing BLE quality report
-      const report = await this.logsService.getBleQualityReport({
-        actorUserId: 'system',
+      const report = await this.logsService.getBleQualityReportInternal({
         id: logFileId,
       });
 
@@ -206,8 +221,7 @@ export class LogsAnalyzerService {
       if (!logFile) return null;
 
       // Call existing backend quality report
-      const report = await this.logsService.getBackendQualityReport({
-        actorUserId: 'system',
+      const report = await this.logsService.getBackendQualityReportInternal({
         id: logFileId,
       });
 
@@ -251,12 +265,12 @@ export class LogsAnalyzerService {
       const endTime = new Date(Number(lastEvent.timestampMs));
 
       // Call existing anomaly detection
-      const result = await this.bluetoothService.detectAnomaliesEnhanced({
-        actorUserId: 'system',
-        projectId,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-      });
+      const result =
+        await this.bluetoothService.detectAnomaliesEnhancedInternal({
+          projectId,
+          startTime: startTime.toISOString(),
+          endTime: endTime.toISOString(),
+        });
 
       return result.anomalies as AnomalyDetectionResult[];
     } catch (error) {
@@ -300,8 +314,7 @@ export class LogsAnalyzerService {
             ? JSON.stringify(event.msgJson)
             : String(event.msgJson ?? '');
 
-        const result = await this.knownIssuesService.matchEvent({
-          actorUserId: 'system',
+        const result = await this.knownIssuesService.matchEventInternal({
           projectId,
           eventName: event.eventName,
           errorCode: event.errorCode ?? undefined,

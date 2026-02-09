@@ -238,6 +238,30 @@ function applyTrackingFallback(events: Prisma.LogEventCreateManyInput[]) {
   }
 }
 
+function* iterateNonEmptyLines(text: string): Generator<string> {
+  let start = 0;
+  for (let i = 0; i <= text.length; i++) {
+    const atEnd = i === text.length;
+    const ch = atEnd ? -1 : text.charCodeAt(i);
+    if (!atEnd && ch !== 10 && ch !== 13) continue;
+
+    const line = text.slice(start, i);
+    if (line.trim().length > 0) {
+      yield line;
+    }
+
+    if (
+      !atEnd &&
+      ch === 13 &&
+      i + 1 < text.length &&
+      text.charCodeAt(i + 1) === 10
+    ) {
+      i += 1;
+    }
+    start = i + 1;
+  }
+}
+
 // Extract tracking fields from msg object for flow tracing
 export function extractTrackingFields(msg: unknown): TrackingFields {
   const msgString = asString(msg);
@@ -281,15 +305,24 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
     if (!result.attemptId)
       result.attemptId = normalizeTrim(pickFirstString(obj, ['attemptId']));
 
+    const deviceId = normalizeTrim(pickFirstString(obj, ['deviceId']));
+    const deviceIdIsMac = deviceId ? looksLikeMac(deviceId) : false;
+
     if (!result.deviceMac) {
       const mac = normalizeTrim(pickFirstString(obj, ['deviceMac', 'mac']));
       result.deviceMac = mac && looksLikeMac(mac) ? mac : null;
+      if (!result.deviceMac && deviceId && deviceIdIsMac) {
+        result.deviceMac = deviceId;
+      }
     }
 
     if (!result.deviceSn) {
       result.deviceSn = normalizeTrim(
         pickFirstString(obj, ['deviceSn', 'sn', 'serialNumber', 'serial']),
       );
+      if (!result.deviceSn && deviceId && !deviceIdIsMac) {
+        result.deviceSn = deviceId;
+      }
       if (!result.deviceSn) {
         const topic = normalizeTrim(pickFirstString(obj, ['topic']));
         result.deviceSn = extractDeviceSnFromTopic(topic);
@@ -304,9 +337,7 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
       const errorObj = asRecord(obj.error);
       const candidate =
         pickFirstString(obj, ['errorCode', 'code']) ??
-        (errorObj
-          ? pickFirstString(errorObj, ['errorCode', 'code'])
-          : null);
+        (errorObj ? pickFirstString(errorObj, ['errorCode', 'code']) : null);
       result.errorCode = normalizeTrim(candidate);
     }
   }
@@ -316,6 +347,8 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
 
 @Injectable()
 export class LogsParserService {
+  private static readonly PARSER_VERSION = 'v3';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
@@ -368,12 +401,11 @@ export class LogsParserService {
         text = buf.toString('utf8');
       }
 
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-
       const nowMs = BigInt(Date.now());
       const parserErrorEventName = 'PARSER_ERROR';
 
       const events: Prisma.LogEventCreateManyInput[] = [];
+      let lineCount = 0;
 
       if (isLoganEncrypted && loganStats) {
         // If all blocks failed to decrypt, surface a clear error so users can fix LOGAN_DECRYPT_KEY/IV.
@@ -410,7 +442,8 @@ export class LogsParserService {
         }
       }
 
-      for (const line of lines) {
+      for (const line of iterateNonEmptyLines(text)) {
+        lineCount += 1;
         try {
           const outerRaw = JSON.parse(line) as unknown;
           const outerObj = asRecord(outerRaw);
@@ -563,7 +596,7 @@ export class LogsParserService {
               where: { id: logFile.id },
               data: {
                 status: hadError ? LogFileStatus.failed : LogFileStatus.parsed,
-                parserVersion: 'v3',
+                parserVersion: LogsParserService.PARSER_VERSION,
               },
             });
           },
@@ -581,7 +614,7 @@ export class LogsParserService {
         targetType: 'LogFile',
         targetId: logFile.id,
         metadata: {
-          lineCount: lines.length,
+          lineCount,
           logan: loganStats ?? undefined,
         },
       });
@@ -599,7 +632,10 @@ export class LogsParserService {
       try {
         await this.prisma.logFile.update({
           where: { id: logFile.id },
-          data: { status: LogFileStatus.failed, parserVersion: 'v1' },
+          data: {
+            status: LogFileStatus.failed,
+            parserVersion: LogsParserService.PARSER_VERSION,
+          },
         });
       } catch (inner) {
         if (

@@ -161,14 +161,9 @@ export default function EventFlowAnalysisPage() {
           eventCoverageAnalysis: EventCoverageAnalysisResult;
         }>(`/api/logs/files/${fileId}/event-flow-analysis`);
 
-        console.log('=== Event Flow Analysis Response ===');
-        console.log('mainFlowAnalysis:', data.mainFlowAnalysis);
-        console.log('eventCoverageAnalysis:', data.eventCoverageAnalysis);
-
         setMainFlow(data.mainFlowAnalysis);
         setCoverage(data.eventCoverageAnalysis);
       } catch (err: unknown) {
-        console.error('=== Fetch Error ===', err);
         const status =
           typeof err === 'object' && err !== null && 'status' in err && typeof (err as { status?: unknown }).status === 'number'
             ? (err as { status: number }).status
@@ -177,7 +172,6 @@ export default function EventFlowAnalysisPage() {
         // If analysis not found (404), don't set error - show "no data" UI instead
         if (status === 404 || message.includes('not found')) {
           // Leave mainFlow and coverage as null to trigger "no data" UI
-          console.log('Analysis not found - showing trigger button');
         } else {
           setError(message || 'Unknown error');
         }

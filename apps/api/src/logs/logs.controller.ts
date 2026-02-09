@@ -21,6 +21,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BluetoothService } from './bluetooth.service';
 import { LogsService } from './logs.service';
 import { LogsAnalyzerService } from './logs-analyzer.service';
+import {
+  LogsFileService,
+  LogsSearchService,
+  LogsStatsService,
+  LogsTraceService,
+} from './services';
 
 const uploadSchema = z.object({
   projectId: z.string().uuid(),
@@ -238,6 +244,10 @@ const bluetoothAnomaliesEnhancedSchema = z.object({
 export class LogsController {
   constructor(
     private readonly logs: LogsService,
+    private readonly logsFile: LogsFileService,
+    private readonly logsSearch: LogsSearchService,
+    private readonly logsTrace: LogsTraceService,
+    private readonly logsStats: LogsStatsService,
     private readonly bluetooth: BluetoothService,
     private readonly analyzer: LogsAnalyzerService,
   ) {}
@@ -260,7 +270,7 @@ export class LogsController {
       });
     }
     const dto = uploadSchema.parse(body);
-    return this.logs.upload({
+    return this.logsFile.upload({
       actorUserId: user.userId,
       projectId: dto.projectId,
       file,
@@ -274,7 +284,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = searchSchema.parse(query);
-    return this.logs.searchEvents({ actorUserId: user.userId, ...dto });
+    return this.logsSearch.searchEvents({ actorUserId: user.userId, ...dto });
   }
 
   @Get('files')
@@ -283,7 +293,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = fileListSchema.parse(query);
-    return this.logs.listLogFiles({ actorUserId: user.userId, ...dto });
+    return this.logsFile.listLogFiles({ actorUserId: user.userId, ...dto });
   }
 
   @Get('events/:id')
@@ -292,7 +302,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const eventId = idSchema.parse(id);
-    return this.logs.getEventDetail({ actorUserId: user.userId, id: eventId });
+    return this.logsSearch.getEventDetail({
+      actorUserId: user.userId,
+      id: eventId,
+    });
   }
 
   @Get('events/:id/context')
@@ -303,7 +316,7 @@ export class LogsController {
   ) {
     const eventId = idSchema.parse(id);
     const dto = contextSchema.parse(query);
-    return this.logs.getEventContext({
+    return this.logsSearch.getEventContext({
       actorUserId: user.userId,
       id: eventId,
       ...dto,
@@ -316,7 +329,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getLogFileDetail({ actorUserId: user.userId, id: fileId });
+    return this.logsFile.getLogFileDetail({
+      actorUserId: user.userId,
+      id: fileId,
+    });
   }
 
   @Get('files/:id/ble-quality')
@@ -325,7 +341,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getBleQualityReport({
+    return this.logsFile.getBleQualityReport({
       actorUserId: user.userId,
       id: fileId,
     });
@@ -337,7 +353,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getBackendQualityReport({
+    return this.logsFile.getBackendQualityReport({
       actorUserId: user.userId,
       id: fileId,
     });
@@ -349,7 +365,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getDataContinuityReport({
+    return this.logsFile.getDataContinuityReport({
       actorUserId: user.userId,
       id: fileId,
     });
@@ -361,7 +377,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getStreamSessionQualityReport({
+    return this.logsFile.getStreamSessionQualityReport({
       actorUserId: user.userId,
       id: fileId,
     });
@@ -373,7 +389,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.getLogFileAnalysis({
+    return this.logsFile.getLogFileAnalysis({
       actorUserId: user.userId,
       logFileId: fileId,
     });
@@ -385,7 +401,7 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    const analysis = await this.logs.getLogFileAnalysis({
+    const analysis = await this.logsFile.getLogFileAnalysis({
       actorUserId: user.userId,
       logFileId: fileId,
     });
@@ -403,7 +419,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    await this.logs.getLogFileDetail({ actorUserId: user.userId, id: fileId });
+    await this.logsFile.getLogFileDetail({
+      actorUserId: user.userId,
+      id: fileId,
+    });
     // Trigger analysis asynchronously
     void this.analyzer.analyzeLogFile(fileId);
     return { message: 'Analysis triggered', logFileId: fileId };
@@ -415,7 +434,10 @@ export class LogsController {
     @Param('id') id: string,
   ) {
     const fileId = idSchema.parse(id);
-    return this.logs.deleteLogFile({ actorUserId: user.userId, id: fileId });
+    return this.logsFile.deleteLogFile({
+      actorUserId: user.userId,
+      id: fileId,
+    });
   }
 
   @Post('files/batch-delete')
@@ -452,7 +474,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = traceLinkCodeSchema.parse(query);
-    return this.logs.traceByLinkCode({
+    return this.logsTrace.traceByLinkCode({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -468,7 +490,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = traceRequestIdSchema.parse(query);
-    return this.logs.traceByRequestId({
+    return this.logsTrace.traceByRequestId({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -499,7 +521,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = traceDeviceMacSchema.parse(query);
-    return this.logs.traceByDeviceMac({
+    return this.logsTrace.traceByDeviceMac({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -517,7 +539,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = traceDeviceSnSchema.parse(query);
-    return this.logs.traceByDeviceSn({
+    return this.logsTrace.traceByDeviceSn({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -536,7 +558,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = statsSchema.parse(query);
-    return this.logs.getEventStats({
+    return this.logsStats.getEventStats({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -551,7 +573,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = errorHotspotsSchema.parse(query);
-    return this.logs.getErrorHotspots({
+    return this.logsStats.getErrorHotspots({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -567,7 +589,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = timelineSchema.parse(query);
-    return this.logs.getTimeline({
+    return this.logsStats.getTimeline({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
@@ -587,7 +609,7 @@ export class LogsController {
     @Query() query: unknown,
   ) {
     const dto = commandChainsSchema.parse(query);
-    return this.logs.getCommandChains({
+    return this.logsStats.getCommandChains({
       actorUserId: user.userId,
       projectId: dto.projectId,
       logFileId: dto.logFileId,
