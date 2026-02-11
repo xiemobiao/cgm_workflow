@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { LoganDecryptService } from './logan-decrypt.service';
 import { LogsAnalyzerService } from './logs-analyzer.service';
+import { LogsAssertionService } from './services/logs-assertion.service';
 
 type OuterLine = {
   c: string;
@@ -355,6 +356,7 @@ export class LogsParserService {
     private readonly audit: AuditService,
     private readonly loganDecrypt: LoganDecryptService,
     private readonly analyzer?: LogsAnalyzerService,
+    private readonly assertion?: LogsAssertionService,
   ) {}
 
   enqueue(logFileId: string) {
@@ -625,6 +627,20 @@ export class LogsParserService {
           await this.analyzer.analyzeLogFile(logFile.id);
         } catch {
           // Analyzer errors are persisted as AnalysisStatus.failed; keep parsing result intact.
+        }
+      }
+
+      // Trigger assertion validation after parsing/analyzing.
+      // Failures are persisted in assertion run status and should not block parsing flow.
+      if (analyze && !hadError && this.assertion) {
+        try {
+          await this.assertion.runValidationInternal({
+            projectId: logFile.projectId,
+            logFileId: logFile.id,
+            triggeredBy: 'auto',
+          });
+        } catch {
+          // Keep parse result intact even if assertions fail unexpectedly.
         }
       }
     } catch (e) {

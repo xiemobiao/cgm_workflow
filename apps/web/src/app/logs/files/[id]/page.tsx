@@ -590,6 +590,9 @@ export default function LogFileDetailPage() {
                 <Link href={`/logs/files/${fileId}/viewer`}>{t('logs.files.viewContent')}</Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
+                <Link href={`/logs/files/${fileId}/analysis`}>分析自动化</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
                 <Link href={`/logs/files/${fileId}/event-flow`}>事件流分析</Link>
               </Button>
               <Button variant="outline" size="sm" asChild>

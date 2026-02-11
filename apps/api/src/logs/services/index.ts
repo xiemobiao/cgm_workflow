@@ -4,3 +4,5 @@ export { LogsFileService } from './logs-file.service';
 export { LogsSearchService } from './logs-search.service';
 export { LogsTraceService } from './logs-trace.service';
 export { LogsStatsService } from './logs-stats.service';
+export { LogsRegressionService } from './logs-regression.service';
+export { LogsAssertionService } from './logs-assertion.service';

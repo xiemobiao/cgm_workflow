@@ -7,6 +7,7 @@ import { BluetoothCommandService } from './bluetooth-command.service';
 import { BluetoothSessionService } from './bluetooth-session.service';
 import { LoganDecryptService } from './logan-decrypt.service';
 import { LogsController } from './logs.controller';
+import { LogsAutomationController } from './logs-automation.controller';
 import { LogsParserService } from './logs.parser.service';
 import { LogsService } from './logs.service';
 import { LogsAnalyzerService } from './logs-analyzer.service';
@@ -19,11 +20,13 @@ import {
   LogsSearchService,
   LogsTraceService,
   LogsStatsService,
+  LogsRegressionService,
+  LogsAssertionService,
 } from './services';
 
 @Module({
   imports: [StorageModule, KnownIssuesModule],
-  controllers: [LogsController],
+  controllers: [LogsController, LogsAutomationController],
   providers: [
     // Original service (facade for backward compatibility)
     LogsService,
@@ -42,6 +45,8 @@ import {
     LogsSearchService,
     LogsTraceService,
     LogsStatsService,
+    LogsRegressionService,
+    LogsAssertionService,
   ],
   exports: [
     LogsService,
@@ -59,6 +64,8 @@ import {
     LogsSearchService,
     LogsTraceService,
     LogsStatsService,
+    LogsRegressionService,
+    LogsAssertionService,
   ],
 })
 export class LogsModule {}

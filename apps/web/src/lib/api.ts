@@ -57,8 +57,10 @@ export async function apiFetch<T>(
 
   if (res.status === 401) {
     clearToken();
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.replace('/login');
+    }
   }
 
   throw new ApiClientError({ code, message, status: res.status });
 }
-

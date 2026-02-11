@@ -81,6 +81,9 @@ model User {
   auditActions       AuditLog[]       @relation("AuditActor")
   createdKnownIssues KnownIssue[]     @relation("KnownIssueCreator")
   createdReports     AnalysisReport[] @relation("ReportCreator")
+  createdRegressionBaselines LogRegressionBaseline[] @relation("RegressionBaselineCreator")
+  createdAssertionRules LogAssertionRule[] @relation("AssertionRuleCreator")
+  createdAssertionRuns LogAssertionRun[] @relation("AssertionRunCreator")
 }
 
 model Role {
@@ -108,6 +111,9 @@ model Project {
   knownIssues     KnownIssue[]
   analysisReports AnalysisReport[]
   logFileAnalyses LogFileAnalysis[]
+  regressionBaselines LogRegressionBaseline[]
+  assertionRules LogAssertionRule[]
+  assertionRuns LogAssertionRun[]
 }
 
 model ProjectMember {
@@ -141,6 +147,8 @@ model LogFile {
   events  LogEvent[]
   stats   LogEventStats[]
   analysis LogFileAnalysis?
+  regressionBaselines LogRegressionBaseline[]
+  assertionRuns LogAssertionRun[]
 
   @@index([projectId, uploadedAt])
 }
@@ -364,6 +372,21 @@ enum ReportType {
   performance_analysis
 }
 
+// Assertion rule type for log self-test validation
+enum AssertionRuleType {
+  event_must_exist
+  event_must_not_exist
+  event_must_exist_after_anchor
+}
+
+// Execution status for assertion validation run
+enum AssertionRunStatus {
+  pending
+  running
+  completed
+  failed
+}
+
 // Analysis report for one-click generation
 model AnalysisReport {
   id           String      @id @default(uuid()) @db.Uuid
@@ -422,4 +445,78 @@ model LogFileAnalysis {
   @@index([projectId, createdAt])
   @@index([status])
   @@index([qualityScore])
+}
+
+// Regression baseline snapshot for quality gate
+model LogRegressionBaseline {
+  id           String   @id @default(uuid()) @db.Uuid
+  projectId    String   @db.Uuid
+  logFileId    String   @db.Uuid
+  name         String
+  description  String?
+  isActive     Boolean  @default(true)
+  snapshot     Json
+  thresholds   Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?  @db.Uuid
+
+  project      Project  @relation(fields: [projectId], references: [id])
+  logFile      LogFile  @relation(fields: [logFileId], references: [id], onDelete: Cascade)
+  creator      User?    @relation("RegressionBaselineCreator", fields: [createdBy], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([projectId, isActive])
+  @@index([logFileId])
+}
+
+// Assertion rules for automated log validation
+model LogAssertionRule {
+  id           String            @id @default(uuid()) @db.Uuid
+  projectId    String            @db.Uuid
+  name         String
+  description  String?
+  ruleType     AssertionRuleType
+  definition   Json
+  enabled      Boolean           @default(true)
+  priority     Int               @default(100)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  createdBy    String?           @db.Uuid
+
+  project      Project           @relation(fields: [projectId], references: [id])
+  creator      User?             @relation("AssertionRuleCreator", fields: [createdBy], references: [id])
+
+  @@index([projectId, enabled])
+  @@index([projectId, priority])
+  @@index([projectId, createdAt])
+}
+
+// Assertion run result for a specific log file
+model LogAssertionRun {
+  id           String             @id @default(uuid()) @db.Uuid
+  projectId    String             @db.Uuid
+  logFileId    String             @db.Uuid
+  status       AssertionRunStatus @default(pending)
+  triggeredBy  String             @default("manual")
+  totalRules   Int                @default(0)
+  passedRules  Int                @default(0)
+  failedRules  Int                @default(0)
+  passRate     Float              @default(0)
+  summary      Json               @default("{}")
+  details      Json               @default("[]")
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  createdBy    String?            @db.Uuid
+
+  project      Project            @relation(fields: [projectId], references: [id])
+  logFile      LogFile            @relation(fields: [logFileId], references: [id], onDelete: Cascade)
+  creator      User?              @relation("AssertionRunCreator", fields: [createdBy], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([projectId, status])
+  @@index([logFileId])
 }
