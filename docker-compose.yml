@@ -5,6 +5,12 @@ services:
       POSTGRES_USER: cgm_user
       POSTGRES_PASSWORD: cgm_pass
       POSTGRES_DB: cgm_workflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cgm_user -d cgm_workflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     ports:
       - "5432:5432"
     volumes:
@@ -12,6 +18,12 @@ services:
 
   redis:
     image: redis:6
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
     ports:
       - "6379:6379"
 
@@ -21,6 +33,12 @@ services:
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio123
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -48,9 +66,12 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   worker:
     profiles: ["app"]
@@ -70,9 +91,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-replace_with_strong_secret}
       LOG_PROCESSING_CONCURRENCY: ${LOG_PROCESSING_CONCURRENCY:-2}
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   web:
     profiles: ["app"]

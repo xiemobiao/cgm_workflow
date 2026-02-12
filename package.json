@@ -18,6 +18,7 @@
     "web:build": "npm --prefix apps/web run build",
     "web:start": "npm --prefix apps/web run start",
     "lint": "npm --prefix apps/web run lint && npm --prefix apps/api run lint",
-    "test": "npm --prefix apps/api run test"
+    "test": "npm --prefix apps/api run test",
+    "smoke:reason-code": "node scripts/reasoncode-smoke.mjs"
   }
 }
