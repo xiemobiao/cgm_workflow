@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { fadeIn } from '@/lib/animations';
@@ -658,49 +659,51 @@ export default function AnalysisPage() {
       </div>
     );
   }
+  const logsHref = buildLogsSearchHref({ projectId, logFileId });
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* Header */}
       <motion.div
         variants={fadeIn}
         initial="initial"
         animate="animate"
       >
-        <Card className="glass">
-          <CardHeader>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <CardTitle className="text-2xl font-bold gradient-text">
-                  {t('logs.analysis.title')}
-                </CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t('logs.analysis.subtitle')}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/logs/files/${logFileId}`}>{t('common.back')}</Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/logs/files/${logFileId}/viewer`}>
-                    {t('logs.files.viewContent')}
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void triggerAnalysis()}
-                  disabled={retrying || loading}
-                  className="gap-2"
-                >
-                  <RefreshCw size={16} className={retrying ? 'animate-spin' : ''} />
-                  {t('logs.analysis.actions.reanalyze')}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-        </Card>
+        <PageHeader
+          title={t('logs.analysis.title')}
+          subtitle={t('logs.analysis.subtitle')}
+          actions={(
+            <>
+              <PageHeaderActionButton asChild>
+                <Link href={`/logs/files/${logFileId}`}>{t('logs.files.backToDetail')}</Link>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton
+                onClick={() => void triggerAnalysis()}
+                disabled={retrying || loading}
+                className="gap-2"
+              >
+                <RefreshCw size={16} className={retrying ? 'animate-spin' : ''} />
+                {t('logs.analysis.actions.reanalyze')}
+              </PageHeaderActionButton>
+            </>
+          )}
+        />
+      </motion.div>
+      <motion.div variants={fadeIn} initial="initial" animate="animate">
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <span className="text-xs text-muted-foreground">{t('logs.files.quickLinks')}</span>
+          <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+            <Link href={`/logs/files/${logFileId}/viewer`}>{t('logs.files.viewContent')}</Link>
+          </PageHeaderActionButton>
+          <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+            <Link href={logsHref}>{t('logs.files.openInLogs')}</Link>
+          </PageHeaderActionButton>
+          <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+            <Link href={`/logs/files/${logFileId}/event-flow`}>
+              {t('logs.files.eventFlowAnalysis')}
+            </Link>
+          </PageHeaderActionButton>
+        </div>
       </motion.div>
 
       {/* Loading State */}
@@ -723,15 +726,13 @@ export default function AnalysisPage() {
                   {t('logs.analysis.error.title')}
                 </h3>
                 <p className="text-sm text-muted-foreground">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
+                <PageHeaderActionButton
                   onClick={() => void triggerAnalysis()}
                   disabled={retrying}
                   className="mt-4"
                 >
                   {t('logs.analysis.error.retryAnalysis')}
-                </Button>
+                </PageHeaderActionButton>
               </div>
             </div>
           </CardContent>
@@ -798,14 +799,12 @@ export default function AnalysisPage() {
                       {analysis.errorMessage || t('logs.analysis.status.unknownError')}
                     </p>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
+                  <PageHeaderActionButton
                     onClick={() => void triggerAnalysis()}
                     disabled={retrying}
                   >
                     {t('logs.analysis.actions.retry')}
-                  </Button>
+                  </PageHeaderActionButton>
                 </div>
               </CardContent>
             </Card>
@@ -856,7 +855,7 @@ export default function AnalysisPage() {
             transition={{ delay: 0.2 }}
             className="grid grid-cols-2 md:grid-cols-5 gap-4"
           >
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <FileText size={20} className="text-blue-400" />
@@ -869,7 +868,7 @@ export default function AnalysisPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <AlertCircle size={20} className="text-red-400" />
@@ -882,7 +881,7 @@ export default function AnalysisPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <AlertTriangle size={20} className="text-amber-400" />
@@ -895,7 +894,7 @@ export default function AnalysisPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <Activity size={20} className="text-emerald-400" />
@@ -908,7 +907,7 @@ export default function AnalysisPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <Zap size={20} className="text-purple-400" />
@@ -930,7 +929,7 @@ export default function AnalysisPage() {
             animate="animate"
             transition={{ delay: 0.23 }}
           >
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertTriangle size={20} />
@@ -1164,7 +1163,7 @@ export default function AnalysisPage() {
             animate="animate"
             transition={{ delay: 0.25 }}
           >
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ListChecks size={20} />
@@ -1173,9 +1172,7 @@ export default function AnalysisPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
+                  <PageHeaderActionButton
                     onClick={() => void installDefaultRules()}
                     disabled={!projectId || installingDefaults || runningAssertion}
                     className="gap-2"
@@ -1184,7 +1181,7 @@ export default function AnalysisPage() {
                     {installingDefaults
                       ? t('logs.analysis.assertions.actions.installing')
                       : t('logs.analysis.assertions.actions.installDefaults')}
-                  </Button>
+                  </PageHeaderActionButton>
                   <Button
                     size="sm"
                     onClick={() => void runAssertionValidation()}
@@ -1196,9 +1193,7 @@ export default function AnalysisPage() {
                       ? t('logs.analysis.assertions.actions.running')
                       : t('logs.analysis.assertions.actions.runNow')}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
+                  <PageHeaderActionButton
                     onClick={() => void refreshAutomationData()}
                     disabled={!projectId || assertionLoading || regressionLoading || reasonCodeLoading}
                     className="gap-2"
@@ -1212,7 +1207,7 @@ export default function AnalysisPage() {
                       }
                     />
                     {t('logs.analysis.actions.refreshAutomation')}
-                  </Button>
+                  </PageHeaderActionButton>
                 </div>
 
                 {!projectId && (
@@ -1308,7 +1303,7 @@ export default function AnalysisPage() {
             animate="animate"
             transition={{ delay: 0.28 }}
           >
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <LineChart size={20} />
@@ -1433,7 +1428,7 @@ export default function AnalysisPage() {
               animate="animate"
               transition={{ delay: 0.3 }}
             >
-              <Card className="glass">
+              <Card className="glass border-white/[0.08]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <BarChart3 size={20} />
@@ -1526,7 +1521,7 @@ export default function AnalysisPage() {
               animate="animate"
               transition={{ delay: 0.4 }}
             >
-              <Card className="glass">
+              <Card className="glass border-white/[0.08]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <TrendingUp size={20} />
@@ -1618,7 +1613,7 @@ export default function AnalysisPage() {
               animate="animate"
               transition={{ delay: 0.5 }}
             >
-              <Card className="glass">
+              <Card className="glass border-white/[0.08]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Bug size={20} />
@@ -1666,7 +1661,7 @@ export default function AnalysisPage() {
               animate="animate"
               transition={{ delay: 0.6 }}
             >
-              <Card className="glass">
+              <Card className="glass border-white/[0.08]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <CheckCircle2 size={20} />

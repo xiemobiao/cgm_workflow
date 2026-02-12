@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { setActiveLogFileId } from '@/lib/log-file-scope';
@@ -575,70 +576,69 @@ export default function LogFileDetailPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* 页面头部 */}
-      <Card className="glass">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-2xl font-bold">{t('logs.files.detail.title')}</CardTitle>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/logs/files">{t('common.back')}</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/logs/files/${fileId}/viewer`}>{t('logs.files.viewContent')}</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/logs/files/${fileId}/analysis`}>分析自动化</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/logs/files/${fileId}/event-flow`}>事件流分析</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={logsHref}>{t('logs.files.openInLogs')}</Link>
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={deleting || loading || !fileId}
-                onClick={() => {
-                  const name = detail?.fileName ?? fileId;
-                  const ok = window.confirm(t('logs.files.deleteConfirm', { fileName: name }));
-                  if (!ok) return;
-                  setDeleting(true);
-                  setDeleteError('');
-                  apiFetch<{ deleted: boolean }>(`/api/logs/files/${fileId}`, { method: 'DELETE' })
-                    .then(() => {
-                      router.push('/logs/files');
-                    })
-                    .catch((e: unknown) => {
-                      const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
-                      setDeleteError(msg);
-                    })
-                    .finally(() => setDeleting(false));
-                }}
-              >
-                {t('logs.files.delete')}
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        {loading && (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
-          </CardContent>
+      <PageHeader
+        title={t('logs.files.detail.title')}
+        subtitle={detail?.fileName ?? fileId}
+        actions={(
+          <>
+            <PageHeaderActionButton asChild>
+              <Link href="/logs/files">{t('logs.files.backToFiles')}</Link>
+            </PageHeaderActionButton>
+            <PageHeaderActionButton asChild>
+              <Link href={`/logs/files/${fileId}/viewer`}>{t('logs.files.viewContent')}</Link>
+            </PageHeaderActionButton>
+            <PageHeaderActionButton asChild>
+              <Link href={logsHref}>{t('logs.files.openInLogs')}</Link>
+            </PageHeaderActionButton>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-8 rounded-md"
+              disabled={deleting || loading || !fileId}
+              onClick={() => {
+                const name = detail?.fileName ?? fileId;
+                const ok = window.confirm(t('logs.files.deleteConfirm', { fileName: name }));
+                if (!ok) return;
+                setDeleting(true);
+                setDeleteError('');
+                apiFetch<{ deleted: boolean }>(`/api/logs/files/${fileId}`, { method: 'DELETE' })
+                  .then(() => {
+                    router.push('/logs/files');
+                  })
+                  .catch((e: unknown) => {
+                    const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
+                    setDeleteError(msg);
+                  })
+                  .finally(() => setDeleting(false));
+              }}
+            >
+              {t('logs.files.delete')}
+            </Button>
+          </>
         )}
-        {error && (
-          <CardContent>
-            <p className="text-sm text-red-400">{error}</p>
+      />
+      {(loading || error || deleteError) && (
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="space-y-2 p-4">
+            {loading && (
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            )}
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
           </CardContent>
-        )}
-        {deleteError && (
-          <CardContent>
-            <p className="text-sm text-red-400">{deleteError}</p>
-          </CardContent>
-        )}
-      </Card>
+        </Card>
+      )}
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        <span className="text-xs text-muted-foreground">{t('logs.files.quickLinks')}</span>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={`/logs/files/${fileId}/analysis`}>{t('logs.files.analysisAutomation')}</Link>
+        </PageHeaderActionButton>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={`/logs/files/${fileId}/event-flow`}>{t('logs.files.eventFlowAnalysis')}</Link>
+        </PageHeaderActionButton>
+      </div>
 
       {detail ? (
         <>
@@ -758,11 +758,7 @@ export default function LogFileDetailPage() {
                               </div>
                             </div>
                             <div className="flex flex-col gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                asChild
-                              >
+                              <PageHeaderActionButton asChild>
                                 <Link href={makeLogsHref(
                                   issue.issueErrorCode
                                     ? { errorCode: issue.issueErrorCode }
@@ -772,20 +768,20 @@ export default function LogFileDetailPage() {
                                 )}>
                                   {t('logs.files.diagnosis.viewEvents')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                               {firstLinkCode && (
-                                <Button variant="ghost" size="sm" asChild>
+                                <PageHeaderActionButton asChild>
                                   <Link href={makeTraceHref('linkCode', firstLinkCode)}>
                                     {t('logs.files.diagnosis.traceSession')}
                                   </Link>
-                                </Button>
+                                </PageHeaderActionButton>
                               )}
                               {firstDeviceMac && !firstLinkCode && (
-                                <Button variant="ghost" size="sm" asChild>
+                                <PageHeaderActionButton asChild>
                                   <Link href={makeTraceHref('deviceMac', firstDeviceMac)}>
                                     {t('logs.files.diagnosis.traceDevice')}
                                   </Link>
-                                </Button>
+                                </PageHeaderActionButton>
                               )}
                             </div>
                           </div>
@@ -800,9 +796,9 @@ export default function LogFileDetailPage() {
                   <p className="text-sm text-muted-foreground">
                     {t('logs.files.diagnosis.unmatchedErrors', { count: diagnosis.unmatchedErrors.length })}
                   </p>
-                  <Button variant="outline" size="sm" className="mt-2" asChild>
+                  <PageHeaderActionButton className="mt-2" asChild>
                     <Link href={makeLogsHref({ levelGte: '3' })}>{t('logs.files.diagnosis.viewAllErrors')}</Link>
-                  </Button>
+                  </PageHeaderActionButton>
                 </div>
               )}
               {diagnosis && diagnosis.summary.totalErrors === 0 && (
@@ -816,14 +812,14 @@ export default function LogFileDetailPage() {
           {/* 概览仪表盘 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* 事件总数卡片 */}
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
                   <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30">
                     <Activity className="w-6 h-6 text-blue-400" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm text-muted-foreground">事件总数</p>
+                    <p className="text-sm text-muted-foreground">{t('logs.files.overview.totalEvents')}</p>
                     <p className="text-3xl font-semibold tabular-nums">{detail.eventCount.toLocaleString()}</p>
                   </div>
                 </div>
@@ -831,14 +827,14 @@ export default function LogFileDetailPage() {
             </Card>
 
             {/* 错误数量卡片 */}
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
                   <div className="p-3 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30">
                     <AlertTriangle className="w-6 h-6 text-red-400" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm text-muted-foreground">错误数量</p>
+                    <p className="text-sm text-muted-foreground">{t('logs.files.overview.totalErrors')}</p>
                     <p className="text-3xl font-semibold tabular-nums">{detail.errorCount.toLocaleString()}</p>
                   </div>
                 </div>
@@ -846,14 +842,14 @@ export default function LogFileDetailPage() {
             </Card>
 
             {/* 质量评分卡片 */}
-	            <Card className="glass">
+	            <Card className="glass border-white/[0.08]">
 	              <CardContent className="pt-6">
 	                <div className="flex items-center gap-4">
 	                  <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
 	                    <BarChart3 className="w-6 h-6 text-emerald-400" />
 	                  </div>
 	                  <div className="flex-1">
-	                    <p className="text-sm text-muted-foreground">BLE 性能日志命中</p>
+                    <p className="text-sm text-muted-foreground">{t('logs.files.overview.bleQualityHit')}</p>
 	                    <p className="text-3xl font-semibold tabular-nums">
 	                      {bleQuality ? `${presentItems.length}/${bleQuality.summary.requiredTotal}` : '-'}
 	                    </p>
@@ -869,10 +865,10 @@ export default function LogFileDetailPage() {
           </div>
 
           {/* 文件基本信息卡片 */}
-          <Card className="glass">
+          <Card className="glass border-white/[0.08]">
             <CardHeader>
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
-                文件信息
+              <CardTitle className="text-base font-semibold">
+                {t('logs.files.fileInfo')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -924,15 +920,15 @@ export default function LogFileDetailPage() {
           </Card>
 
           {/* Tracking 数据卡片 */}
-          <Card className="glass">
+          <Card className="glass border-white/[0.08]">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+                <CardTitle className="text-base font-semibold">
                   {t('logs.files.tracking.title')}
                 </CardTitle>
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={traceOverviewHref}>{t('logs.trace')}</Link>
-                </Button>
+                </PageHeaderActionButton>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -949,7 +945,7 @@ export default function LogFileDetailPage() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">覆盖率</span>
+                    <span className="text-muted-foreground">{t('logs.files.coverage')}</span>
                     <span className="font-semibold tabular-nums">
                       {trackingCoveragePercent(detail.tracking.deviceSn.eventCount)}%
                     </span>
@@ -982,7 +978,7 @@ export default function LogFileDetailPage() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">覆盖率</span>
+                    <span className="text-muted-foreground">{t('logs.files.coverage')}</span>
                     <span className="font-semibold tabular-nums">
                       {trackingCoveragePercent(detail.tracking.deviceMac.eventCount)}%
                     </span>
@@ -1015,7 +1011,7 @@ export default function LogFileDetailPage() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">覆盖率</span>
+                    <span className="text-muted-foreground">{t('logs.files.coverage')}</span>
                     <span className="font-semibold tabular-nums">
                       {trackingCoveragePercent(detail.tracking.linkCode.eventCount)}%
                     </span>
@@ -1040,7 +1036,7 @@ export default function LogFileDetailPage() {
       ) : null}
 
       {/* 后端质量报告卡片 */}
-      <Card className="glass">
+      <Card className="glass border-white/[0.08]">
         <CardHeader
           className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
           onClick={() => setBackendDetails((v) => !v)}
@@ -1048,7 +1044,7 @@ export default function LogFileDetailPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Database className="w-4 h-4 text-muted-foreground" />
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+              <CardTitle className="text-base font-semibold">
                 {t('logs.files.backendQuality.title')}
               </CardTitle>
               {backendLoading && (
@@ -1077,29 +1073,29 @@ export default function LogFileDetailPage() {
           <CardContent className="space-y-6">
             {/* 快捷操作按钮 */}
             <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" size="sm" asChild>
+              <PageHeaderActionButton asChild>
                 <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-              </Button>
+              </PageHeaderActionButton>
               {backendQuality.summary.http.failed > 0 && (
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={makeLogsHref({ eventName: 'network_request_failed' })}>
                     {t('logs.files.backendQuality.viewHttpFailed')}
                   </Link>
-                </Button>
+                </PageHeaderActionButton>
               )}
               {backendQuality.summary.mqtt.ackTimeout > 0 && (
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={makeLogsHref({ errorCode: 'ACK_TIMEOUT' })}>
                     {t('logs.files.backendQuality.viewAckTimeouts')}
                   </Link>
-                </Button>
+                </PageHeaderActionButton>
               )}
               {backendQuality.summary.mqtt.publishFailed > 0 && (
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={makeLogsHref({ msgContains: 'MQTT_PUBLISH_FAILED' })}>
                     {t('logs.files.backendQuality.viewMqttPublishFailed')}
                   </Link>
-                </Button>
+                </PageHeaderActionButton>
               )}
             </div>
 
@@ -1227,11 +1223,11 @@ export default function LogFileDetailPage() {
                         <TableCell>{row.publishFailed}</TableCell>
                         <TableCell>{row.uploadSkippedNotConnected}</TableCell>
                         <TableCell>
-                          <Button variant="outline" size="sm" asChild>
+                          <PageHeaderActionButton asChild>
                             <Link href={makeTraceHref('deviceSn', row.deviceSn)}>
                               {t('logs.files.backendQuality.traceSn')}
                             </Link>
-                          </Button>
+                          </PageHeaderActionButton>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1244,7 +1240,7 @@ export default function LogFileDetailPage() {
       </Card>
 
       {/* 数据连续性诊断卡片 */}
-      <Card className="glass">
+      <Card className="glass border-white/[0.08]">
         <CardHeader
           className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
           onClick={() => setDataContinuityDetails((v) => !v)}
@@ -1252,7 +1248,7 @@ export default function LogFileDetailPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <TrendingUp className="w-4 h-4 text-muted-foreground" />
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+              <CardTitle className="text-base font-semibold">
                 {t('logs.files.dataContinuity.title')}
               </CardTitle>
               {dataContinuityLoading && (
@@ -1281,29 +1277,29 @@ export default function LogFileDetailPage() {
           <CardContent className="space-y-4">
             {/* 快捷操作按钮 */}
             <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" size="sm" asChild>
+              <PageHeaderActionButton asChild>
                 <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-              </Button>
+              </PageHeaderActionButton>
               {dataContinuity.summary.orderBroken > 0 && (
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={makeLogsHref({ eventName: 'warning', msgContains: 'DATA_STREAM_' })}>
                     {t('logs.files.dataContinuity.viewOrderBroken')}
                   </Link>
-                </Button>
+                </PageHeaderActionButton>
               )}
               {dataContinuity.summary.persistTimeout > 0 && (
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={makeLogsHref({ errorCode: 'DATA_PERSIST_TIMEOUT' })}>
                     {t('logs.files.dataContinuity.viewPersistTimeout')}
                   </Link>
-                </Button>
+                </PageHeaderActionButton>
               )}
               {dataContinuity.summary.rtBufferDrop > 0 && (
-                <Button variant="outline" size="sm" asChild>
+                <PageHeaderActionButton asChild>
                   <Link href={makeLogsHref({ errorCode: 'V3_RT_BUFFER_DROP' })}>
                     {t('logs.files.dataContinuity.viewRtBufferDrop')}
                   </Link>
-                </Button>
+                </PageHeaderActionButton>
               )}
             </div>
 
@@ -1378,11 +1374,11 @@ export default function LogFileDetailPage() {
 	                            <TableCell>{row.rtBufferDrop}</TableCell>
 	                            <TableCell>{row.total}</TableCell>
 	                            <TableCell>
-	                              <Button variant="outline" size="sm" asChild>
+	                              <PageHeaderActionButton asChild>
                                 <Link href={makeTraceHref('deviceSn', row.deviceSn)}>
                                   {t('logs.files.dataContinuity.traceSn')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1414,11 +1410,11 @@ export default function LogFileDetailPage() {
 	                            <TableCell>{row.rtBufferDrop}</TableCell>
 	                            <TableCell>{row.total}</TableCell>
 	                            <TableCell>
-	                              <Button variant="outline" size="sm" asChild>
+	                              <PageHeaderActionButton asChild>
                                 <Link href={makeTraceHref('linkCode', row.linkCode)}>
                                   {t('logs.files.dataContinuity.traceLinkCode')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1452,11 +1448,11 @@ export default function LogFileDetailPage() {
 	                            <TableCell>{row.rtBufferDrop}</TableCell>
 	                            <TableCell>{row.total}</TableCell>
 	                            <TableCell>
-	                              <Button variant="outline" size="sm" asChild>
+	                              <PageHeaderActionButton asChild>
                                 <Link href={makeTraceHref('requestId', row.requestId)}>
                                   {t('logs.files.dataContinuity.traceRequestId')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1470,7 +1466,7 @@ export default function LogFileDetailPage() {
       </Card>
 
       {/* 数据流会话质量卡片 */}
-      <Card className="glass">
+      <Card className="glass border-white/[0.08]">
         <CardHeader
           className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
           onClick={() => setStreamSessionQualityDetails((v) => !v)}
@@ -1478,7 +1474,7 @@ export default function LogFileDetailPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <BarChart3 className="w-4 h-4 text-muted-foreground" />
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+              <CardTitle className="text-base font-semibold">
                 {t('logs.files.streamSessionQuality.title')}
               </CardTitle>
               {streamSessionQualityLoading && (
@@ -1514,14 +1510,14 @@ export default function LogFileDetailPage() {
           <CardContent className="space-y-4">
             {/* 快捷操作按钮 */}
             <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" size="sm" asChild>
+              <PageHeaderActionButton asChild>
                 <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton asChild>
                 <Link href={makeLogsHref({ errorCode: 'DATA_STREAM_SESSION_SUMMARY' })}>
                   {t('logs.files.streamSessionQuality.viewSessions')}
                 </Link>
-              </Button>
+              </PageHeaderActionButton>
             </div>
 
             {/* 统计摘要 */}
@@ -1681,11 +1677,11 @@ export default function LogFileDetailPage() {
                             <TableCell className="font-mono text-xs">{row.deviceSn}</TableCell>
                             <TableCell>{row.total}</TableCell>
                             <TableCell>
-                              <Button variant="outline" size="sm" asChild>
+                              <PageHeaderActionButton asChild>
                                 <Link href={makeTraceHref('deviceSn', row.deviceSn)}>
                                   {t('logs.files.streamSessionQuality.traceSn')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1711,11 +1707,11 @@ export default function LogFileDetailPage() {
                             <TableCell className="font-mono text-xs">{row.linkCode}</TableCell>
                             <TableCell>{row.total}</TableCell>
                             <TableCell>
-                              <Button variant="outline" size="sm" asChild>
+                              <PageHeaderActionButton asChild>
                                 <Link href={makeTraceHref('linkCode', row.linkCode)}>
                                   {t('logs.files.streamSessionQuality.traceLinkCode')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1743,11 +1739,11 @@ export default function LogFileDetailPage() {
                             </TableCell>
                             <TableCell>{row.total}</TableCell>
                             <TableCell>
-                              <Button variant="outline" size="sm" asChild>
+                              <PageHeaderActionButton asChild>
                                 <Link href={makeTraceHref('requestId', row.requestId)}>
                                   {t('logs.files.streamSessionQuality.traceRequestId')}
                                 </Link>
-                              </Button>
+                              </PageHeaderActionButton>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1801,11 +1797,11 @@ export default function LogFileDetailPage() {
 	                            <TableCell className="font-mono text-xs">{row.persistedMax ?? '-'}</TableCell>
 	                            <TableCell>
 	                              {row.requestId ? (
-                                <Button variant="outline" size="sm" asChild>
+                                <PageHeaderActionButton asChild>
                                   <Link href={makeTraceHref('requestId', row.requestId)}>
                                     {t('logs.files.streamSessionQuality.traceRequestId')}
                                   </Link>
-                                </Button>
+                                </PageHeaderActionButton>
                               ) : (
                                 <span className="text-xs text-muted-foreground">-</span>
                               )}
@@ -1822,7 +1818,7 @@ export default function LogFileDetailPage() {
       </Card>
 
       {/* BLE 质量报告卡片 */}
-      <Card className="glass">
+      <Card className="glass border-white/[0.08]">
         <CardHeader
           className="cursor-pointer select-none hover:bg-muted/30 transition-colors"
           onClick={() => setBleExpanded((v) => !v)}
@@ -1830,7 +1826,7 @@ export default function LogFileDetailPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Bluetooth className="w-4 h-4 text-muted-foreground" />
-              <CardTitle className="text-base font-medium uppercase tracking-wider text-muted-foreground">
+              <CardTitle className="text-base font-semibold">
                 {t('logs.files.bleQuality.title')}
               </CardTitle>
               {bleLoading && (
@@ -1926,11 +1922,11 @@ export default function LogFileDetailPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm" asChild>
+                            <PageHeaderActionButton asChild>
                               <Link href={makeLogsHref({ eventName: e.matchedEventNames?.[0] ?? e.eventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
-                            </Button>
+                            </PageHeaderActionButton>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1960,11 +1956,11 @@ export default function LogFileDetailPage() {
 	                          <TableCell>{e.description}</TableCell>
 	                          <TableCell>{levelBadge(e.expectedLevelLabel)}</TableCell>
 	                          <TableCell>
-	                            <Button variant="ghost" size="sm" asChild>
+	                            <PageHeaderActionButton asChild>
 	                              <Link href={makeLogsHref({ eventName: e.eventName })}>
 	                                {t('logs.files.bleQuality.openInLogs')}
 	                              </Link>
-	                            </Button>
+	                            </PageHeaderActionButton>
 	                          </TableCell>
 	                        </TableRow>
 	                      ))}
@@ -1999,11 +1995,11 @@ export default function LogFileDetailPage() {
                             {e.countsByLevel['3']} ERROR:{e.countsByLevel['4']}
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm" asChild>
+                            <PageHeaderActionButton asChild>
                               <Link href={makeLogsHref({ eventName: e.eventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
-                            </Button>
+                            </PageHeaderActionButton>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -2081,11 +2077,11 @@ export default function LogFileDetailPage() {
                             <Badge variant="secondary">{p.pendingCount}</Badge>
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm" asChild>
+                            <PageHeaderActionButton asChild>
                               <Link href={makeLogsHref({ eventName: p.startEventName })}>
                                 {t('logs.files.bleQuality.openInLogs')}
                               </Link>
-                            </Button>
+                            </PageHeaderActionButton>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -2097,19 +2093,17 @@ export default function LogFileDetailPage() {
 	              return (
 	                <CardContent className="pt-4 space-y-4">
 	                  <div className="flex items-center gap-2 flex-wrap">
-	                    <Button variant="outline" size="sm" asChild>
+	                    <PageHeaderActionButton asChild>
 	                      <Link href={makeLogsHref({})}>{t('logs.files.openInLogs')}</Link>
-	                    </Button>
+	                    </PageHeaderActionButton>
 	                    {bleQuality.parser.parserErrorCount > 0 && (
-                      <Button variant="outline" size="sm" asChild>
+                      <PageHeaderActionButton asChild>
                         <Link href={makeLogsHref({ eventName: 'PARSER_ERROR' })}>
                           {t('logs.files.bleQuality.viewParserErrors')}
                         </Link>
-                      </Button>
+                      </PageHeaderActionButton>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <PageHeaderActionButton
                       onClick={(e) => {
                         e.stopPropagation();
                         setBleAdvanced((v) => !v);
@@ -2119,7 +2113,7 @@ export default function LogFileDetailPage() {
                         ? t('logs.files.bleQuality.hideAdvanced')
                         : t('logs.files.bleQuality.showAdvanced')}
 	                      {!bleAdvanced && advancedIssueCount > 0 ? ` (${advancedIssueCount})` : null}
-	                    </Button>
+                    </PageHeaderActionButton>
 	                  </div>
 
 	                  <div className="space-y-2">

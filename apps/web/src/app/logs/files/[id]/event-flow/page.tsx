@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import {
   Table,
   TableBody,
@@ -24,10 +25,10 @@ import {
   TrendingUp,
   BarChart3,
   Activity,
-  ArrowLeft,
 } from 'lucide-react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
+import { useI18n } from '@/lib/i18n';
 
 // Type definitions matching backend
 type MainFlowAnalysisResult = {
@@ -145,8 +146,10 @@ function getSeverityColor(severity: number): 'destructive' | 'default' | 'second
 }
 
 export default function EventFlowAnalysisPage() {
+  const { t } = useI18n();
   const params = useParams();
   const fileId = params.id as string;
+  const logsHref = `/logs?${new URLSearchParams({ logFileId: fileId }).toString()}`;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +176,7 @@ export default function EventFlowAnalysisPage() {
         if (status === 404 || message.includes('not found')) {
           // Leave mainFlow and coverage as null to trigger "no data" UI
         } else {
-          setError(message || 'Unknown error');
+          setError(message || t('logs.eventFlow.unknownError'));
         }
       } finally {
         setLoading(false);
@@ -181,15 +184,15 @@ export default function EventFlowAnalysisPage() {
     }
 
     fetchData();
-  }, [fileId]);
+  }, [fileId, t]);
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="mx-auto w-full max-w-[1560px] p-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <Activity className="w-8 h-8 animate-spin mx-auto mb-2" />
-            <p className="text-muted-foreground">正在加载事件流分析...</p>
+            <p className="text-muted-foreground">{t('logs.eventFlow.loading')}</p>
           </div>
         </div>
       </div>
@@ -198,10 +201,10 @@ export default function EventFlowAnalysisPage() {
 
   if (error) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="mx-auto w-full max-w-[1560px] p-6">
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>加载失败</AlertTitle>
+          <AlertTitle>{t('logs.eventFlow.loadFailed')}</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       </div>
@@ -210,12 +213,12 @@ export default function EventFlowAnalysisPage() {
 
   if (!mainFlow || !coverage) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="mx-auto w-full max-w-[1560px] p-6">
         <Alert>
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>暂无数据</AlertTitle>
+          <AlertTitle>{t('logs.eventFlow.emptyTitle')}</AlertTitle>
           <AlertDescription>
-            该日志文件尚未进行事件流分析
+            {t('logs.eventFlow.emptyDescription')}
             <div className="mt-4">
               <Button
                 onClick={async () => {
@@ -229,12 +232,12 @@ export default function EventFlowAnalysisPage() {
                     // Reload the page
                     window.location.reload();
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : '触发分析失败');
+                    setError(err instanceof Error ? err.message : t('logs.eventFlow.triggerFailed'));
                     setLoading(false);
                   }
                 }}
               >
-                立即分析
+                {t('logs.eventFlow.analyzeNow')}
               </Button>
             </div>
           </AlertDescription>
@@ -244,33 +247,37 @@ export default function EventFlowAnalysisPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Link href={`/logs/files/${fileId}`}>
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-1" />
-                返回
-              </Button>
-            </Link>
-            <h1 className="text-3xl font-bold">事件流分析</h1>
-          </div>
-          <p className="text-muted-foreground">分析日志文件中的事件链路和覆盖情况</p>
-        </div>
+      <PageHeader
+        title={t('logs.eventFlow.title')}
+        subtitle={t('logs.eventFlow.subtitle')}
+        actions={(
+          <PageHeaderActionButton asChild>
+            <Link href={`/logs/files/${fileId}`}>{t('logs.files.backToDetail')}</Link>
+          </PageHeaderActionButton>
+        )}
+      />
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        <span className="text-xs text-muted-foreground">{t('logs.files.quickLinks')}</span>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={`/logs/files/${fileId}/viewer`}>{t('logs.files.viewContent')}</Link>
+        </PageHeaderActionButton>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={logsHref}>{t('logs.files.openInLogs')}</Link>
+        </PageHeaderActionButton>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="main-flow" className="space-y-6">
-        <TabsList>
+        <TabsList className="h-auto border border-white/[0.08] bg-background/30 p-1">
           <TabsTrigger value="main-flow" className="gap-2">
             <Activity className="w-4 h-4" />
-            主链路分析
+            {t('logs.eventFlow.tab.mainFlow')}
           </TabsTrigger>
           <TabsTrigger value="coverage" className="gap-2">
             <BarChart3 className="w-4 h-4" />
-            事件覆盖检查
+            {t('logs.eventFlow.tab.coverage')}
           </TabsTrigger>
         </TabsList>
 
@@ -290,13 +297,15 @@ export default function EventFlowAnalysisPage() {
 
 // Main Flow Analysis Component
 function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
+  const { t } = useI18n();
+
   return (
     <>
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">总会话数</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.mainFlow.totalSessions')}</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -304,9 +313,9 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">完成会话</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.mainFlow.completedSessions')}</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
@@ -314,9 +323,9 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">完成率</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.mainFlow.completionRate')}</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -325,9 +334,9 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">平均耗时</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.mainFlow.avgDuration')}</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -340,29 +349,36 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
 
       {/* Stage Analysis */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">阶段分析</h2>
+        <h2 className="text-xl font-semibold">{t('logs.eventFlow.mainFlow.stageAnalysis')}</h2>
         {mainFlow.stages.map((stage, index) => (
-          <StageCard key={stage.stageId} stage={stage} index={index + 1} />
+          <StageCard
+            key={stage.stageId}
+            stage={stage}
+            index={index + 1}
+            totalSessions={mainFlow.totalSessions}
+          />
         ))}
       </div>
 
       {/* Sample Sessions */}
       {mainFlow.sampleSessions.length > 0 && (
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader>
-            <CardTitle>示例会话</CardTitle>
-            <CardDescription>显示部分会话的详细分析结果</CardDescription>
+            <CardTitle>{t('logs.eventFlow.mainFlow.sampleSessions.title')}</CardTitle>
+            <CardDescription>
+              {t('logs.eventFlow.mainFlow.sampleSessions.description')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>LinkCode</TableHead>
-                  <TableHead>设备 MAC</TableHead>
-                  <TableHead>总耗时</TableHead>
-                  <TableHead>完成阶段</TableHead>
-                  <TableHead>覆盖率</TableHead>
-                  <TableHead>状态</TableHead>
+                  <TableHead>{t('logs.eventFlow.mainFlow.table.linkCode')}</TableHead>
+                  <TableHead>{t('logs.eventFlow.mainFlow.table.deviceMac')}</TableHead>
+                  <TableHead>{t('logs.eventFlow.mainFlow.table.totalDuration')}</TableHead>
+                  <TableHead>{t('logs.eventFlow.mainFlow.table.completedStages')}</TableHead>
+                  <TableHead>{t('logs.eventFlow.mainFlow.table.coverage')}</TableHead>
+                  <TableHead>{t('logs.eventFlow.mainFlow.table.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -372,7 +388,7 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
                       {session.linkCode}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {session.deviceMac || 'N/A'}
+                      {session.deviceMac || t('logs.eventFlow.common.na')}
                     </TableCell>
                     <TableCell>{formatDuration(session.totalDurationMs)}</TableCell>
                     <TableCell>
@@ -387,10 +403,12 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
                     <TableCell>
                       {session.completed ? (
                         <Badge variant="default" className="bg-green-600">
-                          完成
+                          {t('logs.eventFlow.mainFlow.status.completed')}
                         </Badge>
                       ) : (
-                        <Badge variant="secondary">未完成</Badge>
+                        <Badge variant="secondary">
+                          {t('logs.eventFlow.mainFlow.status.incomplete')}
+                        </Badge>
                       )}
                     </TableCell>
                   </TableRow>
@@ -405,9 +423,19 @@ function MainFlowAnalysis({ mainFlow }: { mainFlow: MainFlowAnalysisResult }) {
 }
 
 // Stage Card Component
-function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number }) {
+function StageCard({
+  stage,
+  index,
+  totalSessions,
+}: {
+  stage: StageAnalysisResult;
+  index: number;
+  totalSessions: number;
+}) {
+  const { t } = useI18n();
+
   return (
-    <Card>
+    <Card className="glass border-white/[0.08]">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -419,12 +447,12 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
               <CardDescription className="flex items-center gap-2 mt-1">
                 {stage.required && (
                   <Badge variant="outline" className="text-xs">
-                    必需
+                    {t('logs.eventFlow.stage.required')}
                   </Badge>
                 )}
                 {stage.maxDurationMs && (
                   <span className="text-xs">
-                    预期耗时: ≤ {formatDuration(stage.maxDurationMs)}
+                    {t('logs.eventFlow.stage.expectedDuration')}: ≤ {formatDuration(stage.maxDurationMs)}
                   </span>
                 )}
               </CardDescription>
@@ -433,7 +461,10 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
           <div className="text-right">
             <div className="text-2xl font-bold">{stage.coverageRate.toFixed(0)}%</div>
             <div className="text-xs text-muted-foreground">
-              {stage.sessionsCovered} / {stage.sessionsCovered} 会话
+              {t('logs.eventFlow.stage.sessions', {
+                covered: stage.sessionsCovered,
+                total: totalSessions,
+              })}
             </div>
           </div>
         </div>
@@ -442,33 +473,33 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
         {/* Timing Stats */}
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <div className="text-muted-foreground">平均耗时</div>
+            <div className="text-muted-foreground">{t('logs.eventFlow.stage.avgDuration')}</div>
             <div className="font-medium">{formatDuration(stage.avgDurationMs)}</div>
           </div>
           <div>
-            <div className="text-muted-foreground">最大耗时</div>
+            <div className="text-muted-foreground">{t('logs.eventFlow.stage.maxDuration')}</div>
             <div className="font-medium">
               {formatDuration(stage.maxObservedDurationMs)}
             </div>
           </div>
           <div>
-            <div className="text-muted-foreground">最小耗时</div>
+            <div className="text-muted-foreground">{t('logs.eventFlow.stage.minDuration')}</div>
             <div className="font-medium">{formatDuration(stage.minDurationMs)}</div>
           </div>
         </div>
 
         {/* Events Table */}
         <div>
-          <h4 className="font-medium mb-2">事件列表</h4>
+          <h4 className="font-medium mb-2">{t('logs.eventFlow.stage.eventsList')}</h4>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>事件名称</TableHead>
-                <TableHead>必需</TableHead>
-                <TableHead>出现次数</TableHead>
-                <TableHead>命中会话</TableHead>
-                <TableHead>缺失会话</TableHead>
-                <TableHead>命中率</TableHead>
+                <TableHead>{t('logs.eventFlow.stage.table.eventName')}</TableHead>
+                <TableHead>{t('logs.eventFlow.stage.table.required')}</TableHead>
+                <TableHead>{t('logs.eventFlow.stage.table.occurrenceCount')}</TableHead>
+                <TableHead>{t('logs.eventFlow.stage.table.hitSessions')}</TableHead>
+                <TableHead>{t('logs.eventFlow.stage.table.missedSessions')}</TableHead>
+                <TableHead>{t('logs.eventFlow.stage.table.hitRate')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -479,7 +510,9 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
                     {event.required ? (
                       <CheckCircle2 className="w-4 h-4 text-green-600" />
                     ) : (
-                      <span className="text-muted-foreground text-xs">可选</span>
+                      <span className="text-muted-foreground text-xs">
+                        {t('logs.eventFlow.stage.optional')}
+                      </span>
                     )}
                   </TableCell>
                   <TableCell>{event.occurrenceCount}</TableCell>
@@ -506,7 +539,7 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
         {/* Issues */}
         {stage.issues.length > 0 && (
           <div className="space-y-2">
-            <h4 className="font-medium">发现的问题</h4>
+            <h4 className="font-medium">{t('logs.eventFlow.stage.issuesTitle')}</h4>
             {stage.issues.map((issue, idx) => (
               <Alert
                 key={idx}
@@ -516,11 +549,13 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
                 <AlertTitle className="flex items-center gap-2">
                   {issue.description}
                   <Badge variant={getSeverityColor(issue.severity)}>
-                    严重度: {issue.severity}
+                    {t('logs.eventFlow.stage.severity', { severity: issue.severity })}
                   </Badge>
                 </AlertTitle>
                 <AlertDescription>
-                  影响会话: {issue.affectedSessions.length} 个
+                  {t('logs.eventFlow.stage.affectedSessions', {
+                    count: issue.affectedSessions.length,
+                  })}
                   {issue.affectedSessions.length <= 3 && (
                     <span className="ml-2 font-mono text-xs">
                       ({issue.affectedSessions.join(', ')})
@@ -538,13 +573,15 @@ function StageCard({ stage, index }: { stage: StageAnalysisResult; index: number
 
 // Event Coverage Analysis Component
 function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisResult }) {
+  const { t } = useI18n();
+
   return (
     <>
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">总事件数</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.coverage.totalEvents')}</CardTitle>
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -552,9 +589,9 @@ function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisRe
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">已知事件</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.coverage.knownEvents')}</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -562,22 +599,22 @@ function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisRe
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">覆盖事件</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.coverage.coveredEvents')}</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{coverage.summary.coveredCount}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              缺失 {coverage.summary.missingCount} 个
+              {t('logs.eventFlow.coverage.missingCount', { count: coverage.summary.missingCount })}
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">覆盖率</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('logs.eventFlow.coverage.coverageRate')}</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -591,7 +628,7 @@ function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisRe
 
       {/* Category Coverage */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">分类覆盖统计</h2>
+        <h2 className="text-xl font-semibold">{t('logs.eventFlow.coverage.categoryCoverage')}</h2>
         {coverage.byCategory.map((category) => (
           <CategoryCard key={category.category} category={category} />
         ))}
@@ -599,19 +636,21 @@ function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisRe
 
       {/* Extra Events */}
       {coverage.extraEvents.length > 0 && (
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader>
-            <CardTitle>额外事件</CardTitle>
+            <CardTitle>{t('logs.eventFlow.coverage.extraEvents.title')}</CardTitle>
             <CardDescription>
-              日志中出现但不在已知事件列表中的事件 (共 {coverage.extraEvents.length} 个)
+              {t('logs.eventFlow.coverage.extraEvents.description', {
+                count: coverage.extraEvents.length,
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>事件名称</TableHead>
-                  <TableHead>出现次数</TableHead>
+                  <TableHead>{t('logs.eventFlow.coverage.extraEvents.table.eventName')}</TableHead>
+                  <TableHead>{t('logs.eventFlow.coverage.extraEvents.table.occurrenceCount')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -625,7 +664,9 @@ function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisRe
             </Table>
             {coverage.extraEvents.length > 20 && (
               <p className="text-sm text-muted-foreground mt-2">
-                仅显示前 20 个,共 {coverage.extraEvents.length} 个额外事件
+                {t('logs.eventFlow.coverage.extraEvents.showingLimit', {
+                  count: coverage.extraEvents.length,
+                })}
               </p>
             )}
           </CardContent>
@@ -637,15 +678,20 @@ function EventCoverageAnalysis({ coverage }: { coverage: EventCoverageAnalysisRe
 
 // Category Card Component
 function CategoryCard({ category }: { category: CategoryCoverageResult }) {
+  const { t } = useI18n();
+
   return (
-    <Card>
+    <Card className="glass border-white/[0.08]">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">{category.category}</CardTitle>
           <div className="text-right">
             <div className="text-2xl font-bold">{category.coverageRate.toFixed(0)}%</div>
             <div className="text-xs text-muted-foreground">
-              {category.coveredCount} / {category.totalCount} 事件
+              {t('logs.eventFlow.coverage.categoryEvents', {
+                covered: category.coveredCount,
+                total: category.totalCount,
+              })}
             </div>
           </div>
         </div>
@@ -654,11 +700,11 @@ function CategoryCard({ category }: { category: CategoryCoverageResult }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>事件名称</TableHead>
-              <TableHead>级别</TableHead>
-              <TableHead>说明</TableHead>
-              <TableHead>出现次数</TableHead>
-              <TableHead>状态</TableHead>
+              <TableHead>{t('logs.eventFlow.coverage.categoryTable.eventName')}</TableHead>
+              <TableHead>{t('logs.eventFlow.coverage.categoryTable.level')}</TableHead>
+              <TableHead>{t('logs.eventFlow.coverage.categoryTable.description')}</TableHead>
+              <TableHead>{t('logs.eventFlow.coverage.categoryTable.occurrenceCount')}</TableHead>
+              <TableHead>{t('logs.eventFlow.coverage.categoryTable.status')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -682,12 +728,12 @@ function CategoryCard({ category }: { category: CategoryCoverageResult }) {
                   {event.covered ? (
                     <Badge variant="default" className="bg-green-600">
                       <CheckCircle2 className="w-3 h-3 mr-1" />
-                      已覆盖
+                      {t('logs.eventFlow.coverage.status.covered')}
                     </Badge>
                   ) : (
                     <Badge variant="secondary">
                       <XCircle className="w-3 h-3 mr-1" />
-                      未出现
+                      {t('logs.eventFlow.coverage.status.missing')}
                     </Badge>
                   )}
                 </TableCell>

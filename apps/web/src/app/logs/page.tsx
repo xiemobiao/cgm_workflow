@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { fadeIn } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
@@ -751,30 +752,29 @@ export default function LogsPage() {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* Header */}
       <motion.div
         variants={fadeIn}
         initial="initial"
         animate="animate"
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
       >
-        <div>
-          <h1 className="text-2xl font-bold gradient-text">{t('logs.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('logs.uploadHint')}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {quickLinks.map((link) => (
-            <Button key={link.href} asChild variant="outline" size="sm" className="gap-2">
-              <Link href={link.href}>
-                <link.icon size={16} />
-                <span className="hidden sm:inline">{link.label}</span>
-              </Link>
-            </Button>
-          ))}
-        </div>
+        <PageHeader
+          title={t('logs.title')}
+          subtitle={t('logs.uploadHint')}
+          actions={(
+            <>
+              {quickLinks.map((link) => (
+                <PageHeaderActionButton key={link.href} asChild className="gap-2">
+                  <Link href={link.href}>
+                    <link.icon size={16} />
+                    <span>{link.label}</span>
+                  </Link>
+                </PageHeaderActionButton>
+              ))}
+            </>
+          )}
+        />
       </motion.div>
 
       {/* Project & Upload Section */}
@@ -784,7 +784,7 @@ export default function LogsPage() {
         animate="animate"
         transition={{ delay: 0.1 }}
       >
-        <Card className="glass border-border/50">
+        <Card className="glass border-white/[0.08]">
           <CardContent className="p-4 space-y-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-[200px]">
@@ -837,12 +837,12 @@ export default function LogsPage() {
                   {t('logs.fileStatus.errors')}: {uploadedLogFile.errorCount}
                 </span>
                 {uploadedLogFile.status === 'parsed' && uploadedLogFileId && (
-                  <Button asChild variant="outline" size="sm" className="ml-auto gap-2">
+                  <PageHeaderActionButton asChild className="ml-auto gap-2">
                     <Link href={`/logs/files/${uploadedLogFileId}`}>
                       <FileText size={14} />
                       {t('logs.viewDiagnosis')}
                     </Link>
-                  </Button>
+                  </PageHeaderActionButton>
                 )}
               </motion.div>
             )}
@@ -857,23 +857,21 @@ export default function LogsPage() {
         animate="animate"
         transition={{ delay: 0.2 }}
       >
-        <Card className="glass border-border/50">
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
                 <Search size={18} />
                 {t('common.search')}
               </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
+              <PageHeaderActionButton
                 onClick={() => setShowFilters(!showFilters)}
                 className="gap-2"
               >
                 <Filter size={16} />
-                {showFilters ? 'Hide Filters' : 'More Filters'}
+                {showFilters ? t('logs.filters.hideFilters') : t('logs.filters.moreFilters')}
                 <ChevronRight size={14} className={cn('transition-transform', showFilters && 'rotate-90')} />
-              </Button>
+              </PageHeaderActionButton>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -987,7 +985,7 @@ export default function LogsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">linkCode</label>
+                      <label className="text-xs text-muted-foreground mb-1 block">{t('logs.filters.linkCode')}</label>
                       <Input
                         value={linkCode}
                         onChange={(e) => setLinkCode(e.target.value)}
@@ -996,7 +994,7 @@ export default function LogsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">requestId</label>
+                      <label className="text-xs text-muted-foreground mb-1 block">{t('logs.filters.requestId')}</label>
                       <Input
                         value={requestId}
                         onChange={(e) => setRequestId(e.target.value)}
@@ -1032,7 +1030,7 @@ export default function LogsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">deviceMac</label>
+                      <label className="text-xs text-muted-foreground mb-1 block">{t('logs.filters.deviceMac')}</label>
                       <Input
                         value={deviceMac}
                         onChange={(e) => setDeviceMac(e.target.value)}
@@ -1050,7 +1048,7 @@ export default function LogsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">errorCode</label>
+                      <label className="text-xs text-muted-foreground mb-1 block">{t('logs.filters.errorCode')}</label>
                       <Input
                         value={errorCode}
                         onChange={(e) => setErrorCode(e.target.value)}
@@ -1110,15 +1108,15 @@ export default function LogsPage() {
             {/* Action buttons */}
             <div className="flex flex-wrap items-center gap-2 pt-2">
               <div className="flex gap-1">
-                <Button variant="outline" size="sm" onClick={() => setPresetRange(1)} disabled={loading}>
+                <PageHeaderActionButton onClick={() => setPresetRange(1)} disabled={loading}>
                   {t('logs.preset.1h')}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setPresetRange(24)} disabled={loading}>
+                </PageHeaderActionButton>
+                <PageHeaderActionButton onClick={() => setPresetRange(24)} disabled={loading}>
                   {t('logs.preset.24h')}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setPresetRange(24 * 7)} disabled={loading}>
+                </PageHeaderActionButton>
+                <PageHeaderActionButton onClick={() => setPresetRange(24 * 7)} disabled={loading}>
                   {t('logs.preset.7d')}
-                </Button>
+                </PageHeaderActionButton>
               </div>
               <div className="flex-1" />
               <Button
@@ -1176,21 +1174,19 @@ export default function LogsPage() {
         animate="animate"
         transition={{ delay: 0.3 }}
       >
-        <Card className="glass border-border/50">
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
                 {loading ? t('common.loading') : t('common.items', { count: results.length })}
               </CardTitle>
               {nextCursor && (
-                <Button
-                  variant="outline"
-                  size="sm"
+                <PageHeaderActionButton
                   onClick={() => void search(false)}
                   disabled={loading}
                 >
                   {t('common.loadMore')}
-                </Button>
+                </PageHeaderActionButton>
               )}
             </div>
           </CardHeader>
@@ -1443,9 +1439,9 @@ export default function LogsPage() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed right-0 top-0 bottom-0 w-full max-w-2xl glass border-l border-border/50 z-50 flex flex-col"
+              className="fixed right-0 top-0 bottom-0 z-50 flex w-full max-w-2xl flex-col border-l border-white/[0.08] glass"
             >
-              <div className="flex items-center justify-between p-4 border-b border-border/50">
+              <div className="flex items-center justify-between border-b border-white/[0.08] p-4">
                 <div>
                   <h2 className="font-semibold">{t('logs.detail.title')}</h2>
                   <p className="text-sm text-muted-foreground">
@@ -1516,14 +1512,14 @@ export default function LogsPage() {
 
 	                    {/* Copy buttons */}
 	                    <div className="flex items-center gap-2">
-	                      <Button variant="outline" size="sm" onClick={() => void copyText(detail.id)} className="gap-2">
+                      <PageHeaderActionButton onClick={() => void copyText(detail.id)} className="gap-2">
                         <Copy size={14} />
                         {t('logs.detail.copyEventId')}
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => void copyText(detail.logFileId)} className="gap-2">
+                      </PageHeaderActionButton>
+                      <PageHeaderActionButton onClick={() => void copyText(detail.logFileId)} className="gap-2">
                         <Copy size={14} />
                         {t('logs.detail.copyLogFileId')}
-                      </Button>
+                      </PageHeaderActionButton>
                       {copyHint && (
                         <span className="text-sm text-emerald-400 flex items-center gap-1">
                           <Check size={14} />
@@ -1535,101 +1531,101 @@ export default function LogsPage() {
 	                    {/* Quick jump */}
 	                    <div className="flex flex-wrap items-center gap-2">
 		                      {detail.linkCode && projectId && (
-		                          <Button asChild variant="outline" size="sm">
-		                            <Link
-		                              href={`/logs/trace?${new URLSearchParams({
-		                                projectId,
-		                                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
-		                                type: 'linkCode',
-		                                value: detail.linkCode,
-		                                auto: '1',
-		                              }).toString()}`}
-		                            >
-		                              Trace linkCode
-		                            </Link>
-		                          </Button>
-		                      )}
-		                      {detail.requestId && projectId && (
-		                        <Button asChild variant="outline" size="sm">
-		                          <Link
-		                            href={`/logs/trace?${new URLSearchParams({
-		                              projectId,
-		                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
-		                              type: 'requestId',
-		                              value: detail.requestId,
-		                              auto: '1',
-		                            }).toString()}`}
-		                          >
-		                            Trace requestId
-		                          </Link>
-		                        </Button>
-		                      )}
-		                      {detail.attemptId && projectId && (
-		                        <Button asChild variant="outline" size="sm">
-		                          <Link
-		                            href={`/logs/trace?${new URLSearchParams({
-		                              projectId,
-		                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
-		                              type: 'attemptId',
-		                              value: detail.attemptId,
-		                              auto: '1',
-		                            }).toString()}`}
-		                          >
-		                            Trace attemptId
-		                          </Link>
-		                        </Button>
-		                      )}
-		                      {detail.deviceMac && projectId && (
-		                        <>
-		                          <Button asChild variant="outline" size="sm">
-		                            <Link
-		                              href={`/logs/trace?${new URLSearchParams({
-		                                projectId,
-		                                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                          <PageHeaderActionButton asChild>
+                            <Link
+                              href={`/logs/trace?${new URLSearchParams({
+                                projectId,
+                                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                                type: 'linkCode',
+                                value: detail.linkCode,
+                                auto: '1',
+                              }).toString()}`}
+                            >
+                              {t('logs.detail.traceLinkCode')}
+                            </Link>
+                          </PageHeaderActionButton>
+                      )}
+                      {detail.requestId && projectId && (
+                        <PageHeaderActionButton asChild>
+                          <Link
+                            href={`/logs/trace?${new URLSearchParams({
+                              projectId,
+                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                              type: 'requestId',
+                              value: detail.requestId,
+                              auto: '1',
+                            }).toString()}`}
+                          >
+                            {t('logs.detail.traceRequestId')}
+                          </Link>
+                        </PageHeaderActionButton>
+                      )}
+                      {detail.attemptId && projectId && (
+                        <PageHeaderActionButton asChild>
+                          <Link
+                            href={`/logs/trace?${new URLSearchParams({
+                              projectId,
+                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                              type: 'attemptId',
+                              value: detail.attemptId,
+                              auto: '1',
+                            }).toString()}`}
+                          >
+                            {t('logs.detail.traceAttemptId')}
+                          </Link>
+                        </PageHeaderActionButton>
+                      )}
+                      {detail.deviceMac && projectId && (
+                        <>
+                          <PageHeaderActionButton asChild>
+                            <Link
+                              href={`/logs/trace?${new URLSearchParams({
+                                projectId,
+                                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
 		                                type: 'deviceMac',
 		                                value: detail.deviceMac,
 		                                startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
-		                                endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
-		                                auto: '1',
-		                              }).toString()}`}
-	                            >
-	                              Trace deviceMac
-	                            </Link>
-	                          </Button>
-		                          <Button asChild variant="outline" size="sm">
-		                            <Link
-		                              href={`/logs/commands?${new URLSearchParams({
-		                                projectId,
-		                                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                                endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+                                auto: '1',
+                              }).toString()}`}
+                            >
+                              {t('logs.detail.traceDeviceMac')}
+                            </Link>
+                          </PageHeaderActionButton>
+                          <PageHeaderActionButton asChild>
+                            <Link
+                              href={`/logs/commands?${new URLSearchParams({
+                                projectId,
+                                ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
 		                                deviceMac: detail.deviceMac,
 		                                startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
 		                                endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
-		                                limit: '100',
-		                                auto: '1',
-		                              }).toString()}`}
-	                            >
-	                              Commands
-	                            </Link>
-	                          </Button>
-	                        </>
-	                      )}
-		                      {detail.deviceSn && projectId && (
-		                        <Button asChild variant="outline" size="sm">
-		                          <Link
-		                            href={`/logs/trace?${new URLSearchParams({
-		                              projectId,
-		                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
+                                limit: '100',
+                                auto: '1',
+                              }).toString()}`}
+                            >
+                              {t('logs.detail.openCommands')}
+                            </Link>
+                          </PageHeaderActionButton>
+                        </>
+                      )}
+                      {detail.deviceSn && projectId && (
+                        <PageHeaderActionButton asChild>
+                          <Link
+                            href={`/logs/trace?${new URLSearchParams({
+                              projectId,
+                              ...(logFileId.trim() ? { logFileId: logFileId.trim() } : {}),
 		                              type: 'deviceSn',
 		                              value: detail.deviceSn,
 		                              startTime: new Date(detail.timestampMs - 2 * 60 * 60 * 1000).toISOString(),
-		                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
-		                              auto: '1',
-		                            }).toString()}`}
-		                          >
-		                            Trace deviceSn
-		                          </Link>
-		                        </Button>
-		                      )}
+                              endTime: new Date(detail.timestampMs + 2 * 60 * 60 * 1000).toISOString(),
+                              auto: '1',
+                            }).toString()}`}
+                          >
+                            {t('logs.detail.traceDeviceSn')}
+                          </Link>
+                        </PageHeaderActionButton>
+                      )}
 	                    </div>
 
 	                    {/* Context */}

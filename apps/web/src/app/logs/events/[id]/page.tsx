@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -196,7 +196,7 @@ export default function EventDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="mx-auto flex h-64 w-full max-w-[1560px] items-center justify-center p-6">
         <div className="text-muted-foreground">{t('common.loading')}</div>
       </div>
     );
@@ -204,10 +204,10 @@ export default function EventDetailPage() {
 
   if (error) {
     return (
-      <div className="p-6 space-y-4">
-        <Button variant="outline" size="sm" onClick={() => router.back()}>
+      <div className="mx-auto w-full max-w-[1560px] space-y-4 p-6">
+        <PageHeaderActionButton onClick={() => router.back()}>
           {t('common.back')}
-        </Button>
+        </PageHeaderActionButton>
         <div className="text-red-400">{error}</div>
       </div>
     );
@@ -215,10 +215,10 @@ export default function EventDetailPage() {
 
   if (!detail) {
     return (
-      <div className="p-6 space-y-4">
-        <Button variant="outline" size="sm" onClick={() => router.back()}>
+      <div className="mx-auto w-full max-w-[1560px] space-y-4 p-6">
+        <PageHeaderActionButton onClick={() => router.back()}>
           {t('common.back')}
-        </Button>
+        </PageHeaderActionButton>
         <div className="text-muted-foreground">{t('logs.empty')}</div>
       </div>
     );
@@ -228,22 +228,27 @@ export default function EventDetailPage() {
   const projectId = getProjectId() ?? '';
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="sm" onClick={() => router.back()}>
-          {t('common.back')}
-        </Button>
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/logs/files/${detail.logFileId}/viewer`}>
-            {t('logs.files.viewContent')}
-          </Link>
-        </Button>
-        <h1 className="text-xl font-semibold">{t('logs.detail.title')}</h1>
-      </div>
+      <PageHeader
+        title={t('logs.detail.title')}
+        subtitle={detail.eventName}
+        actions={(
+          <>
+            <PageHeaderActionButton onClick={() => router.back()}>
+              {t('common.back')}
+            </PageHeaderActionButton>
+            <PageHeaderActionButton asChild>
+              <Link href={`/logs/files/${detail.logFileId}/viewer`}>
+                {t('logs.files.viewContent')}
+              </Link>
+            </PageHeaderActionButton>
+          </>
+        )}
+      />
 
       {/* Event Overview */}
-      <Card>
+      <Card className="glass border-white/[0.08]">
         <CardHeader>
           <CardTitle className="flex items-center gap-4">
             <span
@@ -261,7 +266,7 @@ export default function EventDetailPage() {
               {detail.eventName}
             </span>
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${getLevelBadgeClass(detail.level)}`}>
-              Level {detail.level}
+              {t('logs.level')} {detail.level}
             </span>
           </CardTitle>
         </CardHeader>
@@ -274,24 +279,25 @@ export default function EventDetailPage() {
             <div>
               <div className="text-muted-foreground text-xs mb-1">{t('logs.thread')}</div>
               <div>
-                {detail.threadName || 'main'}
+                {detail.threadName || t('logs.eventsDetail.mainThread')}
                 {detail.threadId !== null && ` (#${detail.threadId})`}
-                {detail.isMainThread !== null && (detail.isMainThread ? ' - main' : ' - bg')}
+                {detail.isMainThread !== null
+                  && (detail.isMainThread ? ` - ${t('logs.eventsDetail.mainThread')}` : ` - ${t('logs.eventsDetail.bgThread')}`)}
               </div>
             </div>
             <div>
-              <div className="text-muted-foreground text-xs mb-1">SDK Version</div>
+              <div className="text-muted-foreground text-xs mb-1">{t('logs.eventsDetail.sdkVersion')}</div>
               <div>{detail.sdkVersion || '-'}</div>
             </div>
             <div>
-              <div className="text-muted-foreground text-xs mb-1">App ID</div>
+              <div className="text-muted-foreground text-xs mb-1">{t('logs.eventsDetail.appId')}</div>
               <div>{detail.appId || '-'}</div>
             </div>
           </div>
 
           {detail.terminalInfo && (
             <div>
-              <div className="text-muted-foreground text-xs mb-1">Terminal Info</div>
+              <div className="text-muted-foreground text-xs mb-1">{t('logs.eventsDetail.terminalInfo')}</div>
               <div className="text-sm">{detail.terminalInfo}</div>
             </div>
           )}
@@ -300,7 +306,7 @@ export default function EventDetailPage() {
 
       {/* Message */}
       {detail.msg && (
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader>
             <CardTitle className="text-base">{t('logs.message')}</CardTitle>
           </CardHeader>
@@ -312,7 +318,7 @@ export default function EventDetailPage() {
 
 	      {/* Message JSON */}
 	      {detail.msgJson !== null && (
-	        <Card>
+	        <Card className="glass border-white/[0.08]">
 	          <CardHeader>
 	            <CardTitle className="text-base">{t('logs.detail.msgJson')}</CardTitle>
 	          </CardHeader>
@@ -326,7 +332,7 @@ export default function EventDetailPage() {
 
       {/* Raw Line */}
       {detail.rawLine && (
-        <Card>
+        <Card className="glass border-white/[0.08]">
           <CardHeader>
             <CardTitle className="text-base">{t('logs.detail.rawLine')}</CardTitle>
           </CardHeader>
@@ -339,63 +345,63 @@ export default function EventDetailPage() {
       )}
 
       {/* IDs and Actions */}
-	      <Card>
+	      <Card className="glass border-white/[0.08]">
 	        <CardHeader>
 	          <CardTitle className="text-base">{t('logs.detail.ids')}</CardTitle>
 	        </CardHeader>
 	        <CardContent className="space-y-4">
 	          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Event ID</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.eventsDetail.eventId')}</div>
 	              <div className="font-mono text-xs break-all">{detail.id}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Log File ID</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.eventsDetail.logFileId')}</div>
 	              <div className="font-mono text-xs break-all">{detail.logFileId}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Link Code</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.trace.linkCode')}</div>
 	              <div className="font-mono text-xs break-all">{detail.linkCode || '-'}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Request ID</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.trace.requestId')}</div>
 	              <div className="font-mono text-xs break-all">{detail.requestId || '-'}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Attempt ID</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.trace.type.attemptId')}</div>
 	              <div className="font-mono text-xs break-all">{detail.attemptId || '-'}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Device MAC</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.trace.type.deviceMac')}</div>
 	              <div className="font-mono text-xs break-all">{detail.deviceMac || '-'}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Device SN</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.trace.deviceSn')}</div>
 	              <div className="font-mono text-xs break-all">{detail.deviceSn || '-'}</div>
 	            </div>
 	            <div>
-	              <div className="text-muted-foreground text-xs mb-1">Error Code</div>
+	              <div className="text-muted-foreground text-xs mb-1">{t('logs.trace.errorCode')}</div>
 	              <div className="font-mono text-xs break-all">{detail.errorCode || '-'}</div>
 	            </div>
 	          </div>
 	          <div className="flex items-center gap-2 flex-wrap">
-	            <Button variant="outline" size="sm" onClick={() => void copyText(detail.id)}>
-	              {t('logs.detail.copyEventId')}
-            </Button>
-	            <Button variant="outline" size="sm" onClick={() => void copyText(detail.logFileId)}>
-	              {t('logs.detail.copyLogFileId')}
-	            </Button>
-	            {detail.attemptId && (
-	              <Button variant="outline" size="sm" onClick={() => void copyText(detail.attemptId!)}>
-	                Copy attemptId
-	              </Button>
-	            )}
+		            <PageHeaderActionButton onClick={() => void copyText(detail.id)}>
+		              {t('logs.detail.copyEventId')}
+            </PageHeaderActionButton>
+		            <PageHeaderActionButton onClick={() => void copyText(detail.logFileId)}>
+		              {t('logs.detail.copyLogFileId')}
+		            </PageHeaderActionButton>
+		            {detail.attemptId && (
+		              <PageHeaderActionButton onClick={() => void copyText(detail.attemptId!)}>
+		                {t('logs.eventsDetail.copyAttemptId')}
+		              </PageHeaderActionButton>
+		            )}
 	            {copyHint && <span className="text-green-400 text-sm">{copyHint}</span>}
 	          </div>
 	          {/* Quick jump */}
 	          <div className="flex flex-wrap items-center gap-2">
 	            {detail.linkCode && projectId && (
-	              <Button asChild variant="outline" size="sm">
+		              <PageHeaderActionButton asChild>
 	                <Link
 	                  href={`/logs/trace?${new URLSearchParams({
 	                    projectId,
@@ -405,12 +411,12 @@ export default function EventDetailPage() {
 	                    auto: '1',
 	                  }).toString()}`}
 	                >
-	                  Trace linkCode
-	                </Link>
-	              </Button>
+		                  {t('logs.detail.traceLinkCode')}
+		                </Link>
+		              </PageHeaderActionButton>
 	            )}
 	            {detail.requestId && projectId && (
-	              <Button asChild variant="outline" size="sm">
+		              <PageHeaderActionButton asChild>
 	                <Link
 	                  href={`/logs/trace?${new URLSearchParams({
 	                    projectId,
@@ -420,12 +426,12 @@ export default function EventDetailPage() {
 	                    auto: '1',
 	                  }).toString()}`}
 	                >
-	                  Trace requestId
-	                </Link>
-	              </Button>
+		                  {t('logs.detail.traceRequestId')}
+		                </Link>
+		              </PageHeaderActionButton>
 	            )}
 	            {detail.attemptId && projectId && (
-	              <Button asChild variant="outline" size="sm">
+		              <PageHeaderActionButton asChild>
 	                <Link
 	                  href={`/logs/trace?${new URLSearchParams({
 	                    projectId,
@@ -435,13 +441,13 @@ export default function EventDetailPage() {
 	                    auto: '1',
 	                  }).toString()}`}
 	                >
-	                  Trace attemptId
-	                </Link>
-	              </Button>
+		                  {t('logs.detail.traceAttemptId')}
+		                </Link>
+		              </PageHeaderActionButton>
 	            )}
 	            {detail.deviceMac && projectId && (
 	              <>
-	                <Button asChild variant="outline" size="sm">
+		                <PageHeaderActionButton asChild>
 	                  <Link
 	                    href={`/logs/trace?${new URLSearchParams({
 	                      projectId,
@@ -453,10 +459,10 @@ export default function EventDetailPage() {
 	                      auto: '1',
 	                    }).toString()}`}
 	                  >
-	                    Trace deviceMac
-	                  </Link>
-	                </Button>
-	                <Button asChild variant="outline" size="sm">
+		                    {t('logs.detail.traceDeviceMac')}
+		                  </Link>
+		                </PageHeaderActionButton>
+		                <PageHeaderActionButton asChild>
 	                  <Link
 	                    href={`/logs/commands?${new URLSearchParams({
 	                      projectId,
@@ -468,13 +474,13 @@ export default function EventDetailPage() {
 	                      auto: '1',
 	                    }).toString()}`}
 	                  >
-	                    Commands
-	                  </Link>
-	                </Button>
+		                    {t('logs.detail.openCommands')}
+		                  </Link>
+		                </PageHeaderActionButton>
 	              </>
 	            )}
 	            {detail.deviceSn && projectId && (
-	              <Button asChild variant="outline" size="sm">
+		              <PageHeaderActionButton asChild>
 	                <Link
 	                  href={`/logs/trace?${new URLSearchParams({
 	                    projectId,
@@ -486,16 +492,16 @@ export default function EventDetailPage() {
 	                    auto: '1',
 	                  }).toString()}`}
 	                >
-	                  Trace deviceSn
-	                </Link>
-	              </Button>
-	            )}
-	          </div>
-	        </CardContent>
-	      </Card>
+		                  {t('logs.detail.traceDeviceSn')}
+		                </Link>
+		              </PageHeaderActionButton>
+		            )}
+		          </div>
+		        </CardContent>
+		      </Card>
 
       {/* Context */}
-      <Card>
+      <Card className="glass border-white/[0.08]">
         <CardHeader>
           <CardTitle className="text-base">{t('logs.detail.context')}</CardTitle>
         </CardHeader>
@@ -512,7 +518,7 @@ export default function EventDetailPage() {
                 return (
                   <div
                     key={item.id}
-                    className="flex items-start gap-3 p-2 rounded-lg border border-border/50 hover:bg-accent/30 cursor-pointer transition-colors"
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/[0.08] p-2 transition-colors hover:bg-accent/30"
                     onClick={() => handleContextClick(item.id)}
                   >
                     <div className="text-xs text-muted-foreground whitespace-nowrap w-24 flex-shrink-0">
@@ -551,7 +557,7 @@ export default function EventDetailPage() {
                 return (
                   <div
                     key={item.id}
-                    className="flex items-start gap-3 p-2 rounded-lg border border-border/50 hover:bg-accent/30 cursor-pointer transition-colors"
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/[0.08] p-2 transition-colors hover:bg-accent/30"
                     onClick={() => handleContextClick(item.id)}
                   >
                     <div className="text-xs text-muted-foreground whitespace-nowrap w-24 flex-shrink-0">

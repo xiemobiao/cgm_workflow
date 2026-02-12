@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, BarChart3, AlertTriangle, Activity, Layers, RefreshCw, TrendingUp, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
@@ -164,51 +164,50 @@ export default function StatsPage() {
 
   return (
     <motion.div
-      className="space-y-6"
+      className="mx-auto w-full max-w-[1560px] space-y-6 p-6"
       initial="hidden"
       animate="visible"
       variants={staggerContainer}
     >
       {/* Header */}
       <motion.div variants={fadeIn}>
-        <Card className="glass">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
-                  <BarChart3 className="w-5 h-5 text-violet-400" />
-                </div>
-                <CardTitle className="text-xl">{t('logs.stats')}</CardTitle>
-              </div>
-              <Button asChild variant="outline" size="sm" className="gap-2">
-                <Link href="/logs">
-                  <ArrowLeft className="w-4 h-4" />
-                  {t('common.back')}
-                </Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-4 items-end">
+        <PageHeader
+          title={t('logs.stats')}
+          subtitle={t('logs.stats.description')}
+          actions={(
+            <PageHeaderActionButton asChild className="gap-2">
+              <Link href="/logs">
+                <ArrowLeft className="w-4 h-4" />
+                {t('common.back')}
+              </Link>
+            </PageHeaderActionButton>
+          )}
+        />
+      </motion.div>
+
+      <motion.div variants={fadeIn}>
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="space-y-4 p-4">
+            <div className="flex flex-wrap items-end gap-4">
               <div className="min-w-[200px]">
                 <ProjectPicker projectId={projectId} onChange={setProjectId} />
               </div>
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-sm text-muted-foreground mb-1.5">
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1.5 block text-sm text-muted-foreground">
                   {t('logs.logFileIdOptional')}
                 </label>
                 <Input
                   value={logFileId}
                   onChange={(e) => setLogFileId(e.target.value)}
-                  placeholder="Filter by logFileId (optional)"
+                  placeholder={t('logs.trace.logFileIdPlaceholder')}
                   className="bg-card/50"
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-sm text-muted-foreground mb-1.5">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1.5 block text-sm text-muted-foreground">
                   {t('logs.startTime')}
                 </label>
                 <Input
@@ -218,8 +217,8 @@ export default function StatsPage() {
                   className="bg-card/50"
                 />
               </div>
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-sm text-muted-foreground mb-1.5">
+              <div className="min-w-[200px] flex-1">
+                <label className="mb-1.5 block text-sm text-muted-foreground">
                   {t('logs.endTime')}
                 </label>
                 <Input
@@ -229,14 +228,14 @@ export default function StatsPage() {
                   className="bg-card/50"
                 />
               </div>
-              <Button
+              <PageHeaderActionButton
                 disabled={!projectId || loading}
                 onClick={() => void loadStats()}
                 className="gap-2"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 {loading ? t('common.loading') : t('common.refresh')}
-              </Button>
+              </PageHeaderActionButton>
             </div>
 
             <AnimatePresence>
@@ -245,7 +244,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
+                  className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400"
                 >
                   {error}
                 </motion.div>
@@ -266,7 +265,7 @@ export default function StatsPage() {
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[1, 2, 3].map((i) => (
-                <Card key={i} className="glass">
+                <Card key={i} className="glass border-white/[0.08]">
                   <CardContent className="p-6">
                     <Skeleton className="h-4 w-24 mb-3" />
                     <Skeleton className="h-10 w-32" />
@@ -274,7 +273,7 @@ export default function StatsPage() {
                 </Card>
               ))}
             </div>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-6 space-y-3">
                 {[1, 2, 3, 4, 5].map((i) => (
                   <Skeleton key={i} className="h-8 w-full" />
@@ -297,13 +296,13 @@ export default function StatsPage() {
             {/* Overview Cards */}
             <motion.div variants={staggerItem} className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Total Events */}
-              <Card className="glass group hover:border-blue-500/30 transition-colors">
+              <Card className="glass border-white/[0.08] group transition-colors hover:border-blue-500/30">
                 <CardContent className="p-6">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 transition-colors">
                       <Activity className="w-4 h-4 text-blue-400" />
                     </div>
-                    <span className="text-sm text-muted-foreground">Total Events</span>
+                    <span className="text-sm text-muted-foreground">{t('logs.stats.totalEvents')}</span>
                   </div>
                   <motion.div
                     initial={{ opacity: 0, scale: 0.5 }}
@@ -317,7 +316,7 @@ export default function StatsPage() {
               </Card>
 
               {/* Error Rate */}
-              <Card className={`glass group transition-colors ${
+              <Card className={`glass border-white/[0.08] group transition-colors ${
                 stats.errorRate > 5
                   ? 'hover:border-red-500/30'
                   : stats.errorRate > 1
@@ -337,7 +336,7 @@ export default function StatsPage() {
                         stats.errorRate > 5 ? 'text-red-400' : stats.errorRate > 1 ? 'text-amber-400' : 'text-emerald-400'
                       }`} />
                     </div>
-                    <span className="text-sm text-muted-foreground">Error Rate</span>
+                    <span className="text-sm text-muted-foreground">{t('logs.stats.errorRate')}</span>
                   </div>
                   <motion.div
                     initial={{ opacity: 0, scale: 0.5 }}
@@ -353,13 +352,13 @@ export default function StatsPage() {
               </Card>
 
               {/* Event Types */}
-              <Card className="glass group hover:border-violet-500/30 transition-colors">
+              <Card className="glass border-white/[0.08] group transition-colors hover:border-violet-500/30">
                 <CardContent className="p-6">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 transition-colors">
                       <Layers className="w-4 h-4 text-violet-400" />
                     </div>
-                    <span className="text-sm text-muted-foreground">Event Types</span>
+                    <span className="text-sm text-muted-foreground">{t('logs.stats.eventTypes')}</span>
                   </div>
                   <motion.div
                     initial={{ opacity: 0, scale: 0.5 }}
@@ -375,12 +374,12 @@ export default function StatsPage() {
 
             {/* Level Distribution */}
             <motion.div variants={staggerItem}>
-              <Card className="glass">
+              <Card className="glass border-white/[0.08]">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-muted-foreground" />
                     <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Level Distribution
+                      {t('logs.stats.levelDistribution')}
                     </CardTitle>
                   </div>
                 </CardHeader>
@@ -412,12 +411,12 @@ export default function StatsPage() {
 
             {/* Top Events */}
             <motion.div variants={staggerItem}>
-              <Card className="glass">
+              <Card className="glass border-white/[0.08]">
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2">
                     <BarChart3 className="w-4 h-4 text-muted-foreground" />
                     <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                      Top Events
+                      {t('logs.stats.topEvents')}
                     </CardTitle>
                   </div>
                 </CardHeader>
@@ -457,7 +456,7 @@ export default function StatsPage() {
                   </div>
                   {stats.byEventName.length > 12 && (
                     <div className="mt-4 pt-4 border-t border-white/[0.06] text-center text-xs text-muted-foreground">
-                      + {stats.byEventName.length - 12} more events
+                      + {stats.byEventName.length - 12} {t('logs.stats.moreEvents')}
                     </div>
                   )}
                 </CardContent>
@@ -472,7 +471,7 @@ export default function StatsPage() {
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-red-400" />
                       <CardTitle className="text-sm font-medium text-red-400 uppercase tracking-wider">
-                        Error Hotspots
+                        {t('logs.stats.errorHotspots')}
                       </CardTitle>
                     </div>
                   </CardHeader>
@@ -482,16 +481,16 @@ export default function StatsPage() {
                         <thead>
                           <tr className="border-b border-white/[0.06]">
                             <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
-                              Event
+                              {t('table.event')}
                             </th>
                             <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
-                              Error Code
+                              {t('logs.trace.errorCode')}
                             </th>
                             <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
-                              Count
+                              {t('logs.stats.count')}
                             </th>
                             <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider py-3 px-2">
-                              Last Seen
+                              {t('logs.stats.lastSeen')}
                             </th>
                           </tr>
                         </thead>
@@ -538,7 +537,7 @@ export default function StatsPage() {
             {/* Empty State */}
             {stats.totalEvents === 0 && (
               <motion.div variants={fadeIn}>
-                <Card className="glass">
+                <Card className="glass border-white/[0.08]">
                   <CardContent className="py-12 text-center">
                     <BarChart3 className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                     <p className="text-muted-foreground">{t('logs.empty')}</p>

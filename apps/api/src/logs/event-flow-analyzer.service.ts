@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { MAIN_FLOW_TEMPLATE, BLE_KNOWN_EVENTS } from './event-flow-templates';
+import {
+  MAIN_FLOW_TEMPLATE,
+  BLE_KNOWN_EVENTS,
+  type EventFlowStage,
+} from './event-flow-templates';
 import type {
   MainFlowAnalysisResult,
   StageAnalysisResult,
@@ -19,6 +23,7 @@ type SessionEventRow = {
   eventName: string;
   timestampMs: bigint;
   deviceMac: string | null;
+  attemptId: string | null;
 };
 
 /**
@@ -73,6 +78,7 @@ export class EventFlowAnalyzerService {
         eventName: true,
         timestampMs: true,
         deviceMac: true,
+        attemptId: true,
         linkCode: true,
       },
     });
@@ -86,6 +92,7 @@ export class EventFlowAnalyzerService {
         eventName: event.eventName,
         timestampMs: event.timestampMs,
         deviceMac: event.deviceMac,
+        attemptId: event.attemptId,
       });
       eventsByLinkCode.set(event.linkCode, bucket);
     }
@@ -218,9 +225,10 @@ export class EventFlowAnalyzerService {
       matchedEvents.some((e) => e.eventName === reqEvent.eventName),
     );
 
-    const startTime = Number(matchedEvents[0].timestampMs);
-    const endTime = Number(matchedEvents[matchedEvents.length - 1].timestampMs);
-    const durationMs = endTime - startTime;
+    const duration = this.resolveStageDuration(stage, matchedEvents);
+    const startTime = duration?.startTime ?? null;
+    const endTime = duration?.endTime ?? null;
+    const durationMs = duration?.durationMs ?? null;
 
     return {
       stageId,
@@ -233,6 +241,137 @@ export class EventFlowAnalyzerService {
         eventName: e.eventName,
         timestampMs: Number(e.timestampMs),
       })),
+    };
+  }
+
+  private resolveStageDuration(
+    stage: EventFlowStage,
+    matchedEvents: SessionEventRow[],
+  ): { startTime: number; endTime: number; durationMs: number } | null {
+    if (matchedEvents.length === 0) return null;
+
+    const startEventName = stage.events[0]?.eventName;
+    const endEventNames = new Set(
+      stage.events.slice(1).map((e) => e.eventName),
+    );
+
+    if (!startEventName || endEventNames.size === 0) {
+      return this.getRangeDuration(matchedEvents);
+    }
+
+    const candidates = [
+      ...this.getAttemptDurationCandidates(
+        matchedEvents,
+        startEventName,
+        endEventNames,
+      ),
+      ...this.getSequentialDurationCandidates(
+        matchedEvents,
+        startEventName,
+        endEventNames,
+      ),
+    ];
+
+    if (candidates.length > 0) {
+      return candidates.reduce((longest, current) =>
+        current.durationMs > longest.durationMs ? current : longest,
+      );
+    }
+
+    return this.getRangeDuration(matchedEvents);
+  }
+
+  private getAttemptDurationCandidates(
+    matchedEvents: SessionEventRow[],
+    startEventName: string,
+    endEventNames: Set<string>,
+  ): Array<{ startTime: number; endTime: number; durationMs: number }> {
+    const eventsByAttemptId = new Map<string, SessionEventRow[]>();
+    for (const event of matchedEvents) {
+      if (!event.attemptId) continue;
+      const bucket = eventsByAttemptId.get(event.attemptId) ?? [];
+      bucket.push(event);
+      eventsByAttemptId.set(event.attemptId, bucket);
+    }
+
+    const candidates: Array<{
+      startTime: number;
+      endTime: number;
+      durationMs: number;
+    }> = [];
+
+    for (const attemptEvents of eventsByAttemptId.values()) {
+      let pendingStartTime: number | null = null;
+      for (const event of attemptEvents) {
+        const timestamp = Number(event.timestampMs);
+        if (event.eventName === startEventName) {
+          pendingStartTime = timestamp;
+          continue;
+        }
+        if (
+          pendingStartTime !== null &&
+          endEventNames.has(event.eventName) &&
+          timestamp >= pendingStartTime
+        ) {
+          candidates.push({
+            startTime: pendingStartTime,
+            endTime: timestamp,
+            durationMs: timestamp - pendingStartTime,
+          });
+          pendingStartTime = null;
+        }
+      }
+    }
+
+    return candidates;
+  }
+
+  private getSequentialDurationCandidates(
+    matchedEvents: SessionEventRow[],
+    startEventName: string,
+    endEventNames: Set<string>,
+  ): Array<{ startTime: number; endTime: number; durationMs: number }> {
+    const candidates: Array<{
+      startTime: number;
+      endTime: number;
+      durationMs: number;
+    }> = [];
+    let pendingStartTime: number | null = null;
+
+    for (const event of matchedEvents) {
+      const timestamp = Number(event.timestampMs);
+      if (event.eventName === startEventName) {
+        pendingStartTime = timestamp;
+        continue;
+      }
+      if (
+        pendingStartTime !== null &&
+        endEventNames.has(event.eventName) &&
+        timestamp >= pendingStartTime
+      ) {
+        candidates.push({
+          startTime: pendingStartTime,
+          endTime: timestamp,
+          durationMs: timestamp - pendingStartTime,
+        });
+        pendingStartTime = null;
+      }
+    }
+
+    return candidates;
+  }
+
+  private getRangeDuration(matchedEvents: SessionEventRow[]): {
+    startTime: number;
+    endTime: number;
+    durationMs: number;
+  } {
+    const startTime = Number(matchedEvents[0].timestampMs);
+    const endTime = Number(matchedEvents[matchedEvents.length - 1].timestampMs);
+    return {
+      startTime,
+      endTime,
+      durationMs: Math.max(0, endTime - startTime),
     };
   }
 

@@ -4,12 +4,27 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle, Tag, Fingerprint } from 'lucide-react';
+import {
+  ArrowLeft,
+  Search,
+  Link2,
+  Hash,
+  Bluetooth,
+  Clock,
+  ChevronRight,
+  Activity,
+  Server,
+  AlertCircle,
+  Tag,
+  Fingerprint,
+  BarChart3,
+  FileText,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { getProjectId } from '@/lib/auth';
@@ -140,14 +155,6 @@ function getLevelConfig(level: number): { label: string; color: string; bgClass:
   }
 }
 
-const traceTypeOptions = [
-  { value: 'linkCode', label: 'Link Code', icon: Link2, placeholder: 'e.g. abc123' },
-  { value: 'requestId', label: 'Request ID', icon: Hash, placeholder: 'e.g. req-001' },
-  { value: 'attemptId', label: 'Attempt ID', icon: Fingerprint, placeholder: 'e.g. 123e4567-e89b-12d3-a456-426614174000' },
-  { value: 'deviceMac', label: 'Device MAC', icon: Bluetooth, placeholder: 'e.g. AA:BB:CC:DD:EE:FF' },
-  { value: 'deviceSn', label: 'Device SN', icon: Tag, placeholder: 'e.g. SN12345678' },
-] as const;
-
 export default function TracePage() {
   const { localeTag, t } = useI18n();
   const searchParams = useSearchParams();
@@ -166,6 +173,38 @@ export default function TracePage() {
   const [relationLoading, setRelationLoading] = useState(false);
   const [autoTrace, setAutoTrace] = useState(false);
   const [autoTraceDone, setAutoTraceDone] = useState(false);
+  const traceTypeOptions = [
+    {
+      value: 'linkCode',
+      label: t('logs.trace.type.linkCode'),
+      icon: Link2,
+      placeholder: t('logs.trace.type.linkCodePlaceholder'),
+    },
+    {
+      value: 'requestId',
+      label: t('logs.trace.type.requestId'),
+      icon: Hash,
+      placeholder: t('logs.trace.type.requestIdPlaceholder'),
+    },
+    {
+      value: 'attemptId',
+      label: t('logs.trace.type.attemptId'),
+      icon: Fingerprint,
+      placeholder: t('logs.trace.type.attemptIdPlaceholder'),
+    },
+    {
+      value: 'deviceMac',
+      label: t('logs.trace.type.deviceMac'),
+      icon: Bluetooth,
+      placeholder: t('logs.trace.type.deviceMacPlaceholder'),
+    },
+    {
+      value: 'deviceSn',
+      label: t('logs.trace.type.deviceSn'),
+      icon: Tag,
+      placeholder: t('logs.trace.type.deviceSnPlaceholder'),
+    },
+  ] as const;
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -313,74 +352,98 @@ export default function TracePage() {
   }, [autoTrace, autoTraceDone, projectId, traceType, traceValue, logFileId, startLocal, endLocal, trace]);
 
   const selectedTypeOption = traceTypeOptions.find((o) => o.value === traceType) ?? traceTypeOptions[0];
+  const buildQuickLinkHref = useCallback((base: string) => {
+    const qs = new URLSearchParams();
+    if (projectId.trim()) qs.set('projectId', projectId.trim());
+    if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
+    if (startLocal && endLocal) {
+      qs.set('startTime', toIsoFromDatetimeLocal(startLocal));
+      qs.set('endTime', toIsoFromDatetimeLocal(endLocal));
+    }
+    if (base === '/logs/commands' && traceType === 'deviceMac' && traceValue.trim()) {
+      qs.set('deviceMac', traceValue.trim());
+    }
+    return qs.size ? `${base}?${qs.toString()}` : base;
+  }, [projectId, logFileId, startLocal, endLocal, traceType, traceValue]);
+  const quickLinks = [
+    { href: buildQuickLinkHref('/logs/commands'), icon: BarChart3, label: t('logs.detail.openCommands') },
+    { href: buildQuickLinkHref('/logs/files'), icon: FileText, label: t('logs.files.browse') },
+  ];
 
   return (
     <motion.div
-      className="space-y-6"
+      className="mx-auto w-full max-w-[1560px] space-y-6 p-6"
       initial="hidden"
       animate="visible"
       variants={staggerContainer}
     >
       {/* Header */}
       <motion.div variants={fadeIn}>
-        <Card className="glass">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-                  <Search className="w-5 h-5 text-cyan-400" />
-                </div>
-                <CardTitle className="text-xl">{t('logs.trace')}</CardTitle>
-              </div>
-              <Button asChild variant="outline" size="sm" className="gap-2">
+        <PageHeader
+          title={t('logs.trace')}
+          subtitle={t('logs.trace.description')}
+          actions={(
+            <>
+              <PageHeaderActionButton asChild className="gap-2">
                 <Link href="/logs">
                   <ArrowLeft className="w-4 h-4" />
                   {t('common.back')}
                 </Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
+              </PageHeaderActionButton>
+              {quickLinks.map((link) => (
+                <PageHeaderActionButton key={link.href} asChild className="gap-2">
+                  <Link href={link.href}>
+                    <link.icon className="w-4 h-4" />
+                    {link.label}
+                  </Link>
+                </PageHeaderActionButton>
+              ))}
+            </>
+          )}
+        />
+      </motion.div>
+
+      <motion.div variants={fadeIn}>
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="space-y-4 p-4">
             <div className="min-w-[200px]">
               <ProjectPicker projectId={projectId} onChange={setProjectId} />
             </div>
 
             {/* Trace Type Selector */}
             <div className="space-y-2">
-              <label className="block text-sm text-muted-foreground">Trace Type</label>
+              <label className="block text-sm text-muted-foreground">{t('logs.trace.type')}</label>
               <div className="flex flex-wrap gap-2">
                 {traceTypeOptions.map((option) => {
                   const Icon = option.icon;
                   const isSelected = traceType === option.value;
                   return (
-                    <button
+                    <PageHeaderActionButton
                       key={option.value}
+                      type="button"
+                      variant={isSelected ? 'default' : 'outline'}
                       onClick={() => setTraceType(option.value)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                        isSelected
-                          ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
-                          : 'bg-card/50 border-white/10 text-muted-foreground hover:bg-white/5 hover:border-white/20'
-                      }`}
+                      className={`gap-2 ${isSelected ? 'border-primary/40 bg-primary/90 text-primary-foreground hover:bg-primary/80' : ''}`}
                     >
                       <Icon className="w-4 h-4" />
                       <span className="text-sm font-medium">{option.label}</span>
-                    </button>
+                    </PageHeaderActionButton>
                   );
                 })}
               </div>
             </div>
 
             {/* Search Input */}
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[280px]">
-                <label className="block text-sm text-muted-foreground mb-1.5">Value</label>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-[280px] flex-1">
+                <label className="mb-1.5 block text-sm text-muted-foreground">{t('logs.trace.value')}</label>
                 <div className="relative">
-                  <selectedTypeOption.icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <selectedTypeOption.icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={traceValue}
                     onChange={(e) => setTraceValue(e.target.value)}
                     placeholder={selectedTypeOption.placeholder}
-                    className="pl-10 bg-card/50"
+                    className="bg-card/50 pl-10"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void trace();
                     }}
@@ -388,22 +451,22 @@ export default function TracePage() {
                 </div>
               </div>
 
-              <div className="flex-1 min-w-[220px]">
-                <label className="block text-sm text-muted-foreground mb-1.5">
+              <div className="min-w-[220px] flex-1">
+                <label className="mb-1.5 block text-sm text-muted-foreground">
                   {t('logs.logFileIdOptional')}
                 </label>
                 <Input
                   value={logFileId}
                   onChange={(e) => setLogFileId(e.target.value)}
-                  placeholder="Filter by logFileId (optional)"
+                  placeholder={t('logs.trace.logFileIdPlaceholder')}
                   className="bg-card/50"
                 />
               </div>
 
               {(traceType === 'deviceMac' || traceType === 'deviceSn') && (
                 <>
-                  <div className="flex-1 min-w-[180px]">
-                    <label className="block text-sm text-muted-foreground mb-1.5">
+                  <div className="min-w-[180px] flex-1">
+                    <label className="mb-1.5 block text-sm text-muted-foreground">
                       {t('logs.startTime')}
                     </label>
                     <Input
@@ -413,8 +476,8 @@ export default function TracePage() {
                       className="bg-card/50"
                     />
                   </div>
-                  <div className="flex-1 min-w-[180px]">
-                    <label className="block text-sm text-muted-foreground mb-1.5">
+                  <div className="min-w-[180px] flex-1">
+                    <label className="mb-1.5 block text-sm text-muted-foreground">
                       {t('logs.endTime')}
                     </label>
                     <Input
@@ -427,14 +490,14 @@ export default function TracePage() {
                 </>
               )}
 
-              <Button
+              <PageHeaderActionButton
                 disabled={!projectId || !traceValue.trim() || loading}
                 onClick={() => void trace()}
                 className="gap-2"
               >
                 <Search className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
-                {loading ? t('common.loading') : t('logs.trace')}
-              </Button>
+                {loading ? t('common.loading') : t('common.search')}
+              </PageHeaderActionButton>
             </div>
 
             {result && (
@@ -450,7 +513,7 @@ export default function TracePage() {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400"
                 >
                   <AlertCircle className="w-4 h-4" />
                   {error}
@@ -470,7 +533,7 @@ export default function TracePage() {
             exit={{ opacity: 0 }}
             className="space-y-4"
           >
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-6">
                 <div className="flex gap-4">
                   {[1, 2, 3].map((i) => (
@@ -479,7 +542,7 @@ export default function TracePage() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="p-6 space-y-4">
                 {[1, 2, 3, 4].map((i) => (
                   <Skeleton key={i} className="h-24 w-full" />
@@ -494,7 +557,7 @@ export default function TracePage() {
       <AnimatePresence>
         {relatedDevices.length > 0 && (
           <motion.div variants={staggerItem} initial="hidden" animate="visible" exit="hidden">
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-2">
                   <Bluetooth className="w-4 h-4 text-muted-foreground" />
@@ -528,7 +591,7 @@ export default function TracePage() {
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Activity className="w-3 h-3" />
-                            {device.eventCount} events
+                            {device.eventCount} {t('common.events')}
                           </span>
                         </div>
                         {device.firstSeenMs && device.lastSeenMs && (
@@ -552,7 +615,7 @@ export default function TracePage() {
       <AnimatePresence>
         {relatedSessions.length > 0 && (
           <motion.div variants={staggerItem} initial="hidden" animate="visible" exit="hidden">
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-2">
                   <Link2 className="w-4 h-4 text-muted-foreground" />
@@ -586,7 +649,7 @@ export default function TracePage() {
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Activity className="w-3 h-3" />
-                            {session.eventCount} events
+                            {session.eventCount} {t('common.events')}
                           </span>
                         </div>
                         {session.startTimeMs && session.endTimeMs && (
@@ -610,7 +673,7 @@ export default function TracePage() {
       <AnimatePresence>
         {relationLoading && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="py-8 text-center text-muted-foreground">
                 {t('common.loading')}
               </CardContent>
@@ -623,12 +686,12 @@ export default function TracePage() {
       <AnimatePresence>
         {result && result.items.length > 0 && (
           <motion.div variants={staggerItem} initial="hidden" animate="visible" exit="hidden">
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-muted-foreground" />
                   <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                    Timeline
+                    {t('logs.trace.timeline')}
                   </CardTitle>
                 </div>
               </CardHeader>
@@ -683,37 +746,37 @@ export default function TracePage() {
                               {item.deviceMac && (
                                 <span className="flex items-center gap-1.5 text-foreground/70">
                                   <Bluetooth className="w-3 h-3" />
-                                  <span className="font-medium">Device:</span> {item.deviceMac}
+                                  <span className="font-medium">{t('logs.trace.device')}:</span> {item.deviceMac}
                                 </span>
                               )}
                               {item.deviceSn && (
                                 <span className="flex items-center gap-1.5 text-foreground/70">
                                   <Tag className="w-3 h-3" />
-                                  <span className="font-medium">SN:</span> {item.deviceSn}
+                                  <span className="font-medium">{t('logs.trace.deviceSn')}:</span> {item.deviceSn}
                                 </span>
                               )}
                               {item.linkCode && (
                                 <span className="flex items-center gap-1.5 text-foreground/70">
                                   <Link2 className="w-3 h-3" />
-                                  <span className="font-medium">Link:</span> {item.linkCode}
+                                  <span className="font-medium">{t('logs.trace.linkCode')}:</span> {item.linkCode}
                                 </span>
                               )}
                               {item.requestId && (
                                 <span className="flex items-center gap-1.5 text-foreground/70">
                                   <Hash className="w-3 h-3" />
-                                  <span className="font-medium">ReqID:</span> {item.requestId}
+                                  <span className="font-medium">{t('logs.trace.requestId')}:</span> {item.requestId}
                                 </span>
                               )}
                               {item.errorCode && (
                                 <span className="flex items-center gap-1.5 text-red-400">
                                   <AlertCircle className="w-3 h-3" />
-                                  <span className="font-medium">Error:</span> {item.errorCode}
+                                  <span className="font-medium">{t('logs.trace.errorCode')}:</span> {item.errorCode}
                                 </span>
                               )}
                               {item.threadName && (
                                 <span className="flex items-center gap-1.5 text-muted-foreground">
                                   <Server className="w-3 h-3" />
-                                  Thread: {item.threadName}
+                                  {t('logs.trace.thread')}: {item.threadName}
                                 </span>
                               )}
                             </div>
@@ -733,7 +796,7 @@ export default function TracePage() {
       <AnimatePresence>
         {result && result.items.length === 0 && (
           <motion.div variants={fadeIn} initial="hidden" animate="visible" exit="hidden">
-            <Card className="glass">
+            <Card className="glass border-white/[0.08]">
               <CardContent className="py-12 text-center">
                 <Search className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                 <p className="text-muted-foreground">{t('logs.empty')}</p>

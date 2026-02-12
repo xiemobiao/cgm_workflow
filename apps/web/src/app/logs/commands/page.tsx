@@ -15,6 +15,8 @@ import {
   ExternalLink,
   ArrowLeft,
   Activity,
+  GitBranch,
+  FileText,
 } from 'lucide-react';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
@@ -22,10 +24,10 @@ import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { getActiveLogFileId, setActiveLogFileId } from '@/lib/log-file-scope';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
@@ -69,16 +71,24 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, t: (key: string) => string) {
   switch (status) {
     case 'success':
-      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">success</Badge>;
+      return (
+        <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-400">
+          {t('logs.commands.status.success')}
+        </Badge>
+      );
     case 'timeout':
-      return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">timeout</Badge>;
+      return (
+        <Badge className="border-orange-500/30 bg-orange-500/20 text-orange-400">
+          {t('logs.commands.status.timeout')}
+        </Badge>
+      );
     case 'error':
-      return <Badge variant="destructive">error</Badge>;
+      return <Badge variant="destructive">{t('logs.commands.status.error')}</Badge>;
     case 'pending':
-      return <Badge variant="secondary">pending</Badge>;
+      return <Badge variant="secondary">{t('logs.commands.status.pending')}</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -226,47 +236,55 @@ export default function CommandsPage() {
     const avgDuration = total > 0 ? chains.reduce((sum, c) => sum + c.duration, 0) / total : 0;
     return { total, success, timeout, error: errorCount, pending, avgDuration };
   }, [chains]);
+  const buildQuickLinkHref = useCallback((base: string) => {
+    const qs = new URLSearchParams();
+    if (projectId.trim()) qs.set('projectId', projectId.trim());
+    if (logFileId.trim()) qs.set('logFileId', logFileId.trim());
+    if (startLocal && endLocal) {
+      qs.set('startTime', toIsoFromDatetimeLocal(startLocal));
+      qs.set('endTime', toIsoFromDatetimeLocal(endLocal));
+    }
+    if (base === '/logs/trace' && deviceMac.trim()) {
+      qs.set('type', 'deviceMac');
+      qs.set('value', deviceMac.trim());
+    }
+    return qs.size ? `${base}?${qs.toString()}` : base;
+  }, [projectId, logFileId, startLocal, endLocal, deviceMac]);
+  const quickLinks = [
+    { href: buildQuickLinkHref('/logs/trace'), icon: GitBranch, label: t('logs.trace') },
+    { href: buildQuickLinkHref('/logs/files'), icon: FileText, label: t('logs.files.browse') },
+  ];
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* Header */}
       <motion.div
         variants={fadeIn}
         initial="initial"
         animate="animate"
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
       >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
-            <Zap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold gradient-text">{t('logs.commands')}</h1>
-            <p className="text-sm text-muted-foreground">
-              {loading ? t('common.loading') : t('common.items', { count: chains.length })}
-            </p>
-          </div>
-        </div>
-        <Button asChild variant="outline" size="sm" className="gap-2">
-          <Link href="/logs">
-            <ArrowLeft size={16} />
-            {t('common.back')}
-          </Link>
-        </Button>
-      </motion.div>
-
-      {/* Description */}
-      <motion.div
-        variants={fadeIn}
-        initial="initial"
-        animate="animate"
-        transition={{ delay: 0.05 }}
-      >
-        <Card className="glass border-border/50">
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">{t('logs.commands.description')}</p>
-          </CardContent>
-        </Card>
+        <PageHeader
+          title={t('logs.commands')}
+          subtitle={t('logs.commands.description')}
+          actions={(
+            <>
+              <PageHeaderActionButton asChild className="gap-2">
+                <Link href="/logs">
+                  <ArrowLeft size={16} />
+                  {t('common.back')}
+                </Link>
+              </PageHeaderActionButton>
+              {quickLinks.map((link) => (
+                <PageHeaderActionButton key={link.href} asChild className="gap-2">
+                  <Link href={link.href}>
+                    <link.icon size={16} />
+                    {link.label}
+                  </Link>
+                </PageHeaderActionButton>
+              ))}
+            </>
+          )}
+        />
       </motion.div>
 
       {/* Filters */}
@@ -276,50 +294,54 @@ export default function CommandsPage() {
         animate="animate"
         transition={{ delay: 0.1 }}
       >
-          <Card className="glass border-border/50">
-            <CardContent className="p-4 space-y-4">
-              <ProjectPicker projectId={projectId} onChange={setProjectId} />
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="space-y-4 p-4">
+            <ProjectPicker projectId={projectId} onChange={setProjectId} />
 
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                {t('logs.logFileIdOptional')}
+              </label>
+              <Input
+                value={logFileId}
+                onChange={(e) => setLogFileId(e.target.value)}
+                placeholder={t('logs.trace.logFileIdPlaceholder')}
+                className="bg-card/50"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">
-                  {t('logs.logFileIdOptional')}
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  {t('logs.commands.deviceMacOptional')}
                 </label>
-                <Input
-                  value={logFileId}
-                  onChange={(e) => setLogFileId(e.target.value)}
-                  placeholder="Filter by logFileId (optional)"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">
-                    deviceMac ({t('common.optional')})
-                  </label>
                 <Input
                   value={deviceMac}
                   onChange={(e) => setDeviceMac(e.target.value)}
-                  placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                  placeholder={t('logs.trace.type.deviceMacPlaceholder')}
+                  className="bg-card/50"
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.startTime')}</label>
+                <label className="mb-1 block text-xs text-muted-foreground">{t('logs.startTime')}</label>
                 <Input
                   type="datetime-local"
                   value={startLocal}
                   onChange={(e) => setStartLocal(e.target.value)}
+                  className="bg-card/50"
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.endTime')}</label>
+                <label className="mb-1 block text-xs text-muted-foreground">{t('logs.endTime')}</label>
                 <Input
                   type="datetime-local"
                   value={endLocal}
                   onChange={(e) => setEndLocal(e.target.value)}
+                  className="bg-card/50"
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.limit')}</label>
+                <label className="mb-1 block text-xs text-muted-foreground">{t('logs.limit')}</label>
                 <Input
                   type="number"
                   min={1}
@@ -329,29 +351,29 @@ export default function CommandsPage() {
                     const n = e.currentTarget.valueAsNumber;
                     if (Number.isFinite(n)) setLimit(Math.min(Math.max(Math.trunc(n), 1), 500));
                   }}
+                  className="bg-card/50"
                 />
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(1)}>
+              <PageHeaderActionButton disabled={loading} onClick={() => setPresetRange(1)}>
                 {t('logs.preset.1h')}
-              </Button>
-              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24)}>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton disabled={loading} onClick={() => setPresetRange(24)}>
                 {t('logs.preset.24h')}
-              </Button>
-              <Button variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton disabled={loading} onClick={() => setPresetRange(24 * 7)}>
                 {t('logs.preset.7d')}
-              </Button>
-              <Button
-                size="sm"
+              </PageHeaderActionButton>
+              <PageHeaderActionButton
                 disabled={!canSearch || loading}
                 onClick={() => void search()}
                 className="gap-2"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search size={16} />}
                 {t('common.search')}
-              </Button>
+              </PageHeaderActionButton>
             </div>
 
             {/* Error */}
@@ -361,7 +383,7 @@ export default function CommandsPage() {
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm"
+                  className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
                 >
                   <AlertCircle size={16} />
                   {error}
@@ -380,7 +402,7 @@ export default function CommandsPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
           >
-            <Card className="glass border-border/50">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Activity size={18} />
@@ -389,7 +411,7 @@ export default function CommandsPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                  <div className="rounded-lg border border-white/[0.08] bg-muted/30 p-3">
                     <div className="text-xs text-muted-foreground">{t('logs.commands.total')}</div>
                     <div className="text-2xl font-bold">{stats.total}</div>
                   </div>
@@ -405,7 +427,7 @@ export default function CommandsPage() {
                     <div className="text-xs text-muted-foreground">{t('logs.commands.error')}</div>
                     <div className="text-2xl font-bold text-red-400">{stats.error}</div>
                   </div>
-                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                  <div className="rounded-lg border border-white/[0.08] bg-muted/30 p-3">
                     <div className="text-xs text-muted-foreground">{t('logs.commands.pending')}</div>
                     <div className="text-2xl font-bold text-muted-foreground">{stats.pending}</div>
                   </div>
@@ -427,7 +449,7 @@ export default function CommandsPage() {
         animate="animate"
         transition={{ delay: 0.15 }}
       >
-        <Card className="glass border-border/50">
+        <Card className="glass border-white/[0.08]">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Zap size={18} />
@@ -453,7 +475,7 @@ export default function CommandsPage() {
                 variants={staggerContainer}
                 initial="initial"
                 animate="animate"
-                className="divide-y divide-border/30"
+                className="divide-y divide-white/[0.06]"
               >
                 {chains.map((chain, index) => (
                   <motion.div
@@ -480,13 +502,13 @@ export default function CommandsPage() {
                               <span className="font-mono text-xs text-primary truncate max-w-[200px]">
                                 {chain.requestId}
                               </span>
-                              {getStatusBadge(chain.status)}
+                              {getStatusBadge(chain.status, t)}
                             </div>
                             <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
                               <span>{chain.deviceMac ?? '-'}</span>
                               <span className="flex items-center gap-1">
                                 <Activity size={12} />
-                                {chain.eventCount} events
+                                {chain.eventCount} {t('common.events')}
                               </span>
                               <span className="flex items-center gap-1">
                                 <Timer size={12} />
@@ -512,7 +534,7 @@ export default function CommandsPage() {
                           className="overflow-hidden"
                         >
                           <div className="px-4 pb-4 pt-0">
-                            <div className="p-4 rounded-lg bg-background/50 border border-border/30 space-y-3">
+                            <div className="space-y-3 rounded-lg border border-white/[0.08] bg-background/50 p-4">
                               <h4 className="text-sm font-medium text-muted-foreground mb-3">
                                 {t('logs.commands.eventChain')}
                               </h4>
@@ -522,7 +544,7 @@ export default function CommandsPage() {
                                   initial={{ opacity: 0, x: -10 }}
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: idx * 0.03 }}
-                                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/20 border border-border/20"
+                                  className="flex items-start gap-3 rounded-lg border border-white/[0.06] bg-muted/20 p-3"
                                 >
                                   <div className={cn('w-2 h-2 rounded-full mt-2 flex-shrink-0', getLevelColor(event.level))} />
                                   <div className="flex-1 min-w-0">
@@ -548,11 +570,11 @@ export default function CommandsPage() {
                                       </p>
                                     )}
                                   </div>
-                                  <Button
+                                  <PageHeaderActionButton
                                     asChild
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 text-xs gap-1 flex-shrink-0"
+                                    className="h-7 flex-shrink-0 gap-1 text-xs"
                                   >
                                     <Link
                                       href={`/logs?q=${encodeURIComponent(event.eventName)}&startMs=${event.timestampMs - 60000}&endMs=${event.timestampMs + 60000}`}
@@ -561,7 +583,7 @@ export default function CommandsPage() {
                                       <ExternalLink size={12} />
                                       {t('common.view')}
                                     </Link>
-                                  </Button>
+                                  </PageHeaderActionButton>
                                 </motion.div>
                               ))}
                             </div>

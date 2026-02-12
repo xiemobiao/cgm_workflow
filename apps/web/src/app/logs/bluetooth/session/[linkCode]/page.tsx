@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import shellStyles from '@/components/AppShell.module.css';
-import formStyles from '@/components/Form.module.css';
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, ChevronDown, ChevronRight, ListTree, Route } from 'lucide-react';
 import { BluetoothTimeline, type TimelinePhase } from '@/components/BluetoothTimeline';
 import { ApiClientError, apiFetch } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 
 type SessionStatus =
   | 'scanning'
@@ -74,51 +77,55 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-function getStatusColor(status: SessionStatus | CommandChain['status']): string {
+function getSessionStatusBadge(
+  status: SessionStatus,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   switch (status) {
     case 'connected':
     case 'communicating':
-    case 'success':
-      return '#22c55e';
+      return <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-400">{t(`logs.bluetooth.status.${status}`)}</Badge>;
     case 'disconnected':
-      return '#6b7280';
+      return <Badge variant="secondary">{t(`logs.bluetooth.status.${status}`)}</Badge>;
     case 'error':
-      return '#ef4444';
+      return <Badge variant="destructive">{t('logs.bluetooth.status.error')}</Badge>;
     case 'timeout':
-      return '#f59e0b';
-    case 'pending':
-      return '#3b82f6';
+      return <Badge className="border-orange-500/30 bg-orange-500/20 text-orange-400">{t('logs.bluetooth.status.timeout')}</Badge>;
     default:
-      return '#3b82f6';
+      return <Badge className="border-blue-500/30 bg-blue-500/20 text-blue-400">{t(`logs.bluetooth.status.${status}`)}</Badge>;
   }
 }
 
-function getStatusLabel(status: SessionStatus): string {
-  const labels: Record<SessionStatus, string> = {
-    scanning: 'Scanning',
-    pairing: 'Pairing',
-    connecting: 'Connecting',
-    connected: 'Connected',
-    communicating: 'Communicating',
-    disconnected: 'Disconnected',
-    timeout: 'Timeout',
-    error: 'Error',
-  };
-  return labels[status] ?? status;
+function getChainStatusBadge(
+  status: CommandChain['status'],
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  switch (status) {
+    case 'success':
+      return <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-400">{t('logs.commands.status.success')}</Badge>;
+    case 'pending':
+      return <Badge className="border-blue-500/30 bg-blue-500/20 text-blue-400">{t('logs.commands.status.pending')}</Badge>;
+    case 'timeout':
+      return <Badge className="border-orange-500/30 bg-orange-500/20 text-orange-400">{t('logs.commands.status.timeout')}</Badge>;
+    case 'error':
+      return <Badge variant="destructive">{t('logs.commands.status.error')}</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
 }
 
-function getLevelColor(level: number): string {
+function getLevelBadgeClass(level: number): string {
   switch (level) {
     case 1:
-      return '#3b82f6'; // DEBUG - blue
+      return 'border-blue-500/30 bg-blue-500/20 text-blue-300';
     case 2:
-      return '#22c55e'; // INFO - green
+      return 'border-emerald-500/30 bg-emerald-500/20 text-emerald-300';
     case 3:
-      return '#f59e0b'; // WARN - amber
+      return 'border-amber-500/30 bg-amber-500/20 text-amber-300';
     case 4:
-      return '#ef4444'; // ERROR - red
+      return 'border-red-500/30 bg-red-500/20 text-red-300';
     default:
-      return '#6b7280';
+      return 'border-white/[0.18] bg-white/[0.08] text-foreground/80';
   }
 }
 
@@ -137,17 +144,23 @@ function getLevelLabel(level: number): string {
   }
 }
 
+function truncate(value: string | null, max = 140): string {
+  if (!value) return '-';
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}...`;
+}
+
 type TabId = 'timeline' | 'commands' | 'events';
 
 export default function SessionDetailPage() {
   const { localeTag, t } = useI18n();
   const params = useParams();
   const searchParams = useSearchParams();
-  const linkCode = params.linkCode as string;
-  const projectId = searchParams.get('projectId') ?? '';
+  const linkCode = decodeURIComponent(String(params.linkCode ?? ''));
+  const projectId = searchParams.get('projectId')?.trim() ?? '';
   const logFileId = searchParams.get('logFileId')?.trim() ?? '';
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('timeline');
@@ -190,326 +203,266 @@ export default function SessionDetailPage() {
   function toggleCommand(requestId: string) {
     setExpandedCommands((prev) => {
       const next = new Set(prev);
-      if (next.has(requestId)) {
-        next.delete(requestId);
-      } else {
-        next.add(requestId);
-      }
+      if (next.has(requestId)) next.delete(requestId);
+      else next.add(requestId);
       return next;
     });
   }
 
-  if (!projectId) {
-    return (
-      <div className={shellStyles.grid}>
-        <div className={shellStyles.card}>
-          <div className={formStyles.error}>Missing projectId parameter</div>
-          <Link href="/logs/bluetooth" className={shellStyles.button}>
-            Back to Bluetooth Debug
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const backHref = useMemo(() => (
+    `/logs/bluetooth?projectId=${projectId}${logFileId ? `&logFileId=${encodeURIComponent(logFileId)}` : ''}`
+  ), [projectId, logFileId]);
+  const viewEventsHref = useMemo(() => (
+    `/logs?projectId=${projectId}&linkCode=${encodeURIComponent(linkCode)}${logFileId ? `&logFileId=${encodeURIComponent(logFileId)}` : ''}`
+  ), [projectId, linkCode, logFileId]);
 
   return (
-    <div className={shellStyles.grid}>
-      {/* Header */}
-      <div className={shellStyles.card}>
-        <div className={formStyles.row} style={{ justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: 20, marginBottom: 4 }}>Session Detail</h1>
-            <div className={formStyles.muted} style={{ fontFamily: 'monospace' }}>
-              {decodeURIComponent(linkCode)}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Link
-              href={`/logs/bluetooth?projectId=${projectId}${logFileId ? `&logFileId=${encodeURIComponent(logFileId)}` : ''}`}
-              className={shellStyles.button}
-            >
-              Back to Sessions
-            </Link>
-            <Link
-              href={`/logs?projectId=${projectId}&linkCode=${encodeURIComponent(linkCode)}${logFileId ? `&logFileId=${encodeURIComponent(logFileId)}` : ''}`}
-              className={shellStyles.button}
-            >
-              View All Events
-            </Link>
-          </div>
-        </div>
-
-        {loading && <div className={formStyles.muted}>{t('common.loading')}</div>}
-        {error && <div className={formStyles.error}>{error}</div>}
-
-        {detail && (
-          <div className={shellStyles.grid} style={{ marginTop: 16 }}>
-            {/* Session Summary */}
-            <div className={formStyles.row} style={{ gap: 24, flexWrap: 'wrap' }}>
-              <div>
-                <div className={formStyles.label}>Status</div>
-                <span
-                  className={shellStyles.badge}
-                  style={{
-                    backgroundColor: getStatusColor(detail.session.status),
-                    color: '#fff',
-                    fontSize: 14,
-                    padding: '4px 12px',
-                  }}
-                >
-                  {getStatusLabel(detail.session.status)}
-                </span>
-              </div>
-              <div>
-                <div className={formStyles.label}>Device MAC</div>
-                <div style={{ fontFamily: 'monospace', fontSize: 14 }}>
-                  {detail.session.deviceMac ?? 'Unknown'}
-                </div>
-              </div>
-              <div>
-                <div className={formStyles.label}>Duration</div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>
-                  {formatDuration(detail.session.durationMs)}
-                </div>
-              </div>
-              <div>
-                <div className={formStyles.label}>Start Time</div>
-                <div style={{ fontSize: 14 }}>
-                  {new Date(detail.session.startTimeMs).toLocaleString(localeTag)}
-                </div>
-              </div>
-              <div>
-                <div className={formStyles.label}>Events</div>
-                <div style={{ fontSize: 14 }}>{detail.session.eventCount}</div>
-              </div>
-              <div>
-                <div className={formStyles.label}>Errors</div>
-                <div style={{ fontSize: 14, color: detail.session.errorCount > 0 ? '#ef4444' : undefined }}>
-                  {detail.session.errorCount}
-                </div>
-              </div>
-              <div>
-                <div className={formStyles.label}>Commands</div>
-                <div style={{ fontSize: 14 }}>{detail.session.commandCount}</div>
-              </div>
-              <div>
-                <div className={formStyles.label}>SDK Version</div>
-                <div style={{ fontSize: 14 }}>{detail.session.sdkVersion ?? '-'}</div>
-              </div>
-              <div>
-                <div className={formStyles.label}>App ID</div>
-                <div style={{ fontSize: 14 }}>{detail.session.appId ?? '-'}</div>
-              </div>
-            </div>
-          </div>
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
+      <PageHeader
+        title={t('logs.bluetooth.sessionDetail')}
+        subtitle={linkCode || '-'}
+        actions={(
+          <>
+            <PageHeaderActionButton asChild>
+              <Link href={backHref}>{t('logs.bluetooth.backToSessions')}</Link>
+            </PageHeaderActionButton>
+            <PageHeaderActionButton asChild>
+              <Link href={viewEventsHref}>{t('logs.bluetooth.viewAllEvents')}</Link>
+            </PageHeaderActionButton>
+          </>
         )}
-      </div>
+      />
 
-      {detail && (
+      {!projectId && (
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="p-6 text-sm text-red-400">{t('logs.bluetooth.missingProjectId')}</CardContent>
+        </Card>
+      )}
+
+      {loading && (
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="p-6 text-sm text-muted-foreground">{t('common.loading')}</CardContent>
+        </Card>
+      )}
+
+      {error && (
+        <Card className="glass border-white/[0.08]">
+          <CardContent className="p-6 text-sm text-red-400">{error}</CardContent>
+        </Card>
+      )}
+
+      {detail && !loading && !error && (
         <>
-          {/* Tabs */}
-          <div className={shellStyles.card}>
-            <div className={formStyles.row} style={{ gap: 0 }}>
-              {(['timeline', 'commands', 'events'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  className={shellStyles.button}
-                  style={{
-                    borderRadius: 0,
-                    borderRight: tab !== 'events' ? 'none' : undefined,
-                    backgroundColor: activeTab === tab ? 'var(--color-primary, #3b82f6)' : undefined,
-                    color: activeTab === tab ? '#fff' : undefined,
-                  }}
-                  onClick={() => setActiveTab(tab)}
-                >
-                  {tab === 'timeline' && `Timeline (${detail.timeline.length} phases)`}
-                  {tab === 'commands' && `Commands (${detail.commandChains.length})`}
-                  {tab === 'events' && `Events (${detail.events.length})`}
-                </button>
-              ))}
-            </div>
-          </div>
+          <Card className="glass border-white/[0.08]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Route size={18} />
+                {t('logs.bluetooth.sessionOverview')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4 xl:grid-cols-6">
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('table.status')}</div>
+                <div>{getSessionStatusBadge(detail.session.status, t)}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('logs.trace.type.deviceMac')}</div>
+                <div className="font-mono text-xs">{detail.session.deviceMac ?? t('logs.bluetooth.unknown')}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('logs.commands.duration')}</div>
+                <div>{formatDuration(detail.session.durationMs)}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('logs.startTime')}</div>
+                <div>{new Date(detail.session.startTimeMs).toLocaleString(localeTag)}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('common.events')}</div>
+                <div>{detail.session.eventCount}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('logs.fileStatus.errors')}</div>
+                <div className={detail.session.errorCount > 0 ? 'text-destructive' : ''}>{detail.session.errorCount}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('logs.commands')}</div>
+                <div>{detail.session.commandCount}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('table.sdk')}</div>
+                <div>{detail.session.sdkVersion ?? '-'}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('logs.eventsDetail.appId')}</div>
+                <div>{detail.session.appId ?? '-'}</div>
+              </div>
+            </CardContent>
+          </Card>
 
-          {/* Timeline Tab */}
+          <Card className="glass border-white/[0.08]">
+            <CardContent className="flex flex-wrap gap-2 p-4">
+              <PageHeaderActionButton
+                onClick={() => setActiveTab('timeline')}
+                variant={activeTab === 'timeline' ? 'default' : 'outline'}
+                className={cn(activeTab === 'timeline' ? 'border-primary/40 bg-primary/90 text-primary-foreground hover:bg-primary/80' : '')}
+              >
+                {t('logs.bluetooth.tab.timeline')} ({detail.timeline.length})
+              </PageHeaderActionButton>
+              <PageHeaderActionButton
+                onClick={() => setActiveTab('commands')}
+                variant={activeTab === 'commands' ? 'default' : 'outline'}
+                className={cn(activeTab === 'commands' ? 'border-primary/40 bg-primary/90 text-primary-foreground hover:bg-primary/80' : '')}
+              >
+                {t('logs.bluetooth.tab.commands')} ({detail.commandChains.length})
+              </PageHeaderActionButton>
+              <PageHeaderActionButton
+                onClick={() => setActiveTab('events')}
+                variant={activeTab === 'events' ? 'default' : 'outline'}
+                className={cn(activeTab === 'events' ? 'border-primary/40 bg-primary/90 text-primary-foreground hover:bg-primary/80' : '')}
+              >
+                {t('logs.bluetooth.tab.events')} ({detail.events.length})
+              </PageHeaderActionButton>
+            </CardContent>
+          </Card>
+
           {activeTab === 'timeline' && (
-            <div className={shellStyles.card}>
-              <BluetoothTimeline
-                phases={detail.timeline}
-                sessionStartMs={detail.session.startTimeMs}
-                sessionEndMs={detail.session.endTimeMs}
-              />
-            </div>
+            <Card className="glass border-white/[0.08]">
+              <CardContent className="p-4">
+                <BluetoothTimeline
+                  phases={detail.timeline}
+                  sessionStartMs={detail.session.startTimeMs}
+                  sessionEndMs={detail.session.endTimeMs}
+                />
+              </CardContent>
+            </Card>
           )}
 
-          {/* Commands Tab */}
           {activeTab === 'commands' && (
-            <div className={shellStyles.card}>
-              {detail.commandChains.length === 0 ? (
-                <div className={formStyles.muted} style={{ padding: 20, textAlign: 'center' }}>
-                  No command chains found in this session.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {detail.commandChains.map((chain) => (
-                    <div
-                      key={chain.requestId}
-                      style={{
-                        border: '1px solid var(--color-border, #e5e7eb)',
-                        borderRadius: 8,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 12,
-                          padding: '12px 16px',
-                          backgroundColor: 'var(--color-bg-secondary, #f9fafb)',
-                          cursor: 'pointer',
-                        }}
+            <Card className="glass border-white/[0.08]">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ListTree size={18} />
+                  {t('logs.bluetooth.commandChains')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {detail.commandChains.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-muted-foreground">{t('logs.bluetooth.noCommandChainsInSession')}</div>
+                ) : (
+                  detail.commandChains.map((chain) => (
+                    <div key={chain.requestId} className="overflow-hidden rounded-lg border border-white/[0.08] bg-background/40">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 p-3 text-left hover:bg-white/[0.02]"
                         onClick={() => toggleCommand(chain.requestId)}
                       >
-                        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                          {chain.requestId}
-                        </span>
-                        <span
-                          className={shellStyles.badge}
-                          style={{
-                            backgroundColor: getStatusColor(chain.status),
-                            color: '#fff',
-                          }}
-                        >
-                          {chain.status.toUpperCase()}
-                        </span>
-                        <span className={formStyles.muted}>
-                          {chain.events.length} events
-                        </span>
-                        <span style={{ fontWeight: 600 }}>
-                          {formatDuration(chain.durationMs)}
-                        </span>
-                        <span className={formStyles.muted} style={{ marginLeft: 'auto' }}>
-                          {new Date(chain.startMs).toLocaleTimeString(localeTag)}
-                        </span>
-                        <span style={{ fontSize: 12 }}>
-                          {expandedCommands.has(chain.requestId) ? '\u25BC' : '\u25B6'}
-                        </span>
-                      </div>
+                        {expandedCommands.has(chain.requestId) ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="font-mono text-xs text-primary">{chain.requestId}</span>
+                        {getChainStatusBadge(chain.status, t)}
+                        <span className="text-xs text-muted-foreground">{chain.eventCount} {t('common.events')}</span>
+                        <span className="text-xs text-muted-foreground">{formatDuration(chain.durationMs)}</span>
+                        <span className="ml-auto text-xs text-muted-foreground">{new Date(chain.startMs).toLocaleTimeString(localeTag)}</span>
+                      </button>
+
                       {expandedCommands.has(chain.requestId) && (
-                        <div style={{ padding: 16 }}>
-                          <table className={shellStyles.table}>
-                            <thead>
-                              <tr>
-                                <th>Time</th>
-                                <th>Event</th>
-                                <th>Level</th>
-                                <th>Message</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {chain.events.map((event) => (
-                                <tr key={event.id}>
-                                  <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
-                                    {new Date(event.timestampMs).toLocaleTimeString(localeTag)}
-                                  </td>
-                                  <td>{event.eventName}</td>
-                                  <td>
-                                    <span
-                                      style={{
-                                        fontSize: 10,
-                                        fontWeight: 600,
-                                        padding: '2px 6px',
-                                        borderRadius: 4,
-                                        backgroundColor: getLevelColor(event.level),
-                                        color: '#fff',
-                                      }}
-                                    >
-                                      {getLevelLabel(event.level)}
-                                    </span>
-                                  </td>
-                                  <td className={formStyles.muted} style={{ maxWidth: 400 }}>
-                                    {event.msg
-                                      ? event.msg.length > 100
-                                        ? `${event.msg.slice(0, 100)}...`
-                                        : event.msg
-                                      : '-'}
-                                  </td>
+                        <div className="border-t border-white/[0.08] p-3">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-white/[0.08] text-xs text-muted-foreground">
+                                  <th className="p-2 text-left">{t('logs.time')}</th>
+                                  <th className="p-2 text-left">{t('table.event')}</th>
+                                  <th className="p-2 text-left">{t('table.level')}</th>
+                                  <th className="p-2 text-left">{t('logs.message')}</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody>
+                                {chain.events.map((event) => (
+                                  <tr key={event.id} className="border-b border-white/[0.06]">
+                                    <td className="p-2 whitespace-nowrap text-xs text-muted-foreground">
+                                      {new Date(event.timestampMs).toLocaleTimeString(localeTag)}
+                                    </td>
+                                    <td className="p-2">{event.eventName}</td>
+                                    <td className="p-2">
+                                      <span className={cn('inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold', getLevelBadgeClass(event.level))}>
+                                        {getLevelLabel(event.level)}
+                                      </span>
+                                    </td>
+                                    <td className="p-2 text-xs text-muted-foreground">{truncate(event.msg, 100)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
           )}
 
-          {/* Events Tab */}
           {activeTab === 'events' && (
-            <div className={shellStyles.card}>
-              <div className={shellStyles.tableWrap}>
-                <table className={shellStyles.table}>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Event</th>
-                      <th>Level</th>
-                      <th>Message</th>
-                      <th>ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.events.map((event) => (
-                      <tr key={event.id}>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          {new Date(event.timestampMs).toLocaleString(localeTag)}
-                        </td>
-                        <td>{event.eventName}</td>
-                        <td>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 600,
-                              padding: '2px 6px',
-                              borderRadius: 4,
-                              backgroundColor: getLevelColor(event.level),
-                              color: '#fff',
-                            }}
-                          >
-                            {getLevelLabel(event.level)}
-                          </span>
-                        </td>
-                        <td className={formStyles.muted} style={{ maxWidth: 500 }}>
-                          {event.msg
-                            ? event.msg.length > 150
-                              ? `${event.msg.slice(0, 150)}...`
-                              : event.msg
-                            : '-'}
-                        </td>
-                        <td>
-                          <Link
-                            href={`/logs?projectId=${projectId}&eventId=${event.id}`}
-                            style={{ color: 'var(--color-primary, #3b82f6)', fontSize: 12 }}
-                          >
-                            {event.id.slice(0, 8)}...
-                          </Link>
-                        </td>
+            <Card className="glass border-white/[0.08]">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Activity size={18} />
+                  {t('logs.bluetooth.tab.events')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] text-xs text-muted-foreground">
+                        <th className="p-2 text-left">{t('logs.time')}</th>
+                        <th className="p-2 text-left">{t('table.event')}</th>
+                        <th className="p-2 text-left">{t('table.level')}</th>
+                        <th className="p-2 text-left">{t('logs.message')}</th>
+                        <th className="p-2 text-left">{t('table.id')}</th>
                       </tr>
-                    ))}
-                    {detail.events.length === 0 && (
-                      <tr>
-                        <td colSpan={5} style={{ padding: 20, textAlign: 'center' }} className={formStyles.muted}>
-                          No events found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                    </thead>
+                    <tbody>
+                      {detail.events.map((event) => (
+                        <tr key={event.id} className="border-b border-white/[0.06]">
+                          <td className="p-2 whitespace-nowrap text-xs text-muted-foreground">
+                            {new Date(event.timestampMs).toLocaleString(localeTag)}
+                          </td>
+                          <td className="p-2">{event.eventName}</td>
+                          <td className="p-2">
+                            <span className={cn('inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold', getLevelBadgeClass(event.level))}>
+                              {getLevelLabel(event.level)}
+                            </span>
+                          </td>
+                          <td className="p-2 text-xs text-muted-foreground">{truncate(event.msg, 150)}</td>
+                          <td className="p-2 text-xs">
+                            <Link
+                              href={`/logs?projectId=${projectId}&eventId=${event.id}`}
+                              className="text-primary hover:underline"
+                            >
+                              {event.id.slice(0, 8)}...
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                      {detail.events.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-sm text-muted-foreground">
+                            {t('common.noData')}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </>
       )}

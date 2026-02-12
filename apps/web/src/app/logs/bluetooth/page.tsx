@@ -26,10 +26,10 @@ import { getProjectId } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { getActiveLogFileId, setActiveLogFileId } from '@/lib/log-file-scope';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import { fadeIn } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
@@ -169,67 +169,114 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
-function getStatusBadge(status: SessionStatus) {
+function getSessionStatusLabel(
+  status: SessionStatus,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  return t(`logs.bluetooth.status.${status}`);
+}
+
+function getStatusBadge(
+  status: SessionStatus,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   switch (status) {
     case 'connected':
     case 'communicating':
-      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{status}</Badge>;
+      return (
+        <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-400">
+          {getSessionStatusLabel(status, t)}
+        </Badge>
+      );
     case 'disconnected':
-      return <Badge variant="secondary">{status}</Badge>;
+      return <Badge variant="secondary">{getSessionStatusLabel(status, t)}</Badge>;
     case 'error':
-      return <Badge variant="destructive">{status}</Badge>;
+      return <Badge variant="destructive">{getSessionStatusLabel(status, t)}</Badge>;
     case 'timeout':
-      return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">{status}</Badge>;
+      return (
+        <Badge className="border-orange-500/30 bg-orange-500/20 text-orange-400">
+          {getSessionStatusLabel(status, t)}
+        </Badge>
+      );
     case 'scanning':
     case 'pairing':
     case 'connecting':
-      return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">{status}</Badge>;
+      return (
+        <Badge className="border-blue-500/30 bg-blue-500/20 text-blue-400">
+          {getSessionStatusLabel(status, t)}
+        </Badge>
+      );
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline">{getSessionStatusLabel(status, t)}</Badge>;
   }
 }
 
-function getChainStatusBadge(status: CommandChainStatus) {
+function getChainStatusBadge(
+  status: CommandChainStatus,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   switch (status) {
     case 'success':
-      return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{status}</Badge>;
+      return (
+        <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-400">
+          {t('logs.commands.status.success')}
+        </Badge>
+      );
     case 'pending':
-      return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">{status}</Badge>;
+      return (
+        <Badge className="border-blue-500/30 bg-blue-500/20 text-blue-400">
+          {t('logs.commands.status.pending')}
+        </Badge>
+      );
     case 'timeout':
-      return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">{status}</Badge>;
+      return (
+        <Badge className="border-orange-500/30 bg-orange-500/20 text-orange-400">
+          {t('logs.commands.status.timeout')}
+        </Badge>
+      );
     case 'error':
-      return <Badge variant="destructive">{status}</Badge>;
+      return <Badge variant="destructive">{t('logs.commands.status.error')}</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
 }
 
-function getSeverityBadge(severity: number) {
-  if (severity >= 4) return <Badge variant="destructive">Level {severity}</Badge>;
-  if (severity >= 3) return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">Level {severity}</Badge>;
-  if (severity >= 2) return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Level {severity}</Badge>;
-  return <Badge variant="secondary">Level {severity}</Badge>;
+function getSeverityBadge(
+  severity: number,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  if (severity >= 4) return <Badge variant="destructive">{t('logs.bluetooth.severityLevel', { level: severity })}</Badge>;
+  if (severity >= 3) {
+    return <Badge className="border-orange-500/30 bg-orange-500/20 text-orange-400">{t('logs.bluetooth.severityLevel', { level: severity })}</Badge>;
+  }
+  if (severity >= 2) {
+    return <Badge className="border-yellow-500/30 bg-yellow-500/20 text-yellow-400">{t('logs.bluetooth.severityLevel', { level: severity })}</Badge>;
+  }
+  return <Badge variant="secondary">{t('logs.bluetooth.severityLevel', { level: severity })}</Badge>;
 }
 
-function getAnomalyTypeLabel(type: string): string {
+function getAnomalyTypeLabel(
+  type: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
   const labels: Record<string, string> = {
-    frequent_disconnect: 'Frequent Disconnect',
-    timeout_retry: 'Timeout Retry',
-    error_burst: 'Error Burst',
-    slow_connection: 'Slow Connection',
-    command_failure: 'Command Failure',
+    frequent_disconnect: t('logs.bluetooth.anomalyType.frequentDisconnect'),
+    timeout_retry: t('logs.bluetooth.anomalyType.timeoutRetry'),
+    error_burst: t('logs.bluetooth.anomalyType.errorBurst'),
+    slow_connection: t('logs.bluetooth.anomalyType.slowConnection'),
+    command_failure: t('logs.bluetooth.anomalyType.commandFailure'),
   };
   return labels[type] ?? type;
 }
 
 type TabId = 'sessions' | 'commands' | 'anomalies' | 'errors' | 'compare';
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: 'sessions', label: 'Sessions', icon: Wifi },
-  { id: 'commands', label: 'Commands', icon: Zap },
-  { id: 'anomalies', label: 'Anomalies', icon: AlertTriangle },
-  { id: 'errors', label: 'Errors', icon: Bug },
-  { id: 'compare', label: 'Compare', icon: GitCompare },
+const TABS: { id: TabId; labelKey: string; icon: React.ElementType }[] = [
+  { id: 'sessions', labelKey: 'logs.bluetooth.tab.sessions', icon: Wifi },
+  { id: 'commands', labelKey: 'logs.bluetooth.tab.commands', icon: Zap },
+  { id: 'anomalies', labelKey: 'logs.bluetooth.tab.anomalies', icon: AlertTriangle },
+  { id: 'errors', labelKey: 'logs.bluetooth.tab.errors', icon: Bug },
+  { id: 'compare', labelKey: 'logs.bluetooth.tab.compare', icon: GitCompare },
 ];
 
 export default function BluetoothDebugPage() {
@@ -477,7 +524,7 @@ export default function BluetoothDebugPage() {
           forceRefresh: true,
         }),
       });
-      setAggregateResult(`Aggregated sessions: ${data.count}`);
+      setAggregateResult(t('logs.bluetooth.aggregateResult', { count: data.count }));
       await fetchSessions();
     } catch (e: unknown) {
       const msg = e instanceof ApiClientError ? `${e.code}: ${e.message}` : String(e);
@@ -524,33 +571,27 @@ export default function BluetoothDebugPage() {
   const traceHref = headerQuery ? `/logs/trace?${headerQuery}` : '/logs/trace';
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1560px] space-y-6 p-6">
       {/* Header */}
       <motion.div
         variants={fadeIn}
         initial="initial"
         animate="animate"
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
       >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center">
-            <Bluetooth className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold gradient-text">Bluetooth Debug Center</h1>
-            <p className="text-sm text-muted-foreground">
-              {loading ? t('common.loading') : `${sessionsCountLabel} sessions`}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href={logsHref}>{t('logs.title')}</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href={traceHref}>{t('logs.trace')}</Link>
-          </Button>
-        </div>
+        <PageHeader
+          title={t('logs.bluetooth.title')}
+          subtitle={loading ? t('common.loading') : t('logs.bluetooth.sessionsCount', { count: sessionsCountLabel })}
+          actions={(
+            <>
+              <PageHeaderActionButton asChild>
+                <Link href={logsHref}>{t('logs.title')}</Link>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton asChild>
+                <Link href={traceHref}>{t('logs.trace')}</Link>
+              </PageHeaderActionButton>
+            </>
+          )}
+        />
       </motion.div>
 
       {/* Project Picker & Tabs */}
@@ -560,7 +601,7 @@ export default function BluetoothDebugPage() {
         animate="animate"
         transition={{ delay: 0.1 }}
       >
-        <Card className="glass border-border/50">
+        <Card className="glass border-white/[0.08]">
           <CardContent className="p-4 space-y-4">
             <ProjectPicker projectId={projectId} onChange={setProjectId} />
 
@@ -569,20 +610,16 @@ export default function BluetoothDebugPage() {
               {TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
-                  <button
+                  <PageHeaderActionButton
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
-                      activeTab === tab.id
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                    )}
+                    variant={activeTab === tab.id ? 'default' : 'outline'}
+                    className={cn(activeTab === tab.id ? 'border-primary/40 bg-primary/90 text-primary-foreground hover:bg-primary/80' : '')}
                   >
                     <Icon size={16} />
-                    {tab.label}
-                  </button>
+                    {t(tab.labelKey)}
+                  </PageHeaderActionButton>
                 );
               })}
             </div>
@@ -597,7 +634,7 @@ export default function BluetoothDebugPage() {
         animate="animate"
         transition={{ delay: 0.15 }}
       >
-        <Card className="glass border-border/50">
+        <Card className="glass border-white/[0.08]">
           <CardContent className="p-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
@@ -623,50 +660,50 @@ export default function BluetoothDebugPage() {
                 <Input
                   value={logFileId}
                   onChange={(e) => setLogFileId(e.target.value)}
-                  placeholder="Filter by logFileId (optional)"
+                  placeholder={t('logs.trace.logFileIdPlaceholder')}
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Device MAC</label>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('logs.trace.type.deviceMac')}</label>
                 <Input
                   value={deviceMac}
                   onChange={(e) => setDeviceMac(e.target.value)}
-                  placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                  placeholder={t('logs.trace.type.deviceMacPlaceholder')}
                 />
               </div>
               {activeTab === 'sessions' && (
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Status</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">{t('table.status')}</label>
                   <select
-                    className="w-full h-10 px-3 rounded-md bg-background/50 border border-border/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className="w-full h-10 rounded-md border border-white/[0.08] bg-background/50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as SessionStatus | '')}
                   >
-                    <option value="">All</option>
-                    <option value="scanning">Scanning</option>
-                    <option value="pairing">Pairing</option>
-                    <option value="connecting">Connecting</option>
-                    <option value="connected">Connected</option>
-                    <option value="communicating">Communicating</option>
-                    <option value="disconnected">Disconnected</option>
-                    <option value="timeout">Timeout</option>
-                    <option value="error">Error</option>
+                    <option value="">{t('logs.level.all')}</option>
+                    <option value="scanning">{t('logs.bluetooth.status.scanning')}</option>
+                    <option value="pairing">{t('logs.bluetooth.status.pairing')}</option>
+                    <option value="connecting">{t('logs.bluetooth.status.connecting')}</option>
+                    <option value="connected">{t('logs.bluetooth.status.connected')}</option>
+                    <option value="communicating">{t('logs.bluetooth.status.communicating')}</option>
+                    <option value="disconnected">{t('logs.bluetooth.status.disconnected')}</option>
+                    <option value="timeout">{t('logs.bluetooth.status.timeout')}</option>
+                    <option value="error">{t('logs.bluetooth.status.error')}</option>
                   </select>
                 </div>
               )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(1)}>
+              <PageHeaderActionButton type="button" disabled={loading} onClick={() => setPresetRange(1)}>
                 {t('logs.preset.1h')}
-              </Button>
-              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24)}>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton type="button" disabled={loading} onClick={() => setPresetRange(24)}>
                 {t('logs.preset.24h')}
-              </Button>
-              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
+              </PageHeaderActionButton>
+              <PageHeaderActionButton type="button" disabled={loading} onClick={() => setPresetRange(24 * 7)}>
                 {t('logs.preset.7d')}
-              </Button>
-              <Button
+              </PageHeaderActionButton>
+              <PageHeaderActionButton
                 type="button"
                 size="sm"
                 disabled={!projectId || loading}
@@ -675,19 +712,18 @@ export default function BluetoothDebugPage() {
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search size={16} />}
                 {t('common.search')}
-              </Button>
+              </PageHeaderActionButton>
               {activeTab === 'sessions' && (
-                <Button
+                <PageHeaderActionButton
                   type="button"
-                  variant="outline"
                   size="sm"
                   disabled={!projectId || aggregating || Boolean(logFileId.trim())}
                   onClick={() => void triggerAggregate()}
                   className="gap-2"
                 >
                   {aggregating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw size={16} />}
-                  Aggregate Sessions
-                </Button>
+                  {t('logs.bluetooth.aggregateSessions')}
+                </PageHeaderActionButton>
               )}
             </div>
 
@@ -730,13 +766,13 @@ export default function BluetoothDebugPage() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            <Card className="glass border-border/50">
-              <CardHeader className="pb-3">
-	                <CardTitle className="text-base flex items-center gap-2">
-	                  <Wifi size={18} />
-	                  Sessions
-	                  <Badge variant="secondary" className="ml-2">{sessionsCountLabel}</Badge>
-	                </CardTitle>
+            <Card className="glass border-white/[0.08]">
+	              <CardHeader className="pb-3">
+		                <CardTitle className="text-base flex items-center gap-2">
+		                  <Wifi size={18} />
+		                  {t('logs.bluetooth.tab.sessions')}
+		                  <Badge variant="secondary" className="ml-2">{sessionsCountLabel}</Badge>
+		                </CardTitle>
 	              </CardHeader>
 	              <CardContent className="p-0">
 	                {loading && sessionItems.length === 0 ? (
@@ -750,26 +786,26 @@ export default function BluetoothDebugPage() {
 	                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
 	                      <WifiOff size={24} className="text-muted-foreground" />
 	                    </div>
-	                    <p className="text-muted-foreground">
-	                      {logFileId.trim()
-	                        ? 'No sessions found for this log file. Try adjusting the time range or clearing filters.'
-	                        : 'No sessions found. Try clicking \"Aggregate Sessions\" first.'}
-	                    </p>
+		                    <p className="text-muted-foreground">
+		                      {logFileId.trim()
+		                        ? t('logs.bluetooth.emptySessionsWithFile')
+		                        : t('logs.bluetooth.emptySessions')}
+		                    </p>
 	                  </div>
 	                ) : (
 	                  <div className="overflow-x-auto">
 	                    <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-border/50">
-                          <th className="text-left p-3 text-muted-foreground font-medium">Link Code</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Device MAC</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Start Time</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Duration</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Events</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Errors</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Commands</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">SDK</th>
+                        <tr className="border-b border-white/[0.08]">
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.trace.linkCode')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.trace.type.deviceMac')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.startTime')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.commands.duration')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('table.status')}</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">{t('common.events')}</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.fileStatus.errors')}</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.commands')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('table.sdk')}</th>
                         </tr>
 	                      </thead>
 	                      <tbody>
@@ -779,7 +815,7 @@ export default function BluetoothDebugPage() {
 	                            initial={{ opacity: 0, y: 10 }}
 	                            animate={{ opacity: 1, y: 0 }}
 	                            transition={{ delay: index * 0.02 }}
-                            className="border-b border-border/30 hover:bg-primary/5 transition-colors"
+                            className="border-b border-white/[0.06] hover:bg-primary/5 transition-colors"
                           >
                             <td className="p-3">
                               <Link
@@ -794,7 +830,7 @@ export default function BluetoothDebugPage() {
                               {new Date(session.startTimeMs).toLocaleString(localeTag)}
                             </td>
                             <td className="p-3">{formatDuration(session.durationMs)}</td>
-                            <td className="p-3">{getStatusBadge(session.status)}</td>
+	                            <td className="p-3">{getStatusBadge(session.status, t)}</td>
                             <td className="p-3 text-right">{session.eventCount}</td>
                             <td className="p-3 text-right">
                               <span className={session.errorCount > 0 ? 'text-destructive font-medium' : ''}>
@@ -823,13 +859,13 @@ export default function BluetoothDebugPage() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-	            <Card className="glass border-border/50">
-	              <CardHeader className="pb-3">
-	                <CardTitle className="text-base flex items-center gap-2">
-	                  <Zap size={18} />
-	                  Command Chains
-	                  <Badge variant="secondary" className="ml-2">{commandsCount}</Badge>
-	                </CardTitle>
+	            <Card className="glass border-white/[0.08]">
+		              <CardHeader className="pb-3">
+		                <CardTitle className="text-base flex items-center gap-2">
+		                  <Zap size={18} />
+		                  {t('logs.bluetooth.commandChains')}
+		                  <Badge variant="secondary" className="ml-2">{commandsCount}</Badge>
+		                </CardTitle>
 	              </CardHeader>
 	              <CardContent className="p-0">
 	                {loading && commandItems.length === 0 ? (
@@ -843,18 +879,18 @@ export default function BluetoothDebugPage() {
 	                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
 	                      <Zap size={24} className="text-muted-foreground" />
 	                    </div>
-	                    <p className="text-muted-foreground">No command chains found. Try adjusting the time range.</p>
+		                    <p className="text-muted-foreground">{t('logs.bluetooth.emptyCommandChains')}</p>
 	                  </div>
 	                ) : (
 	                  <div className="overflow-x-auto">
 	                    <table className="w-full text-sm">
 	                      <thead>
-	                        <tr className="border-b border-border/50">
-	                          <th className="text-left p-3 text-muted-foreground font-medium">Request ID</th>
-	                          <th className="text-right p-3 text-muted-foreground font-medium">Events</th>
-	                          <th className="text-right p-3 text-muted-foreground font-medium">Duration</th>
-	                          <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
-	                          <th className="text-left p-3 text-muted-foreground font-medium">Start Time</th>
+	                        <tr className="border-b border-white/[0.08]">
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.trace.requestId')}</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">{t('common.events')}</th>
+	                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.commands.duration')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('table.status')}</th>
+	                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.startTime')}</th>
 	                        </tr>
 	                      </thead>
 	                      <tbody>
@@ -864,12 +900,12 @@ export default function BluetoothDebugPage() {
 	                            initial={{ opacity: 0, y: 10 }}
 	                            animate={{ opacity: 1, y: 0 }}
 	                            transition={{ delay: index * 0.02 }}
-	                            className="border-b border-border/30 hover:bg-primary/5 transition-colors"
+	                            className="border-b border-white/[0.06] hover:bg-primary/5 transition-colors"
 	                          >
 	                            <td className="p-3 font-mono text-xs">{chain.requestId}</td>
 	                            <td className="p-3 text-right">{chain.eventCount}</td>
 	                            <td className="p-3 text-right">{formatDuration(chain.durationMs)}</td>
-	                            <td className="p-3">{getChainStatusBadge(chain.status)}</td>
+	                            <td className="p-3">{getChainStatusBadge(chain.status, t)}</td>
 	                            <td className="p-3 whitespace-nowrap text-muted-foreground">
 	                              {new Date(chain.startMs).toLocaleString(localeTag)}
 	                            </td>
@@ -897,7 +933,7 @@ export default function BluetoothDebugPage() {
             {/* Summary Cards */}
             {anomalySummary && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="glass border-border/50">
+                <Card className="glass border-white/[0.08]">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
@@ -905,12 +941,12 @@ export default function BluetoothDebugPage() {
                       </div>
                       <div>
                         <div className="text-2xl font-bold">{anomalySummary.totalPatterns}</div>
-                        <div className="text-xs text-muted-foreground">Total Patterns</div>
+                        <div className="text-xs text-muted-foreground">{t('logs.bluetooth.totalPatterns')}</div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="glass border-border/50">
+                <Card className="glass border-white/[0.08]">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
@@ -918,12 +954,12 @@ export default function BluetoothDebugPage() {
                       </div>
                       <div>
                         <div className="text-2xl font-bold text-destructive">{anomalySummary.highSeverityCount}</div>
-                        <div className="text-xs text-muted-foreground">High Severity</div>
+                        <div className="text-xs text-muted-foreground">{t('logs.bluetooth.highSeverity')}</div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-                <Card className="glass border-border/50">
+                <Card className="glass border-white/[0.08]">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
@@ -931,7 +967,7 @@ export default function BluetoothDebugPage() {
                       </div>
                       <div>
                         <div className="text-2xl font-bold">{anomalySummary.affectedDevices}</div>
-                        <div className="text-xs text-muted-foreground">Affected Devices</div>
+                        <div className="text-xs text-muted-foreground">{t('logs.bluetooth.affectedDevices')}</div>
                       </div>
                     </div>
                   </CardContent>
@@ -939,11 +975,11 @@ export default function BluetoothDebugPage() {
               </div>
             )}
 
-            <Card className="glass border-border/50">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <AlertTriangle size={18} />
-                  Anomaly Patterns
+                  {t('logs.bluetooth.anomalyPatterns')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -957,20 +993,20 @@ export default function BluetoothDebugPage() {
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
                       <CheckCircle2 size={24} className="text-emerald-400" />
                     </div>
-                    <p className="text-muted-foreground">No anomaly patterns detected.</p>
+                    <p className="text-muted-foreground">{t('logs.bluetooth.emptyAnomalies')}</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-border/50">
-                          <th className="text-left p-3 text-muted-foreground font-medium">Type</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Severity</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Device MAC</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Occurrences</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Sessions</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Avg Interval</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Description</th>
+                        <tr className="border-b border-white/[0.08]">
+                          <th className="text-left p-3 text-muted-foreground font-medium">{t('table.title')}</th>
+                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.bluetooth.severity')}</th>
+                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.trace.type.deviceMac')}</th>
+                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.bluetooth.occurrences')}</th>
+                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.bluetooth.sessions')}</th>
+                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.bluetooth.avgInterval')}</th>
+                          <th className="text-left p-3 text-muted-foreground font-medium">{t('knownIssues.description')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -980,11 +1016,11 @@ export default function BluetoothDebugPage() {
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.02 }}
-                            className="border-b border-border/30 hover:bg-primary/5 transition-colors"
+                            className="border-b border-white/[0.06] hover:bg-primary/5 transition-colors"
                           >
-                            <td className="p-3 font-medium">{getAnomalyTypeLabel(anomaly.patternType)}</td>
-                            <td className="p-3">{getSeverityBadge(anomaly.severity)}</td>
-                            <td className="p-3 font-mono text-xs">{anomaly.deviceMac ?? 'All'}</td>
+                            <td className="p-3 font-medium">{getAnomalyTypeLabel(anomaly.patternType, t)}</td>
+                            <td className="p-3">{getSeverityBadge(anomaly.severity, t)}</td>
+                            <td className="p-3 font-mono text-xs">{anomaly.deviceMac ?? t('logs.level.all')}</td>
                             <td className="p-3 text-right">{anomaly.occurrenceCount}</td>
                             <td className="p-3 text-right">{anomaly.affectedSessions}</td>
                             <td className="p-3 text-right">{anomaly.avgIntervalMs ? formatDuration(anomaly.avgIntervalMs) : '-'}</td>
@@ -1009,12 +1045,12 @@ export default function BluetoothDebugPage() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            <Card className="glass border-border/50">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Bug size={18} />
-                  Error Distribution
-                  <Badge variant="secondary" className="ml-2">{totalErrors} total</Badge>
+                  {t('logs.bluetooth.errorDistribution')}
+                  <Badge variant="secondary" className="ml-2">{t('logs.bluetooth.totalWithCount', { count: totalErrors })}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -1028,17 +1064,17 @@ export default function BluetoothDebugPage() {
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
                       <CheckCircle2 size={24} className="text-emerald-400" />
                     </div>
-                    <p className="text-muted-foreground">No errors found in the selected time range.</p>
+                    <p className="text-muted-foreground">{t('logs.bluetooth.emptyErrors')}</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-border/50">
-                          <th className="text-left p-3 text-muted-foreground font-medium">Error Code</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Count</th>
-                          <th className="text-right p-3 text-muted-foreground font-medium">Percentage</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium" style={{ width: '50%' }}>Distribution</th>
+                        <tr className="border-b border-white/[0.08]">
+                          <th className="text-left p-3 text-muted-foreground font-medium">{t('logs.trace.errorCode')}</th>
+                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.stats.count')}</th>
+                          <th className="text-right p-3 text-muted-foreground font-medium">{t('logs.bluetooth.percentage')}</th>
+                          <th className="text-left p-3 text-muted-foreground font-medium" style={{ width: '50%' }}>{t('logs.bluetooth.distribution')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1048,7 +1084,7 @@ export default function BluetoothDebugPage() {
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.02 }}
-                            className="border-b border-border/30 hover:bg-primary/5 transition-colors"
+                            className="border-b border-white/[0.06] hover:bg-primary/5 transition-colors"
                           >
                             <td className="p-3 font-mono text-xs">{err.errorCode}</td>
                             <td className="p-3 text-right font-medium">{err.count}</td>
@@ -1083,7 +1119,7 @@ export default function BluetoothDebugPage() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            <Card className="glass border-border/50">
+            <Card className="glass border-white/[0.08]">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <GitCompare size={18} />

@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
+import { PageHeader, PageHeaderActionButton } from '@/components/ui/page-header';
 import {
   Table,
   TableBody,
@@ -416,29 +417,44 @@ export default function LogFileViewerPage() {
     }
     return formatDateTime(timeRange.startMs, localeTag);
   }, [sliderStartTime, timeRange.startMs, localeTag]);
+  const logsHref = `/logs?${new URLSearchParams({ logFileId: fileId }).toString()}`;
 
   return (
-    <div className="flex flex-col h-full p-4 gap-4">
+    <div className="mx-auto flex h-full w-full max-w-[1560px] flex-col gap-4 p-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/logs/files/${fileId}`}>{t('common.back')}</Link>
-          </Button>
-          <div className="text-sm text-muted-foreground truncate max-w-[300px]">
-            {fileDetail?.fileName || fileId}
+      <PageHeader
+        className="shrink-0"
+        title={t('logs.files.viewerTitle')}
+        subtitle={(
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="truncate max-w-[340px]">{fileDetail?.fileName || fileId}</span>
+            {fileDetail ? (
+              <span>{t('common.items', { count: fileDetail.eventCount })}</span>
+            ) : null}
           </div>
-          {fileDetail && (
-            <div className="text-xs text-muted-foreground">
-              {t('common.items', { count: fileDetail.eventCount })}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/logs/files">{t('logs.files.title')}</Link>
-          </Button>
-        </div>
+        )}
+        actions={(
+          <>
+            <PageHeaderActionButton asChild>
+              <Link href={`/logs/files/${fileId}`}>{t('logs.files.backToDetail')}</Link>
+            </PageHeaderActionButton>
+            <PageHeaderActionButton asChild>
+              <Link href="/logs/files">{t('logs.files.backToFiles')}</Link>
+            </PageHeaderActionButton>
+          </>
+        )}
+      />
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        <span className="text-xs text-muted-foreground">{t('logs.files.quickLinks')}</span>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={`/logs/files/${fileId}/analysis`}>{t('logs.files.analysisAutomation')}</Link>
+        </PageHeaderActionButton>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={`/logs/files/${fileId}/event-flow`}>{t('logs.files.eventFlowAnalysis')}</Link>
+        </PageHeaderActionButton>
+        <PageHeaderActionButton asChild className="h-7 rounded-full px-3 text-xs">
+          <Link href={logsHref}>{t('logs.files.openInLogs')}</Link>
+        </PageHeaderActionButton>
       </div>
 
       {fileLoading && <div className="text-muted-foreground">{t('common.loading')}</div>}
@@ -447,7 +463,7 @@ export default function LogFileViewerPage() {
       {fileDetail && (
         <>
           {/* Filter bar */}
-          <div className="flex items-center gap-3 flex-wrap bg-card/50 rounded-lg p-3 border border-border/50">
+          <div className="glass flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.08] p-3">
             <Input
               className="w-48"
               placeholder={t('logs.eventNameOptional')}
@@ -483,19 +499,19 @@ export default function LogFileViewerPage() {
                 }
               }}
             />
-            <Button variant="default" size="sm" onClick={runSearch} disabled={loading}>
+            <Button variant="default" size="sm" className="h-8 rounded-md" onClick={runSearch} disabled={loading}>
               {t('common.search')}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleReset} disabled={loading}>
+            <PageHeaderActionButton onClick={handleReset} disabled={loading}>
               {t('common.reset')}
-            </Button>
+            </PageHeaderActionButton>
             <div className="text-xs text-muted-foreground ml-auto">
               {loading ? t('common.loading') : t('logs.files.viewerLoaded', { loaded: allItems.length, total: fileDetail.eventCount })}
             </div>
           </div>
 
           {/* Timeline slider */}
-          <div className="flex items-center gap-4 bg-card/30 rounded-lg p-3 border border-border/30">
+          <div className="glass flex items-center gap-4 rounded-lg border border-white/[0.08] p-3">
             <div className="text-xs text-muted-foreground whitespace-nowrap">
               {formatDateTime(timeRange.startMs, localeTag)}
             </div>
@@ -519,7 +535,7 @@ export default function LogFileViewerPage() {
           {error && <div className="text-red-400 text-sm">{error}</div>}
 
           {/* Table */}
-          <div className="flex-1 overflow-auto rounded-lg border border-border/50">
+          <div className="flex-1 overflow-auto rounded-lg border border-white/[0.08]">
             <Table>
               <TableHeader className="sticky top-0 bg-card z-10">
                 <TableRow>
