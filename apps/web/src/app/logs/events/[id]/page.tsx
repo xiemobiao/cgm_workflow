@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ApiClientError, apiFetch } from '@/lib/api';
@@ -87,38 +87,6 @@ function getLevelBadgeClass(level: number): string {
     default:
       return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
   }
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function renderHighlighted(text: string, needle: string): ReactNode {
-  const q = needle.trim();
-  if (!q) return text;
-
-  const re = new RegExp(escapeRegExp(q), 'ig');
-  const out: ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = null;
-  let i = 0;
-
-  while ((match = re.exec(text)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (start > lastIndex) out.push(text.slice(lastIndex, start));
-    out.push(
-      <mark key={`${start}-${i}`} className="bg-yellow-500/30 text-yellow-200">
-        {text.slice(start, end)}
-      </mark>,
-    );
-    lastIndex = end;
-    i += 1;
-    if (re.lastIndex === match.index) re.lastIndex += 1;
-  }
-
-  if (lastIndex < text.length) out.push(text.slice(lastIndex));
-  return out.length ? out : text;
 }
 
 function shortenText(value: string | null, maxLen: number) {

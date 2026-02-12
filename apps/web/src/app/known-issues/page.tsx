@@ -72,7 +72,7 @@ function getSeverityBadge(severity: number) {
 }
 
 export default function KnownIssuesPage() {
-  const { t, localeTag } = useI18n();
+  const { t } = useI18n();
   const [projectId, setProjectId] = useState('');
   const [issues, setIssues] = useState<KnownIssue[]>([]);
   const [loading, setLoading] = useState(false);

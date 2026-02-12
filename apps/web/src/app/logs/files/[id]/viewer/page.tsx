@@ -166,7 +166,7 @@ export default function LogFileViewerPage() {
   // Timeline slider state
   const [sliderValue, setSliderValue] = useState(0);
   const [sliderStartTime, setSliderStartTime] = useState<number | null>(null);
-  const [pendingSliderTime, setPendingSliderTime] = useState<string | null>(null);
+  const [, setPendingSliderTime] = useState<string | null>(null);
 
   const searchReqIdRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement>(null);

@@ -350,6 +350,7 @@ function getReasonCategoryLabel(category: ReasonCodeCategory, t: TranslateFn) {
 }
 
 function buildLogsSearchHref(params: {
+  projectId?: string;
   logFileId: string;
   reasonCode?: string;
   stage?: string | null;
@@ -357,6 +358,7 @@ function buildLogsSearchHref(params: {
   result?: string | null;
 }) {
   const qs = new URLSearchParams();
+  if (params.projectId?.trim()) qs.set('projectId', params.projectId.trim());
   qs.set('logFileId', params.logFileId);
   if (params.reasonCode?.trim()) qs.set('reasonCode', params.reasonCode.trim());
   if (params.stage?.trim()) qs.set('stage', params.stage.trim());
@@ -1025,6 +1027,7 @@ export default function AnalysisPage() {
                                     <td className="px-2 py-2">
                                       <Link
                                         href={buildLogsSearchHref({
+                                          projectId,
                                           logFileId,
                                           reasonCode: item.reasonCode,
                                         })}
@@ -1079,6 +1082,7 @@ export default function AnalysisPage() {
                                     {' · '}
                                     <Link
                                       href={buildLogsSearchHref({
+                                        projectId,
                                         logFileId,
                                         reasonCode: category.topReasonCodes[0].reasonCode,
                                       })}
@@ -1122,6 +1126,7 @@ export default function AnalysisPage() {
                                       <Link
                                         key={reason.reasonCode}
                                         href={buildLogsSearchHref({
+                                          projectId,
                                           logFileId,
                                           reasonCode: reason.reasonCode,
                                           stage: item.stage,

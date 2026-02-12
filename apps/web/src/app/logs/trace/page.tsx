@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Search, Link2, Hash, Bluetooth, Clock, ChevronRight, Activity, Server, AlertCircle, Tag, Fingerprint } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -226,14 +226,14 @@ export default function TracePage() {
     if (!logFileId.trim() && nextLogFileId) {
       setLogFileId(nextLogFileId);
     }
-  }, [projectId]);
+  }, [projectId, logFileId]);
 
   useEffect(() => {
     if (!projectId) return;
     setActiveLogFileId(projectId, logFileId.trim() || null);
   }, [projectId, logFileId]);
 
-  async function trace() {
+  const trace = useCallback(async () => {
     if (!projectId || !traceValue.trim()) return;
     setLoading(true);
     setError('');
@@ -302,7 +302,7 @@ export default function TracePage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId, traceValue, logFileId, traceType, startLocal, endLocal]);
 
   useEffect(() => {
     if (!autoTrace || autoTraceDone) return;
@@ -310,7 +310,7 @@ export default function TracePage() {
     if ((traceType === 'deviceMac' || traceType === 'deviceSn') && (!startLocal || !endLocal)) return;
     setAutoTraceDone(true);
     void trace();
-  }, [autoTrace, autoTraceDone, projectId, traceType, traceValue, logFileId, startLocal, endLocal]);
+  }, [autoTrace, autoTraceDone, projectId, traceType, traceValue, logFileId, startLocal, endLocal, trace]);
 
   const selectedTypeOption = traceTypeOptions.find((o) => o.value === traceType) ?? traceTypeOptions[0];
 

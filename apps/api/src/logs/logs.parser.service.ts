@@ -293,7 +293,9 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
 
   for (const obj of candidates) {
     if (!result.stage)
-      result.stage = normalizeLowerTrim(pickFirstString(obj, ['stage', 'Stage']));
+      result.stage = normalizeLowerTrim(
+        pickFirstString(obj, ['stage', 'Stage']),
+      );
     if (!result.op)
       result.op = normalizeLowerTrim(pickFirstString(obj, ['op', 'Op']));
     if (!result.result)
@@ -380,7 +382,12 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
 
     if (!result.errorCode) {
       const candidate =
-        pickFirstString(obj, ['errorCode', 'error_code', 'ErrorCode', 'code']) ??
+        pickFirstString(obj, [
+          'errorCode',
+          'error_code',
+          'ErrorCode',
+          'code',
+        ]) ??
         (errorObj
           ? pickFirstString(errorObj, [
               'errorCode',

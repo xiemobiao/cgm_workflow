@@ -16,6 +16,11 @@ export class LogsSearchService {
     private readonly helper: LogsHelperService,
   ) {}
 
+  private normalizeOptionalText(value: unknown) {
+    if (typeof value !== 'string') return null;
+    return value;
+  }
+
   async searchEvents(params: {
     actorUserId: string;
     projectId: string;
@@ -220,7 +225,7 @@ export class LogsSearchService {
         deviceMac: e.deviceMac,
         deviceSn: e.deviceSn,
         errorCode: e.errorCode,
-        reasonCode: e.reasonCode,
+        reasonCode: this.normalizeOptionalText(e.reasonCode),
       })),
       nextCursor,
     };
@@ -290,7 +295,7 @@ export class LogsSearchService {
       deviceMac: event.deviceMac,
       deviceSn: event.deviceSn,
       errorCode: event.errorCode,
-      reasonCode: event.reasonCode,
+      reasonCode: this.normalizeOptionalText(event.reasonCode),
       createdAt: event.createdAt,
     };
   }

@@ -23,7 +23,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations';
-import { cn } from '@/lib/utils';
 
 type IncidentRow = {
   id: string;

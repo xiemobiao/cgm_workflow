@@ -81,9 +81,17 @@ describe('LogsAssertionService', () => {
     expect(result.pass).toBe(true);
     expect(result.totalRules).toBe(1);
     expect(result.failedRules).toBe(0);
-    expect(
-      (prisma.logAssertionRun.update as jest.Mock).mock.calls[0][0].data.status,
-    ).toBe(AssertionRunStatus.completed);
+    const updateCalls = (prisma.logAssertionRun.update as jest.Mock).mock
+      .calls as Array<
+      [
+        {
+          data: {
+            status: AssertionRunStatus;
+          };
+        },
+      ]
+    >;
+    expect(updateCalls[0]?.[0].data.status).toBe(AssertionRunStatus.completed);
   });
 
   it('auto mode installs defaults when no rules found', async () => {

@@ -59,10 +59,20 @@ export class LogsFileService {
     return { blocksTotal, blocksSucceeded, blocksFailed };
   }
 
-  private normalizeOptionalValue(value: string | null | undefined) {
+  private normalizeOptionalValue(value: unknown) {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private normalizeCount(value: unknown) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
   }
 
   private toPercent(part: number, total: number) {
@@ -763,9 +773,10 @@ export class LogsFileService {
     for (const row of rawReasonCodeGroups) {
       const reasonCode = this.normalizeOptionalValue(row.reasonCode);
       if (!reasonCode) continue;
+      const count = this.normalizeCount(row._count._all);
       reasonCountMap.set(
         reasonCode,
-        (reasonCountMap.get(reasonCode) ?? 0) + row._count._all,
+        (reasonCountMap.get(reasonCode) ?? 0) + count,
       );
     }
 
@@ -858,7 +869,7 @@ export class LogsFileService {
       const op = this.normalizeOptionalValue(row.op);
       const result = this.normalizeOptionalValue(row.result);
       const key = `${stage ?? ''}\u0001${op ?? ''}\u0001${result ?? ''}`;
-      const count = row._count._all;
+      const count = this.normalizeCount(row._count._all);
 
       const existing = stageOpResultMap.get(key);
       if (existing) {

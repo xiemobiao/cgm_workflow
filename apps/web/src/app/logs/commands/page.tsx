@@ -2,23 +2,19 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap,
   Search,
   Loader2,
   AlertCircle,
-  CheckCircle2,
-  Clock,
   Timer,
   ChevronDown,
   ChevronRight,
   ExternalLink,
   ArrowLeft,
   Activity,
-  XCircle,
-  Hourglass,
 } from 'lucide-react';
 import { ProjectPicker } from '@/components/ProjectPicker';
 import { ApiClientError, apiFetch } from '@/lib/api';
@@ -174,7 +170,7 @@ export default function CommandsPage() {
     if (!logFileId.trim() && nextLogFileId) {
       setLogFileId(nextLogFileId);
     }
-  }, [projectId]);
+  }, [projectId, logFileId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -189,7 +185,7 @@ export default function CommandsPage() {
     setStartLocal(formatDatetimeLocal(new Date(now.getTime() - hours * 60 * 60 * 1000)));
   }
 
-  async function search() {
+  const search = useCallback(async () => {
     if (!projectId || !startLocal || !endLocal) return;
     setLoading(true);
     setError('');
@@ -211,14 +207,14 @@ export default function CommandsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId, startLocal, endLocal, limit, logFileId, deviceMac]);
 
   useEffect(() => {
     if (!autoSearch || autoSearchDone) return;
     if (!projectId || !startLocal || !endLocal) return;
     setAutoSearchDone(true);
     void search();
-  }, [autoSearch, autoSearchDone, projectId, logFileId, startLocal, endLocal, deviceMac, limit]);
+  }, [autoSearch, autoSearchDone, projectId, logFileId, startLocal, endLocal, deviceMac, limit, search]);
 
   // Statistics
   const stats = useMemo(() => {

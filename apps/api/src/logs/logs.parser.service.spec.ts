@@ -278,9 +278,17 @@ describe('LogsParserService automation hooks', () => {
     expect(
       (assertion.runValidationInternal as jest.Mock).mock.calls.length,
     ).toBe(1);
-    expect(
-      (assertion.runValidationInternal as jest.Mock).mock.calls[0][0],
-    ).toEqual({
+    const assertionCalls = (assertion.runValidationInternal as jest.Mock).mock
+      .calls as Array<
+      [
+        {
+          projectId: string;
+          logFileId: string;
+          triggeredBy: string;
+        },
+      ]
+    >;
+    expect(assertionCalls[0]?.[0]).toEqual({
       projectId: 'p1',
       logFileId: 'lf1',
       triggeredBy: 'auto',

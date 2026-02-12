@@ -11,17 +11,13 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
-  Clock,
   Activity,
   AlertTriangle,
-  BarChart3,
   GitCompare,
   Zap,
   Wifi,
   WifiOff,
-  Timer,
   Bug,
-  TrendingUp,
 } from 'lucide-react';
 import { LogDiffViewer } from '@/components/LogDiffViewer';
 import { ProjectPicker } from '@/components/ProjectPicker';
@@ -34,7 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations';
+import { fadeIn } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
 type SessionStatus =
@@ -321,7 +317,7 @@ export default function BluetoothDebugPage() {
     if (!logFileId.trim() && nextLogFileId) {
       setLogFileId(nextLogFileId);
     }
-  }, [projectId]);
+  }, [projectId, logFileId]);
 
   useEffect(() => {
     if (!projectId) return;

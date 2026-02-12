@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, AlertTriangle, BarChart3, FileText, Clock, Database, Bluetooth, TrendingUp, ChevronDown } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Clock, Database, Bluetooth, TrendingUp, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -504,7 +504,6 @@ export default function LogFileDetailPage() {
       backendQuality.summary.mqtt.subscribeFailed
     : 0;
   const continuityIssueCount = dataContinuity ? dataContinuity.summary.total : 0;
-  const streamSessionCount = streamSessionQuality ? streamSessionQuality.summary.total : 0;
 
   const renderOrderBrokenBreakdown = (row: {
     orderBroken: number;

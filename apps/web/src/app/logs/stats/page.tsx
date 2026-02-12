@@ -112,7 +112,7 @@ export default function StatsPage() {
     if (!logFileId.trim() && nextLogFileId) {
       setLogFileId(nextLogFileId);
     }
-  }, [projectId]);
+  }, [projectId, logFileId]);
 
   useEffect(() => {
     if (!projectId) return;
