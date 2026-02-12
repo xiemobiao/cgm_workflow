@@ -152,9 +152,27 @@ export default function EventFlowAnalysisPage() {
   const logsHref = `/logs?${new URLSearchParams({ logFileId: fileId }).toString()}`;
 
   const [loading, setLoading] = useState(true);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mainFlow, setMainFlow] = useState<MainFlowAnalysisResult | null>(null);
   const [coverage, setCoverage] = useState<EventCoverageAnalysisResult | null>(null);
+
+  async function triggerAnalyze() {
+    try {
+      setReanalyzing(true);
+      setError(null);
+      await apiFetch(`/api/logs/files/${fileId}/analyze`, {
+        method: 'POST',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('logs.eventFlow.triggerFailed'));
+      setLoading(false);
+    } finally {
+      setReanalyzing(false);
+    }
+  }
 
   useEffect(() => {
     async function fetchData() {
@@ -220,23 +238,7 @@ export default function EventFlowAnalysisPage() {
           <AlertDescription>
             {t('logs.eventFlow.emptyDescription')}
             <div className="mt-4">
-              <Button
-                onClick={async () => {
-                  try {
-                    setLoading(true);
-                    await apiFetch(`/api/logs/files/${fileId}/analyze`, {
-                      method: 'POST',
-                    });
-                    // Wait a bit for analysis to complete
-                    await new Promise((resolve) => setTimeout(resolve, 3000));
-                    // Reload the page
-                    window.location.reload();
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : t('logs.eventFlow.triggerFailed'));
-                    setLoading(false);
-                  }
-                }}
-              >
+              <Button onClick={triggerAnalyze} disabled={reanalyzing}>
                 {t('logs.eventFlow.analyzeNow')}
               </Button>
             </div>
@@ -253,9 +255,14 @@ export default function EventFlowAnalysisPage() {
         title={t('logs.eventFlow.title')}
         subtitle={t('logs.eventFlow.subtitle')}
         actions={(
-          <PageHeaderActionButton asChild>
-            <Link href={`/logs/files/${fileId}`}>{t('logs.files.backToDetail')}</Link>
-          </PageHeaderActionButton>
+          <div className="flex items-center gap-2">
+            <PageHeaderActionButton onClick={triggerAnalyze} disabled={reanalyzing}>
+              {t('logs.analysis.actions.reanalyze')}
+            </PageHeaderActionButton>
+            <PageHeaderActionButton asChild>
+              <Link href={`/logs/files/${fileId}`}>{t('logs.files.backToDetail')}</Link>
+            </PageHeaderActionButton>
+          </div>
         )}
       />
       <div className="flex flex-wrap items-center gap-2 px-1">

@@ -84,6 +84,7 @@ export type StageTiming = {
   startTime: number | null; // Timestamp in ms
   endTime: number | null;
   durationMs: number | null;
+  attemptDurationsMs: number[]; // All matched start->end attempt durations
   completed: boolean;
   events: Array<{
     eventName: string;

@@ -171,9 +171,11 @@ describe('EventFlowAnalyzerService', () => {
     const bleConnect = result.stages.find((s) => s.stageId === 'ble_connect');
     expect(bleConnect).toBeDefined();
 
-    // Longest single attempt is 4878ms, not the whole 148307ms span.
+    // Stage stats should come from all attempts in the session:
+    // [4878, 1960, 4109, 2800, 4307]
+    expect(bleConnect?.minDurationMs).toBe(1_960);
     expect(bleConnect?.maxObservedDurationMs).toBe(4_878);
-    expect(bleConnect?.avgDurationMs).toBe(4_878);
+    expect(bleConnect?.avgDurationMs).toBeCloseTo(3_610.8, 1);
     expect(bleConnect?.issues.some((issue) => issue.type === 'timeout')).toBe(
       false,
     );

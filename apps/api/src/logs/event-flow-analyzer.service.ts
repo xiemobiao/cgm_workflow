@@ -26,6 +26,12 @@ type SessionEventRow = {
   attemptId: string | null;
 };
 
+type StageDurationCandidate = {
+  startTime: number;
+  endTime: number;
+  durationMs: number;
+};
+
 /**
  * Event Flow Analyzer Service
  *
@@ -196,6 +202,7 @@ export class EventFlowAnalyzerService {
         startTime: null,
         endTime: null,
         durationMs: null,
+        attemptDurationsMs: [],
         completed: false,
         events: [],
       };
@@ -214,6 +221,7 @@ export class EventFlowAnalyzerService {
         startTime: null,
         endTime: null,
         durationMs: null,
+        attemptDurationsMs: [],
         completed: false,
         events: [],
       };
@@ -225,10 +233,13 @@ export class EventFlowAnalyzerService {
       matchedEvents.some((e) => e.eventName === reqEvent.eventName),
     );
 
-    const duration = this.resolveStageDuration(stage, matchedEvents);
-    const startTime = duration?.startTime ?? null;
-    const endTime = duration?.endTime ?? null;
-    const durationMs = duration?.durationMs ?? null;
+    const durationSummary = this.resolveStageDuration(stage, matchedEvents);
+    const startTime = durationSummary?.selected.startTime ?? null;
+    const endTime = durationSummary?.selected.endTime ?? null;
+    const durationMs = durationSummary?.selected.durationMs ?? null;
+    const attemptDurationsMs =
+      durationSummary?.candidates.map((d) => d.durationMs) ??
+      (durationMs !== null ? [durationMs] : []);
 
     return {
       stageId,
@@ -236,6 +247,7 @@ export class EventFlowAnalyzerService {
       startTime,
       endTime,
       durationMs,
+      attemptDurationsMs,
       completed: allRequiredPresent,
       events: matchedEvents.map((e) => ({
         eventName: e.eventName,
@@ -247,7 +259,10 @@ export class EventFlowAnalyzerService {
   private resolveStageDuration(
     stage: EventFlowStage,
     matchedEvents: SessionEventRow[],
-  ): { startTime: number; endTime: number; durationMs: number } | null {
+  ): {
+    selected: StageDurationCandidate;
+    candidates: StageDurationCandidate[];
+  } | null {
     if (matchedEvents.length === 0) return null;
 
     const startEventName = stage.events[0]?.eventName;
@@ -256,36 +271,48 @@ export class EventFlowAnalyzerService {
     );
 
     if (!startEventName || endEventNames.size === 0) {
-      return this.getRangeDuration(matchedEvents);
+      const fallback = this.getRangeDuration(matchedEvents);
+      return {
+        selected: fallback,
+        candidates: [fallback],
+      };
     }
 
-    const candidates = [
-      ...this.getAttemptDurationCandidates(
-        matchedEvents,
-        startEventName,
-        endEventNames,
-      ),
-      ...this.getSequentialDurationCandidates(
-        matchedEvents,
-        startEventName,
-        endEventNames,
-      ),
-    ];
+    const attemptCandidates = this.getAttemptDurationCandidates(
+      matchedEvents,
+      startEventName,
+      endEventNames,
+    );
+    const candidates =
+      attemptCandidates.length > 0
+        ? attemptCandidates
+        : this.getSequentialDurationCandidates(
+            matchedEvents,
+            startEventName,
+            endEventNames,
+          );
 
     if (candidates.length > 0) {
-      return candidates.reduce((longest, current) =>
-        current.durationMs > longest.durationMs ? current : longest,
-      );
+      return {
+        selected: candidates.reduce((longest, current) =>
+          current.durationMs > longest.durationMs ? current : longest,
+        ),
+        candidates,
+      };
     }
 
-    return this.getRangeDuration(matchedEvents);
+    const fallback = this.getRangeDuration(matchedEvents);
+    return {
+      selected: fallback,
+      candidates: [fallback],
+    };
   }
 
   private getAttemptDurationCandidates(
     matchedEvents: SessionEventRow[],
     startEventName: string,
     endEventNames: Set<string>,
-  ): Array<{ startTime: number; endTime: number; durationMs: number }> {
+  ): StageDurationCandidate[] {
     const eventsByAttemptId = new Map<string, SessionEventRow[]>();
     for (const event of matchedEvents) {
       if (!event.attemptId) continue;
@@ -294,11 +321,7 @@ export class EventFlowAnalyzerService {
       eventsByAttemptId.set(event.attemptId, bucket);
     }
 
-    const candidates: Array<{
-      startTime: number;
-      endTime: number;
-      durationMs: number;
-    }> = [];
+    const candidates: StageDurationCandidate[] = [];
 
     for (const attemptEvents of eventsByAttemptId.values()) {
       let pendingStartTime: number | null = null;
@@ -330,12 +353,8 @@ export class EventFlowAnalyzerService {
     matchedEvents: SessionEventRow[],
     startEventName: string,
     endEventNames: Set<string>,
-  ): Array<{ startTime: number; endTime: number; durationMs: number }> {
-    const candidates: Array<{
-      startTime: number;
-      endTime: number;
-      durationMs: number;
-    }> = [];
+  ): StageDurationCandidate[] {
+    const candidates: StageDurationCandidate[] = [];
     let pendingStartTime: number | null = null;
 
     for (const event of matchedEvents) {
@@ -361,11 +380,9 @@ export class EventFlowAnalyzerService {
     return candidates;
   }
 
-  private getRangeDuration(matchedEvents: SessionEventRow[]): {
-    startTime: number;
-    endTime: number;
-    durationMs: number;
-  } {
+  private getRangeDuration(
+    matchedEvents: SessionEventRow[],
+  ): StageDurationCandidate {
     const startTime = Number(matchedEvents[0].timestampMs);
     const endTime = Number(matchedEvents[matchedEvents.length - 1].timestampMs);
     return {
@@ -448,23 +465,30 @@ export class EventFlowAnalyzerService {
         const coverageRate =
           totalSessions > 0 ? (sessionsCovered / totalSessions) * 100 : 0;
 
-        // Calculate durations
-        const durations = sessions
-          .map(
-            (s) =>
-              s.stageTimings.find((t) => t.stageId === stage.id)?.durationMs,
-          )
-          .filter((d): d is number => d !== null && d !== undefined);
+        // Calculate durations from every matched attempt (not session count).
+        const attemptDurations = sessions.flatMap((s) => {
+          const stageTiming = s.stageTimings.find(
+            (t) => t.stageId === stage.id,
+          );
+          if (!stageTiming) return [];
+          if (stageTiming.attemptDurationsMs.length > 0) {
+            return stageTiming.attemptDurationsMs;
+          }
+          return typeof stageTiming.durationMs === 'number'
+            ? [stageTiming.durationMs]
+            : [];
+        });
 
         const avgDurationMs =
-          durations.length > 0
-            ? durations.reduce((a, b) => a + b, 0) / durations.length
+          attemptDurations.length > 0
+            ? attemptDurations.reduce((a, b) => a + b, 0) /
+              attemptDurations.length
             : null;
 
         const maxObservedDurationMs =
-          durations.length > 0 ? Math.max(...durations) : null;
+          attemptDurations.length > 0 ? Math.max(...attemptDurations) : null;
         const minDurationMs =
-          durations.length > 0 ? Math.min(...durations) : null;
+          attemptDurations.length > 0 ? Math.min(...attemptDurations) : null;
 
         // Detect issues
         const issues: StageIssue[] = [];
@@ -711,6 +735,7 @@ export class EventFlowAnalyzerService {
         startTime: null,
         endTime: null,
         durationMs: null,
+        attemptDurationsMs: [],
         completed: false,
         events: [],
       })),
