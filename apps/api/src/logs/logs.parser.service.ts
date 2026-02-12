@@ -32,6 +32,7 @@ export type TrackingFields = {
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
+  reasonCode: string | null;
   stage: string | null;
   op: string | null;
   result: string | null;
@@ -45,6 +46,7 @@ function createEmptyTrackingFields(): TrackingFields {
     deviceMac: null,
     deviceSn: null,
     errorCode: null,
+    reasonCode: null,
     stage: null,
     op: null,
     result: null,
@@ -291,26 +293,43 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
 
   for (const obj of candidates) {
     if (!result.stage)
-      result.stage = normalizeLowerTrim(pickFirstString(obj, ['stage']));
+      result.stage = normalizeLowerTrim(pickFirstString(obj, ['stage', 'Stage']));
     if (!result.op)
-      result.op = normalizeLowerTrim(pickFirstString(obj, ['op']));
+      result.op = normalizeLowerTrim(pickFirstString(obj, ['op', 'Op']));
     if (!result.result)
-      result.result = normalizeLowerTrim(pickFirstString(obj, ['result']));
+      result.result = normalizeLowerTrim(
+        pickFirstString(obj, ['result', 'Result']),
+      );
 
     if (!result.linkCode)
-      result.linkCode = normalizeTrim(pickFirstString(obj, ['linkCode']));
+      result.linkCode = normalizeTrim(
+        pickFirstString(obj, ['linkCode', 'link_code', 'LinkCode']),
+      );
     if (!result.requestId)
       result.requestId = normalizeTrim(
-        pickFirstString(obj, ['requestId', 'msgId']),
+        pickFirstString(obj, ['requestId', 'request_id', 'msgId', 'msg_id']),
       );
     if (!result.attemptId)
-      result.attemptId = normalizeTrim(pickFirstString(obj, ['attemptId']));
+      result.attemptId = normalizeTrim(
+        pickFirstString(obj, ['attemptId', 'attempt_id']),
+      );
 
-    const deviceId = normalizeTrim(pickFirstString(obj, ['deviceId']));
+    const deviceId = normalizeTrim(
+      pickFirstString(obj, ['deviceId', 'device_id', 'DeviceId']),
+    );
     const deviceIdIsMac = deviceId ? looksLikeMac(deviceId) : false;
+    const errorObj = asRecord(obj.error);
 
     if (!result.deviceMac) {
-      const mac = normalizeTrim(pickFirstString(obj, ['deviceMac', 'mac']));
+      const mac = normalizeTrim(
+        pickFirstString(obj, [
+          'deviceMac',
+          'deviceMAC',
+          'device_mac',
+          'DeviceMac',
+          'mac',
+        ]),
+      );
       result.deviceMac = mac && looksLikeMac(mac) ? mac : null;
       if (!result.deviceMac && deviceId && deviceIdIsMac) {
         result.deviceMac = deviceId;
@@ -319,26 +338,57 @@ export function extractTrackingFields(msg: unknown): TrackingFields {
 
     if (!result.deviceSn) {
       result.deviceSn = normalizeTrim(
-        pickFirstString(obj, ['deviceSn', 'sn', 'serialNumber', 'serial']),
+        pickFirstString(obj, [
+          'deviceSn',
+          'deviceSN',
+          'device_sn',
+          'DeviceSn',
+          'sn',
+          'serialNumber',
+          'serial',
+        ]),
       );
       if (!result.deviceSn && deviceId && !deviceIdIsMac) {
         result.deviceSn = deviceId;
       }
       if (!result.deviceSn) {
-        const topic = normalizeTrim(pickFirstString(obj, ['topic']));
+        const topic = normalizeTrim(pickFirstString(obj, ['topic', 'Topic']));
         result.deviceSn = extractDeviceSnFromTopic(topic);
       }
       if (!result.deviceSn) {
-        const url = normalizeTrim(pickFirstString(obj, ['url']));
+        const url = normalizeTrim(pickFirstString(obj, ['url', 'Url']));
         result.deviceSn = extractDeviceSnFromUrl(url);
       }
     }
 
+    if (!result.reasonCode) {
+      const reasonCandidate =
+        pickFirstString(obj, [
+          'reasonCode',
+          'reason_code',
+          'disconnectReasonCode',
+        ]) ??
+        (errorObj
+          ? pickFirstString(errorObj, [
+              'reasonCode',
+              'reason_code',
+              'disconnectReasonCode',
+            ])
+          : null);
+      result.reasonCode = normalizeTrim(reasonCandidate);
+    }
+
     if (!result.errorCode) {
-      const errorObj = asRecord(obj.error);
       const candidate =
-        pickFirstString(obj, ['errorCode', 'code']) ??
-        (errorObj ? pickFirstString(errorObj, ['errorCode', 'code']) : null);
+        pickFirstString(obj, ['errorCode', 'error_code', 'ErrorCode', 'code']) ??
+        (errorObj
+          ? pickFirstString(errorObj, [
+              'errorCode',
+              'error_code',
+              'ErrorCode',
+              'code',
+            ])
+          : null);
       result.errorCode = normalizeTrim(candidate);
     }
   }
@@ -520,6 +570,7 @@ export class LogsParserService {
             deviceMac: tracking.deviceMac,
             deviceSn: tracking.deviceSn,
             errorCode: tracking.errorCode,
+            reasonCode: tracking.reasonCode,
             stage: tracking.stage,
             op: tracking.op,
             result: tracking.result,

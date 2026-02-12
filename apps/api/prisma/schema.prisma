@@ -177,6 +177,7 @@ model LogEvent {
   deviceMac   String?   // Device MAC address for filtering device-specific events
   deviceSn    String?   // Device SN / serial number for filtering device-specific events
   errorCode   String?   // Error code for quick error filtering
+  reasonCode  String?   // Reason code for disconnect/flow result analysis
   stage       String?   // stage for flow analysis, e.g. ble/http/mqtt
   op          String?   // operation for stage, e.g. scan/connect/publish
   result      String?   // result for op, e.g. start/ok/fail/timeout
@@ -196,6 +197,7 @@ model LogEvent {
   @@index([deviceMac, timestampMs])
   @@index([deviceSn, timestampMs])
   @@index([errorCode])
+  @@index([reasonCode])
   @@index([logFileId, stage])
 }
 

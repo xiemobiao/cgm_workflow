@@ -102,6 +102,7 @@ Recommended tracking fields (extracted, optional):
 - `deviceMac` (string): device MAC address
 - `deviceSn` (string): device SN / serial number
 - `errorCode` (string): stable error code for aggregation
+- `reasonCode` (string): flow/disconnect reason code (e.g. LINK_LOSS/TIMEOUT)
 - `stage` / `op` / `result` (string): stage-aware flow fields (e.g. `ble/connect/start`)
 
 ## Storage Schema Draft
@@ -135,6 +136,7 @@ Recommended tracking fields (extracted, optional):
 - `device_mac` (string, nullable)
 - `device_sn` (string, nullable)
 - `error_code` (string, nullable)
+- `reason_code` (string, nullable)
 - `stage` (string, nullable)
 - `op` (string, nullable)
 - `result` (string, nullable)
