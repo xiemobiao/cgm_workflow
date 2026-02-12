@@ -40,6 +40,7 @@ export class LogsSearchService {
     deviceMac?: string;
     deviceSn?: string;
     errorCode?: string;
+    reasonCode?: string;
     excludeNoisy?: boolean;
     // Content search
     msgContains?: string;
@@ -102,6 +103,7 @@ export class LogsSearchService {
     if (params.deviceMac) andFilters.push({ deviceMac: params.deviceMac });
     if (params.deviceSn) andFilters.push({ deviceSn: params.deviceSn });
     if (params.errorCode) andFilters.push({ errorCode: params.errorCode });
+    if (params.reasonCode) andFilters.push({ reasonCode: params.reasonCode });
 
     if (params.excludeNoisy) {
       andFilters.push({
@@ -188,6 +190,7 @@ export class LogsSearchService {
         deviceMac: true,
         deviceSn: true,
         errorCode: true,
+        reasonCode: true,
       },
     });
 
@@ -217,6 +220,7 @@ export class LogsSearchService {
         deviceMac: e.deviceMac,
         deviceSn: e.deviceSn,
         errorCode: e.errorCode,
+        reasonCode: e.reasonCode,
       })),
       nextCursor,
     };
@@ -246,6 +250,7 @@ export class LogsSearchService {
         deviceMac: true,
         deviceSn: true,
         errorCode: true,
+        reasonCode: true,
         createdAt: true,
       },
     });
@@ -285,6 +290,7 @@ export class LogsSearchService {
       deviceMac: event.deviceMac,
       deviceSn: event.deviceSn,
       errorCode: event.errorCode,
+      reasonCode: event.reasonCode,
       createdAt: event.createdAt,
     };
   }
@@ -331,6 +337,7 @@ export class LogsSearchService {
       deviceMac: true,
       deviceSn: true,
       errorCode: true,
+      reasonCode: true,
     } as const;
 
     const [beforeRows, afterRows] = await Promise.all([
@@ -388,6 +395,7 @@ export class LogsSearchService {
       deviceMac: string | null;
       deviceSn: string | null;
       errorCode: string | null;
+      reasonCode: string | null;
     }) => ({
       id: e.id,
       logFileId: e.logFileId,
@@ -402,6 +410,7 @@ export class LogsSearchService {
       deviceMac: e.deviceMac,
       deviceSn: e.deviceSn,
       errorCode: e.errorCode,
+      reasonCode: e.reasonCode,
     });
 
     return {

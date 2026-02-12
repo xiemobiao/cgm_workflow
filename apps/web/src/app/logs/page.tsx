@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations';
+import { fadeIn } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 
 type UploadResponse = { logFileId: string; status: string };
@@ -49,6 +49,7 @@ type SearchItem = {
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
+  reasonCode: string | null;
 };
 type SearchResponse = { items: SearchItem[]; nextCursor: string | null };
 type EventContextResponse = {
@@ -90,6 +91,7 @@ type LogEventDetail = {
   deviceMac: string | null;
   deviceSn: string | null;
   errorCode: string | null;
+  reasonCode: string | null;
   createdAt: string;
 };
 
@@ -185,15 +187,20 @@ export default function LogsPage() {
   const [appId, setAppId] = useState('');
   const [linkCode, setLinkCode] = useState('');
   const [requestId, setRequestId] = useState('');
+  const [stage, setStage] = useState('');
+  const [op, setOp] = useState('');
+  const [flowResult, setFlowResult] = useState('');
   const [deviceMac, setDeviceMac] = useState('');
   const [deviceSn, setDeviceSn] = useState('');
   const [errorCode, setErrorCode] = useState('');
+  const [reasonCode, setReasonCode] = useState('');
   const [msgContains, setMsgContains] = useState('');
   const [limit, setLimit] = useState(50);
   const [excludeNoisy, setExcludeNoisy] = useState(true);
   const [startLocal, setStartLocal] = useState('');
   const [endLocal, setEndLocal] = useState('');
   const [autoSearch, setAutoSearch] = useState(false);
+  const [urlSyncReady, setUrlSyncReady] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [results, setResults] = useState<SearchItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -243,7 +250,7 @@ export default function LogsPage() {
     if (!logFileId.trim() && nextLogFileId) {
       setLogFileId(nextLogFileId);
     }
-  }, [projectId]);
+  }, [projectId, logFileId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -269,24 +276,185 @@ export default function LogsPage() {
     const sp = new URLSearchParams(window.location.search);
     const urlLogFileId = sp.get('logFileId');
     if (urlLogFileId && isUuid(urlLogFileId)) setLogFileId(urlLogFileId);
+    const urlEventName = sp.get('eventName');
+    if (urlEventName) setEventName(urlEventName);
     const urlKeyword = sp.get('q');
     if (urlKeyword) setKeyword(urlKeyword);
+    const urlSdkVersion = sp.get('sdkVersion');
+    if (urlSdkVersion) setSdkVersion(urlSdkVersion);
+    const urlAppId = sp.get('appId');
+    if (urlAppId) setAppId(urlAppId);
+    const urlLevel = sp.get('level');
+    if (urlLevel) setLevel(urlLevel);
+    const urlLevelGte = sp.get('levelGte');
+    if (urlLevelGte) setLevelGte(urlLevelGte);
+    const urlLinkCode = sp.get('linkCode');
+    if (urlLinkCode) setLinkCode(urlLinkCode);
+    const urlRequestId = sp.get('requestId');
+    if (urlRequestId) setRequestId(urlRequestId);
+    const urlStage = sp.get('stage');
+    if (urlStage) setStage(urlStage);
+    const urlOp = sp.get('op');
+    if (urlOp) setOp(urlOp);
+    const urlFlowResult = sp.get('result');
+    if (urlFlowResult) setFlowResult(urlFlowResult);
+    const urlDeviceMac = sp.get('deviceMac');
+    if (urlDeviceMac) setDeviceMac(urlDeviceMac);
+    const urlDeviceSn = sp.get('deviceSn');
+    if (urlDeviceSn) setDeviceSn(urlDeviceSn);
+    const urlErrorCode = sp.get('errorCode');
+    if (urlErrorCode) setErrorCode(urlErrorCode);
+    const urlReasonCode = sp.get('reasonCode');
+    if (urlReasonCode) setReasonCode(urlReasonCode);
+    const urlMsgContains = sp.get('msgContains');
+    if (urlMsgContains) setMsgContains(urlMsgContains);
+    const urlExcludeNoisy = sp.get('excludeNoisy');
+    if (urlExcludeNoisy === 'true') setExcludeNoisy(true);
+    if (urlExcludeNoisy === 'false') setExcludeNoisy(false);
+    const urlLimit = Number(sp.get('limit') ?? '');
+    if (Number.isFinite(urlLimit) && urlLimit >= 1 && urlLimit <= MAX_RESULTS_PER_PAGE) {
+      setLimit(Math.trunc(urlLimit));
+    }
 
     const startMs = Number(sp.get('startMs') ?? '');
     const endMs = Number(sp.get('endMs') ?? '');
     const hasRange = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs;
-    if ((urlLogFileId && isUuid(urlLogFileId)) || urlKeyword || hasRange) {
+    if (
+      urlEventName ||
+      urlSdkVersion ||
+      urlAppId ||
+      urlLevel ||
+      urlLevelGte ||
+      urlLinkCode ||
+      urlRequestId ||
+      urlStage ||
+      urlOp ||
+      urlFlowResult ||
+      urlDeviceMac ||
+      urlDeviceSn ||
+      urlErrorCode ||
+      urlReasonCode ||
+      urlMsgContains
+    ) {
+      setShowFilters(true);
+    }
+    if (
+      (urlLogFileId && isUuid(urlLogFileId)) ||
+      urlEventName ||
+      urlKeyword ||
+      hasRange ||
+      urlSdkVersion ||
+      urlAppId ||
+      urlLevel ||
+      urlLevelGte ||
+      urlLinkCode ||
+      urlRequestId ||
+      urlStage ||
+      urlOp ||
+      urlFlowResult ||
+      urlDeviceMac ||
+      urlDeviceSn ||
+      urlErrorCode ||
+      urlReasonCode ||
+      urlMsgContains
+    ) {
       setAutoSearch(true);
     }
   }, []);
 
   useEffect(() => {
+    const fromUrl = Number(new URLSearchParams(window.location.search).get('limit') ?? '');
+    if (Number.isFinite(fromUrl) && fromUrl >= 1 && fromUrl <= MAX_RESULTS_PER_PAGE) {
+      setLimit(Math.trunc(fromUrl));
+      return;
+    }
     const saved = localStorage.getItem('cgm_logs_limit');
     const n = saved ? Number(saved) : NaN;
     if (Number.isFinite(n) && n >= 1 && n <= MAX_RESULTS_PER_PAGE) {
       setLimit(Math.trunc(n));
     }
   }, []);
+
+  useEffect(() => {
+    if (urlSyncReady) return;
+    if (!startLocal || !endLocal) return;
+    setUrlSyncReady(true);
+  }, [urlSyncReady, startLocal, endLocal]);
+
+  useEffect(() => {
+    if (!urlSyncReady) return;
+    const sp = new URLSearchParams(window.location.search);
+    const setOrDelete = (key: string, value: string) => {
+      if (value) {
+        sp.set(key, value);
+      } else {
+        sp.delete(key);
+      }
+    };
+
+    setOrDelete('eventName', eventName.trim());
+    setOrDelete('logFileId', logFileId.trim());
+    setOrDelete('q', keyword.trim());
+    setOrDelete('sdkVersion', sdkVersion.trim());
+    setOrDelete('appId', appId.trim());
+    setOrDelete('level', level.trim());
+    setOrDelete('levelGte', levelGte.trim());
+    setOrDelete('linkCode', linkCode.trim());
+    setOrDelete('requestId', requestId.trim());
+    setOrDelete('stage', stage.trim());
+    setOrDelete('op', op.trim());
+    setOrDelete('result', flowResult.trim());
+    setOrDelete('deviceMac', deviceMac.trim());
+    setOrDelete('deviceSn', deviceSn.trim());
+    setOrDelete('errorCode', errorCode.trim());
+    setOrDelete('reasonCode', reasonCode.trim());
+    setOrDelete('msgContains', msgContains.trim());
+    sp.set('excludeNoisy', excludeNoisy ? 'true' : 'false');
+    sp.set('limit', String(limit));
+
+    const startMs = new Date(startLocal).getTime();
+    const endMs = new Date(endLocal).getTime();
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      sp.set('startMs', String(startMs));
+      sp.set('endMs', String(endMs));
+    } else {
+      sp.delete('startMs');
+      sp.delete('endMs');
+    }
+    sp.delete('startTime');
+    sp.delete('endTime');
+
+    const next = sp.toString();
+    const current = window.location.search.startsWith('?')
+      ? window.location.search.slice(1)
+      : '';
+    if (next === current) return;
+    const nextUrl = next ? `${window.location.pathname}?${next}` : window.location.pathname;
+    window.history.replaceState(null, '', nextUrl);
+  }, [
+    urlSyncReady,
+    eventName,
+    logFileId,
+    keyword,
+    sdkVersion,
+    appId,
+    level,
+    levelGte,
+    linkCode,
+    requestId,
+    stage,
+    op,
+    flowResult,
+    deviceMac,
+    deviceSn,
+    errorCode,
+    reasonCode,
+    msgContains,
+    excludeNoisy,
+    limit,
+    startLocal,
+    endLocal,
+  ]);
 
   useEffect(() => {
     localStorage.setItem('cgm_logs_limit', String(limit));
@@ -513,9 +681,13 @@ export default function LogsPage() {
       if (levelGte) qs.set('levelGte', levelGte);
       if (linkCode.trim()) qs.set('linkCode', linkCode.trim());
       if (requestId.trim()) qs.set('requestId', requestId.trim());
+      if (stage.trim()) qs.set('stage', stage.trim());
+      if (op.trim()) qs.set('op', op.trim());
+      if (flowResult.trim()) qs.set('result', flowResult.trim());
       if (deviceMac.trim()) qs.set('deviceMac', deviceMac.trim());
       if (deviceSn.trim()) qs.set('deviceSn', deviceSn.trim());
       if (errorCode.trim()) qs.set('errorCode', errorCode.trim());
+      if (reasonCode.trim()) qs.set('reasonCode', reasonCode.trim());
       if (msgContains.trim()) qs.set('msgContains', msgContains.trim());
       if (excludeNoisy) qs.set('excludeNoisy', 'true');
       qs.set('limit', String(limit));
@@ -547,7 +719,19 @@ export default function LogsPage() {
     if (!startLocal || !endLocal) return;
     setAutoSearch(false);
     void searchRef.current(true);
-  }, [autoSearch, projectId, startLocal, endLocal, keyword, logFileId]);
+  }, [
+    autoSearch,
+    projectId,
+    startLocal,
+    endLocal,
+    keyword,
+    logFileId,
+    stage,
+    op,
+    flowResult,
+    errorCode,
+    reasonCode,
+  ]);
 
   const buildQuickLinkHref = (base: string) => {
     const qs = new URLSearchParams();
@@ -821,6 +1005,33 @@ export default function LogsPage() {
                       />
                     </div>
                     <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">stage</label>
+                      <Input
+                        value={stage}
+                        onChange={(e) => setStage(e.target.value)}
+                        placeholder="e.g. ble/http/mqtt"
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">op</label>
+                      <Input
+                        value={op}
+                        onChange={(e) => setOp(e.target.value)}
+                        placeholder="e.g. connect/publish/ack"
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">result</label>
+                      <Input
+                        value={flowResult}
+                        onChange={(e) => setFlowResult(e.target.value)}
+                        placeholder="e.g. fail/timeout"
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
                       <label className="text-xs text-muted-foreground mb-1 block">deviceMac</label>
                       <Input
                         value={deviceMac}
@@ -844,6 +1055,15 @@ export default function LogsPage() {
                         value={errorCode}
                         onChange={(e) => setErrorCode(e.target.value)}
                         placeholder="e.g. E001"
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">reasonCode</label>
+                      <Input
+                        value={reasonCode}
+                        onChange={(e) => setReasonCode(e.target.value)}
+                        placeholder="e.g. LINK_LOSS"
                         className="h-9"
                       />
                     </div>
@@ -1032,7 +1252,8 @@ export default function LogsPage() {
                               e.requestId ||
                               e.deviceMac ||
                               e.deviceSn ||
-                              e.errorCode) && (
+                              e.errorCode ||
+                              e.reasonCode) && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {e.linkCode && (
                                   <Badge
@@ -1072,6 +1293,14 @@ export default function LogsPage() {
                                     className="text-[10px] font-mono"
                                   >
                                     ERR:{e.errorCode}
+                                  </Badge>
+                                )}
+                                {e.reasonCode && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    RC:{e.reasonCode}
                                   </Badge>
                                 )}
                               </div>
@@ -1121,7 +1350,8 @@ export default function LogsPage() {
                               e.requestId ||
                               e.deviceMac ||
                               e.deviceSn ||
-                              e.errorCode) && (
+                              e.errorCode ||
+                              e.reasonCode) && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {e.linkCode && (
                                   <Badge
@@ -1161,6 +1391,14 @@ export default function LogsPage() {
                                     className="text-[10px] font-mono"
                                   >
                                     ERR:{e.errorCode}
+                                  </Badge>
+                                )}
+                                {e.reasonCode && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] font-mono"
+                                  >
+                                    RC:{e.reasonCode}
                                   </Badge>
                                 )}
                               </div>
@@ -1272,6 +1510,8 @@ export default function LogsPage() {
 	                      <span className="font-mono text-xs truncate">{detail.deviceSn ?? '-'}</span>
 	                      <span className="text-muted-foreground">errorCode</span>
 	                      <span className="font-mono text-xs truncate">{detail.errorCode ?? '-'}</span>
+	                      <span className="text-muted-foreground">reasonCode</span>
+	                      <span className="font-mono text-xs truncate">{detail.reasonCode ?? '-'}</span>
 	                    </div>
 
 	                    {/* Copy buttons */}

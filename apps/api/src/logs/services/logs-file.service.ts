@@ -59,6 +59,75 @@ export class LogsFileService {
     return { blocksTotal, blocksSucceeded, blocksFailed };
   }
 
+  private normalizeOptionalValue(value: string | null | undefined) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private toPercent(part: number, total: number) {
+    if (total <= 0) return 0;
+    return Math.round((part / total) * 10000) / 100;
+  }
+
+  private classifyReasonCode(reasonCode: string) {
+    const code = reasonCode.toUpperCase();
+    if (code.includes('TIMEOUT') || code.includes('TIME_OUT')) {
+      return 'timeout';
+    }
+    if (
+      code.includes('PERMISSION') ||
+      code.includes('AUTH') ||
+      code.includes('TOKEN') ||
+      code.includes('DENIED')
+    ) {
+      return 'permission';
+    }
+    if (
+      code.includes('BLE') ||
+      code.includes('GATT') ||
+      code.includes('SCAN') ||
+      code.includes('CONNECT') ||
+      code.includes('BOND') ||
+      code.includes('PAIR')
+    ) {
+      return 'bluetooth';
+    }
+    if (
+      code.includes('HTTP') ||
+      code.includes('MQTT') ||
+      code.includes('NETWORK') ||
+      code.includes('SOCKET') ||
+      code.includes('SERVER') ||
+      code.includes('DNS')
+    ) {
+      return 'network';
+    }
+    if (
+      code.includes('DATA') ||
+      code.includes('INDEX') ||
+      code.includes('UPLOAD') ||
+      code.includes('ACK')
+    ) {
+      return 'data';
+    }
+    if (
+      code.includes('DISCONNECT') ||
+      code.includes('LINK') ||
+      code.includes('SESSION')
+    ) {
+      return 'session';
+    }
+    if (
+      code.includes('DEVICE') ||
+      code.includes('SN') ||
+      code.includes('MAC')
+    ) {
+      return 'device';
+    }
+    return 'unknown';
+  }
+
   async upload(params: {
     actorUserId: string;
     projectId: string;
@@ -654,6 +723,197 @@ export class LogsFileService {
     });
 
     return { logFileId: logFile.id, ...report };
+  }
+
+  async getReasonCodeSummary(params: { actorUserId: string; id: string }) {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: params.id },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new ApiException({
+        code: 'LOG_FILE_NOT_FOUND',
+        message: 'Log file not found',
+        status: 404,
+      });
+    }
+
+    await this.rbac.requireProjectRoles({
+      userId: params.actorUserId,
+      projectId: logFile.projectId,
+      allowed: ['Admin', 'PM', 'Dev', 'QA', 'Release', 'Support', 'Viewer'],
+    });
+
+    const reasonCodeWhere: Prisma.LogEventWhereInput = {
+      logFileId: logFile.id,
+      reasonCode: { not: null, notIn: [''] },
+    };
+
+    const [totalEvents, rawReasonCodeGroups] = await Promise.all([
+      this.prisma.logEvent.count({ where: { logFileId: logFile.id } }),
+      this.prisma.logEvent.groupBy({
+        by: ['reasonCode'],
+        where: reasonCodeWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const reasonCountMap = new Map<string, number>();
+    for (const row of rawReasonCodeGroups) {
+      const reasonCode = this.normalizeOptionalValue(row.reasonCode);
+      if (!reasonCode) continue;
+      reasonCountMap.set(
+        reasonCode,
+        (reasonCountMap.get(reasonCode) ?? 0) + row._count._all,
+      );
+    }
+
+    const reasonEntries = Array.from(reasonCountMap.entries())
+      .map(([reasonCode, count]) => ({
+        reasonCode,
+        count,
+        category: this.classifyReasonCode(reasonCode),
+      }))
+      .sort(
+        (a, b) => b.count - a.count || a.reasonCode.localeCompare(b.reasonCode),
+      );
+
+    const reasonCodeEvents = reasonEntries.reduce(
+      (sum, item) => sum + item.count,
+      0,
+    );
+    const missingReasonCodeEvents = Math.max(totalEvents - reasonCodeEvents, 0);
+    const coverageRatio = this.toPercent(reasonCodeEvents, totalEvents);
+
+    if (reasonCodeEvents === 0) {
+      return {
+        logFileId: logFile.id,
+        totalEvents,
+        reasonCodeEvents,
+        missingReasonCodeEvents,
+        coverageRatio,
+        uniqueReasonCodeCount: 0,
+        topReasonCodes: [],
+        byCategory: [],
+        topStageOpResults: [],
+      };
+    }
+
+    const categoryMap = new Map<
+      string,
+      { count: number; reasonCounts: Map<string, number> }
+    >();
+    for (const item of reasonEntries) {
+      const existing = categoryMap.get(item.category);
+      if (existing) {
+        existing.count += item.count;
+        existing.reasonCounts.set(item.reasonCode, item.count);
+        continue;
+      }
+      categoryMap.set(item.category, {
+        count: item.count,
+        reasonCounts: new Map([[item.reasonCode, item.count]]),
+      });
+    }
+
+    const byCategory = Array.from(categoryMap.entries())
+      .map(([category, aggregate]) => ({
+        category,
+        count: aggregate.count,
+        ratio: this.toPercent(aggregate.count, reasonCodeEvents),
+        reasonCodeCount: aggregate.reasonCounts.size,
+        topReasonCodes: Array.from(aggregate.reasonCounts.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, 5)
+          .map(([reasonCode, count]) => ({
+            reasonCode,
+            count,
+            ratio: this.toPercent(count, reasonCodeEvents),
+          })),
+      }))
+      .sort(
+        (a, b) => b.count - a.count || a.category.localeCompare(b.category),
+      );
+
+    const rawStageOpResultReasonGroups = await this.prisma.logEvent.groupBy({
+      by: ['stage', 'op', 'result', 'reasonCode'],
+      where: reasonCodeWhere,
+      _count: { _all: true },
+    });
+
+    type StageOpResultAggregate = {
+      stage: string | null;
+      op: string | null;
+      result: string | null;
+      count: number;
+      reasonCounts: Map<string, number>;
+    };
+
+    const stageOpResultMap = new Map<string, StageOpResultAggregate>();
+    for (const row of rawStageOpResultReasonGroups) {
+      const reasonCode = this.normalizeOptionalValue(row.reasonCode);
+      if (!reasonCode) continue;
+      const stage = this.normalizeOptionalValue(row.stage);
+      const op = this.normalizeOptionalValue(row.op);
+      const result = this.normalizeOptionalValue(row.result);
+      const key = `${stage ?? ''}\u0001${op ?? ''}\u0001${result ?? ''}`;
+      const count = row._count._all;
+
+      const existing = stageOpResultMap.get(key);
+      if (existing) {
+        existing.count += count;
+        existing.reasonCounts.set(
+          reasonCode,
+          (existing.reasonCounts.get(reasonCode) ?? 0) + count,
+        );
+        continue;
+      }
+
+      stageOpResultMap.set(key, {
+        stage,
+        op,
+        result,
+        count,
+        reasonCounts: new Map([[reasonCode, count]]),
+      });
+    }
+
+    const topStageOpResults = Array.from(stageOpResultMap.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map((item) => ({
+        stage: item.stage,
+        op: item.op,
+        result: item.result,
+        count: item.count,
+        ratio: this.toPercent(item.count, reasonCodeEvents),
+        topReasonCodes: Array.from(item.reasonCounts.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, 3)
+          .map(([reasonCode, count]) => ({
+            reasonCode,
+            count,
+            ratioWithinCombination: this.toPercent(count, item.count),
+          })),
+      }));
+
+    return {
+      logFileId: logFile.id,
+      totalEvents,
+      reasonCodeEvents,
+      missingReasonCodeEvents,
+      coverageRatio,
+      uniqueReasonCodeCount: reasonEntries.length,
+      topReasonCodes: reasonEntries.slice(0, 15).map((item) => ({
+        reasonCode: item.reasonCode,
+        category: item.category,
+        count: item.count,
+        ratio: this.toPercent(item.count, reasonCodeEvents),
+      })),
+      byCategory,
+      topStageOpResults,
+    };
   }
 
   async getStreamSessionQualityReport(params: {

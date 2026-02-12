@@ -237,6 +237,54 @@ type RegressionTrendResponse = {
   items: RegressionTrendItem[];
 };
 
+type ReasonCodeCategory =
+  | 'timeout'
+  | 'permission'
+  | 'network'
+  | 'bluetooth'
+  | 'data'
+  | 'session'
+  | 'device'
+  | 'unknown';
+
+type ReasonCodeSummaryResponse = {
+  logFileId: string;
+  totalEvents: number;
+  reasonCodeEvents: number;
+  missingReasonCodeEvents: number;
+  coverageRatio: number;
+  uniqueReasonCodeCount: number;
+  topReasonCodes: Array<{
+    reasonCode: string;
+    category: ReasonCodeCategory;
+    count: number;
+    ratio: number;
+  }>;
+  byCategory: Array<{
+    category: ReasonCodeCategory;
+    count: number;
+    ratio: number;
+    reasonCodeCount: number;
+    topReasonCodes: Array<{
+      reasonCode: string;
+      count: number;
+      ratio: number;
+    }>;
+  }>;
+  topStageOpResults: Array<{
+    stage: string | null;
+    op: string | null;
+    result: string | null;
+    count: number;
+    ratio: number;
+    topReasonCodes: Array<{
+      reasonCode: string;
+      count: number;
+      ratioWithinCombination: number;
+    }>;
+  }>;
+};
+
 type TranslateFn = (
   key: string,
   vars?: Record<string, string | number>
@@ -290,6 +338,33 @@ function getTriggerModeLabel(mode: string, t: TranslateFn) {
   return mode;
 }
 
+function getReasonCategoryLabel(category: ReasonCodeCategory, t: TranslateFn) {
+  if (category === 'timeout') return t('logs.analysis.reasonCode.category.timeout');
+  if (category === 'permission') return t('logs.analysis.reasonCode.category.permission');
+  if (category === 'network') return t('logs.analysis.reasonCode.category.network');
+  if (category === 'bluetooth') return t('logs.analysis.reasonCode.category.bluetooth');
+  if (category === 'data') return t('logs.analysis.reasonCode.category.data');
+  if (category === 'session') return t('logs.analysis.reasonCode.category.session');
+  if (category === 'device') return t('logs.analysis.reasonCode.category.device');
+  return t('logs.analysis.reasonCode.category.unknown');
+}
+
+function buildLogsSearchHref(params: {
+  logFileId: string;
+  reasonCode?: string;
+  stage?: string | null;
+  op?: string | null;
+  result?: string | null;
+}) {
+  const qs = new URLSearchParams();
+  qs.set('logFileId', params.logFileId);
+  if (params.reasonCode?.trim()) qs.set('reasonCode', params.reasonCode.trim());
+  if (params.stage?.trim()) qs.set('stage', params.stage.trim());
+  if (params.op?.trim()) qs.set('op', params.op.trim());
+  if (params.result?.trim()) qs.set('result', params.result.trim());
+  return `/logs?${qs.toString()}`;
+}
+
 export default function AnalysisPage() {
   const { localeTag, t } = useI18n();
   const params = useParams();
@@ -313,6 +388,11 @@ export default function AnalysisPage() {
   const [regressionLoading, setRegressionLoading] = useState(false);
   const [regressionError, setRegressionError] = useState('');
   const [baselineHint, setBaselineHint] = useState('');
+
+  const [reasonCodeSummary, setReasonCodeSummary] =
+    useState<ReasonCodeSummaryResponse | null>(null);
+  const [reasonCodeLoading, setReasonCodeLoading] = useState(false);
+  const [reasonCodeError, setReasonCodeError] = useState('');
 
   useEffect(() => {
     if (!logFileId) return;
@@ -364,6 +444,23 @@ export default function AnalysisPage() {
     return () => {
       cancelled = true;
     };
+  }, [logFileId]);
+
+  const loadReasonCodeSummary = useCallback(async () => {
+    if (!logFileId) return;
+    setReasonCodeLoading(true);
+    setReasonCodeError('');
+    try {
+      const data = await apiFetch<ReasonCodeSummaryResponse>(
+        `/api/logs/files/${logFileId}/reason-codes`
+      );
+      setReasonCodeSummary(data);
+    } catch (e: unknown) {
+      setReasonCodeError(toErrorMessage(e));
+      setReasonCodeSummary(null);
+    } finally {
+      setReasonCodeLoading(false);
+    }
   }, [logFileId]);
 
   const loadAssertionRuns = useCallback(async (activeProjectId: string) => {
@@ -426,13 +523,25 @@ export default function AnalysisPage() {
     }
   }, [logFileId, t]);
 
+  useEffect(() => {
+    if (!logFileId) return;
+    void loadReasonCodeSummary();
+  }, [logFileId, loadReasonCodeSummary]);
+
   const refreshAutomationData = useCallback(async () => {
     if (!projectId || !logFileId) return;
     await Promise.all([
       loadAssertionRuns(projectId),
       loadRegressionTrend(projectId),
+      loadReasonCodeSummary(),
     ]);
-  }, [projectId, logFileId, loadAssertionRuns, loadRegressionTrend]);
+  }, [
+    projectId,
+    logFileId,
+    loadAssertionRuns,
+    loadRegressionTrend,
+    loadReasonCodeSummary,
+  ]);
 
   useEffect(() => {
     if (!projectId || !logFileId) return;
@@ -466,6 +575,7 @@ export default function AnalysisPage() {
         `/api/logs/files/${logFileId}/analysis`
       );
       setAnalysis(data);
+      await loadReasonCodeSummary();
       setError('');
     } catch (e: unknown) {
       setError(toErrorMessage(e));
@@ -811,6 +921,237 @@ export default function AnalysisPage() {
             </Card>
           </motion.div>
 
+          {/* Reason Code Classification */}
+          <motion.div
+            variants={fadeIn}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.23 }}
+          >
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle size={20} />
+                  {t('logs.analysis.reasonCode.title')}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {t('logs.analysis.reasonCode.subtitle')}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {reasonCodeError && (
+                  <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+                    {reasonCodeError}
+                  </div>
+                )}
+
+                {reasonCodeLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : reasonCodeSummary ? (
+                  reasonCodeSummary.reasonCodeEvents === 0 ? (
+                    <div className="rounded-md border border-border/60 bg-background/20 p-4 text-sm text-muted-foreground">
+                      {t('logs.analysis.reasonCode.empty')}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            {t('logs.analysis.reasonCode.totalTagged')}
+                          </p>
+                          <p className="text-xl font-semibold tabular-nums">
+                            {reasonCodeSummary.reasonCodeEvents.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            {t('logs.analysis.reasonCode.coverage')}
+                          </p>
+                          <p className="text-xl font-semibold tabular-nums text-emerald-400">
+                            {reasonCodeSummary.coverageRatio.toFixed(2)}%
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            {t('logs.analysis.reasonCode.missing')}
+                          </p>
+                          <p className="text-xl font-semibold tabular-nums text-amber-400">
+                            {reasonCodeSummary.missingReasonCodeEvents.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            {t('logs.analysis.reasonCode.unique')}
+                          </p>
+                          <p className="text-xl font-semibold tabular-nums">
+                            {reasonCodeSummary.uniqueReasonCodeCount.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="mb-2 text-sm font-medium">
+                            {t('logs.analysis.reasonCode.topReasons')}
+                          </p>
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[420px] text-sm">
+                              <thead>
+                                <tr className="border-b border-border/50 text-xs text-muted-foreground">
+                                  <th className="px-2 py-2 text-left">
+                                    {t('logs.analysis.reasonCode.reason')}
+                                  </th>
+                                  <th className="px-2 py-2 text-left">
+                                    {t('logs.analysis.reasonCode.category')}
+                                  </th>
+                                  <th className="px-2 py-2 text-right">
+                                    {t('logs.analysis.reasonCode.count')}
+                                  </th>
+                                  <th className="px-2 py-2 text-right">
+                                    {t('logs.analysis.reasonCode.ratio')}
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {reasonCodeSummary.topReasonCodes.slice(0, 10).map((item) => (
+                                  <tr
+                                    key={item.reasonCode}
+                                    className="border-b border-border/30 text-xs last:border-b-0"
+                                  >
+                                    <td className="px-2 py-2">
+                                      <Link
+                                        href={buildLogsSearchHref({
+                                          logFileId,
+                                          reasonCode: item.reasonCode,
+                                        })}
+                                        className="font-mono text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
+                                        title={t('logs.files.bleQuality.openInLogs')}
+                                      >
+                                        {item.reasonCode}
+                                      </Link>
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      <Badge variant="outline">
+                                        {getReasonCategoryLabel(item.category, t)}
+                                      </Badge>
+                                    </td>
+                                    <td className="px-2 py-2 text-right tabular-nums">
+                                      {item.count.toLocaleString()}
+                                    </td>
+                                    <td className="px-2 py-2 text-right tabular-nums">
+                                      {item.ratio.toFixed(2)}%
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="mb-2 text-sm font-medium">
+                            {t('logs.analysis.reasonCode.categories')}
+                          </p>
+                          <div className="space-y-2">
+                            {reasonCodeSummary.byCategory.map((category) => (
+                              <div
+                                key={category.category}
+                                className="rounded border border-border/50 bg-background/30 p-2"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <Badge variant="secondary">
+                                    {getReasonCategoryLabel(category.category, t)}
+                                  </Badge>
+                                  <span className="text-xs tabular-nums text-muted-foreground">
+                                    {category.count.toLocaleString()} ({category.ratio.toFixed(2)}%)
+                                  </span>
+                                </div>
+                                {category.topReasonCodes[0] && (
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {t('logs.analysis.reasonCode.topReasonHint', {
+                                      reasonCode: category.topReasonCodes[0].reasonCode,
+                                      count: category.topReasonCodes[0].count,
+                                    })}
+                                    {' · '}
+                                    <Link
+                                      href={buildLogsSearchHref({
+                                        logFileId,
+                                        reasonCode: category.topReasonCodes[0].reasonCode,
+                                      })}
+                                      className="text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
+                                      title={t('logs.files.bleQuality.openInLogs')}
+                                    >
+                                      {t('logs.files.bleQuality.openInLogs')}
+                                    </Link>
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {reasonCodeSummary.topStageOpResults.length > 0 && (
+                        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+                          <p className="mb-2 text-sm font-medium">
+                            {t('logs.analysis.reasonCode.stageOpResult')}
+                          </p>
+                          <div className="space-y-2">
+                            {reasonCodeSummary.topStageOpResults.map((item, idx) => (
+                              <div
+                                key={`${item.stage ?? 'n'}-${item.op ?? 'n'}-${item.result ?? 'n'}-${idx}`}
+                                className="rounded border border-border/40 bg-background/30 p-2"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <span className="font-medium">
+                                    {(item.stage ?? t('logs.analysis.reasonCode.unknownValue')).toLowerCase()} /{' '}
+                                    {(item.op ?? t('logs.analysis.reasonCode.unknownValue')).toLowerCase()} /{' '}
+                                    {(item.result ?? t('logs.analysis.reasonCode.unknownValue')).toLowerCase()}
+                                  </span>
+                                  <span className="tabular-nums text-muted-foreground">
+                                    {item.count.toLocaleString()} ({item.ratio.toFixed(2)}%)
+                                  </span>
+                                </div>
+                                {item.topReasonCodes.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                    {item.topReasonCodes.map((reason) => (
+                                      <Link
+                                        key={reason.reasonCode}
+                                        href={buildLogsSearchHref({
+                                          logFileId,
+                                          reasonCode: reason.reasonCode,
+                                          stage: item.stage,
+                                          op: item.op,
+                                          result: item.result,
+                                        })}
+                                        title={t('logs.files.bleQuality.openInLogs')}
+                                        className="rounded border border-border/50 bg-background/50 px-2 py-1 font-mono"
+                                      >
+                                        {reason.reasonCode} ({reason.count}, {reason.ratioWithinCombination.toFixed(1)}%)
+                                      </Link>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                ) : (
+                  <div className="rounded-md border border-border/60 bg-background/20 p-4 text-sm text-muted-foreground">
+                    {t('common.loading')}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+
           {/* Assertion Automation */}
           <motion.div
             variants={fadeIn}
@@ -854,12 +1195,16 @@ export default function AnalysisPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => void refreshAutomationData()}
-                    disabled={!projectId || assertionLoading || regressionLoading}
+                    disabled={!projectId || assertionLoading || regressionLoading || reasonCodeLoading}
                     className="gap-2"
                   >
                     <RefreshCw
                       size={15}
-                      className={assertionLoading || regressionLoading ? 'animate-spin' : ''}
+                      className={
+                        assertionLoading || regressionLoading || reasonCodeLoading
+                          ? 'animate-spin'
+                          : ''
+                      }
                     />
                     {t('logs.analysis.actions.refreshAutomation')}
                   </Button>

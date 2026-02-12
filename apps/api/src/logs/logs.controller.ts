@@ -56,6 +56,7 @@ const searchSchema = z.object({
   deviceMac: z.string().min(1).optional(),
   deviceSn: z.string().min(1).optional(),
   errorCode: z.string().min(1).optional(),
+  reasonCode: z.string().min(1).optional(),
   excludeNoisy: z.coerce.boolean().optional(),
   // Content search
   msgContains: z.string().min(1).optional(),
@@ -378,6 +379,18 @@ export class LogsController {
   ) {
     const fileId = idSchema.parse(id);
     return this.logsFile.getStreamSessionQualityReport({
+      actorUserId: user.userId,
+      id: fileId,
+    });
+  }
+
+  @Get('files/:id/reason-codes')
+  async getReasonCodeSummary(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ) {
+    const fileId = idSchema.parse(id);
+    return this.logsFile.getReasonCodeSummary({
       actorUserId: user.userId,
       id: fileId,
     });
