@@ -7,7 +7,8 @@ FROM node:20-slim AS build
 WORKDIR /app/apps/web
 COPY --from=deps /app/apps/web/node_modules ./node_modules
 COPY apps/web/ ./
-RUN npm run build
+RUN npm install --no-save --no-audit --no-fund @next/swc-linux-x64-gnu@16.1.0 \
+  && npm run build -- --webpack
 
 FROM node:20-slim AS runner
 WORKDIR /app/apps/web

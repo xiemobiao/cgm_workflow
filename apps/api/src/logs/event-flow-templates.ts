@@ -42,34 +42,16 @@ export type KnownEvent = {
 // ========== Main Flow Template ==========
 
 /**
- * Main Flow Template: APP Startup to Real-time Data
+ * Main Flow Template: BLE flow from SDK init to Real-time Data
  *
- * Defines the standard event flow from app launch to receiving the first
- * real-time data from the CGM device.
+ * Defines the standard event flow from SDK initialization to receiving the first
+ * real-time data from the CGM device, with optional historical data steps.
  */
 export const MAIN_FLOW_TEMPLATE: EventFlowTemplate = {
   id: 'main_flow',
   name: '主链路分析',
-  description: '从 APP 启动到接收实时数据的完整链路',
+  description: '从 SDK 初始化到接收实时数据的完整链路（含历史数据流程）',
   stages: [
-    {
-      id: 'app_launch',
-      name: 'APP 启动',
-      required: true,
-      maxDurationMs: 5000,
-      events: [
-        {
-          eventName: 'APP starts to launch',
-          required: true,
-          description: 'APP 开始启动',
-        },
-        {
-          eventName: 'APP startup completed',
-          required: true,
-          description: 'APP 启动完成',
-        },
-      ],
-    },
     {
       id: 'sdk_init',
       name: 'SDK 初始化',
@@ -159,6 +141,42 @@ export const MAIN_FLOW_TEMPLATE: EventFlowTemplate = {
           eventName: 'BLE auth failure',
           required: false,
           description: '鉴权失败',
+        },
+      ],
+    },
+    {
+      id: 'history_data_query',
+      name: '获取历史数据',
+      required: false,
+      maxDurationMs: 120000,
+      events: [
+        {
+          eventName: 'BLE start getData',
+          required: false,
+          description: '蓝牙数据传输-请求开始',
+        },
+        {
+          eventName: 'BLE start getData error',
+          required: false,
+          description: '蓝牙数据传输-请求失败',
+        },
+      ],
+    },
+    {
+      id: 'history_data_callback',
+      name: '历史数据接收',
+      required: false,
+      maxDurationMs: 120000,
+      events: [
+        {
+          eventName: 'BLE data receive start',
+          required: false,
+          description: '蓝牙数据传输-回传开始',
+        },
+        {
+          eventName: 'BLE data receive done',
+          required: false,
+          description: '蓝牙数据传输-回传成功',
         },
       ],
     },
@@ -408,37 +426,32 @@ export const BLE_KNOWN_EVENTS: KnownEventCategory[] = [
     ],
   },
   {
-    category: '历史数据查询',
+    category: '获取历史数据',
     events: [
       {
-        eventName: 'BLE query history data',
+        eventName: 'BLE start getData',
         level: 'INFO',
-        description: '查询历史数据',
+        description: '蓝牙数据传输-请求开始',
       },
       {
-        eventName: 'BLE query history data done',
+        eventName: 'BLE start getData error',
         level: 'INFO',
-        description: '历史数据查询完成',
+        description: '蓝牙数据传输-请求失败',
       },
     ],
   },
   {
-    category: '历史数据回调',
+    category: '历史数据接收',
     events: [
       {
-        eventName: 'BLE history data callback start',
+        eventName: 'BLE data receive start',
         level: 'DEBUG',
-        description: '历史数据回调开始',
+        description: '蓝牙数据传输-回传开始',
       },
       {
-        eventName: 'BLE history data callback done',
+        eventName: 'BLE data receive done',
         level: 'DEBUG',
-        description: '历史数据回调完成',
-      },
-      {
-        eventName: 'BLE history data callback failure',
-        level: 'ERROR',
-        description: '历史数据回调失败',
+        description: '蓝牙数据传输-回传成功',
       },
     ],
   },

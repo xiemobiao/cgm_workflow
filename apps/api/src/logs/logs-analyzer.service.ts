@@ -187,6 +187,56 @@ export class LogsAnalyzerService {
   }
 
   /**
+   * Recompute only event-flow related analysis with latest templates.
+   * This is used to heal stale snapshots after template changes.
+   */
+  async refreshEventFlowAnalysis(logFileId: string): Promise<{
+    mainFlowAnalysis: unknown;
+    eventCoverageAnalysis: unknown;
+  }> {
+    const logFile = await this.prisma.logFile.findUnique({
+      where: { id: logFileId },
+      select: { id: true, projectId: true },
+    });
+
+    if (!logFile) {
+      throw new Error(`Log file not found: ${logFileId}`);
+    }
+
+    const [mainFlowAnalysis, eventCoverageAnalysis] = await Promise.all([
+      this.eventFlowAnalyzerService.analyzeMainFlow(logFileId),
+      this.eventFlowAnalyzerService.analyzeEventCoverage(logFileId),
+    ]);
+
+    await this.prisma.logFileAnalysis.upsert({
+      where: { logFileId },
+      create: {
+        logFileId,
+        projectId: logFile.projectId,
+        qualityScore: 0,
+        status: AnalysisStatus.completed,
+        mainFlowAnalysis: mainFlowAnalysis as unknown as Prisma.InputJsonValue,
+        eventCoverageAnalysis:
+          eventCoverageAnalysis as unknown as Prisma.InputJsonValue,
+        analyzedAt: new Date(),
+      },
+      update: {
+        status: AnalysisStatus.completed,
+        errorMessage: null,
+        mainFlowAnalysis: mainFlowAnalysis as unknown as Prisma.InputJsonValue,
+        eventCoverageAnalysis:
+          eventCoverageAnalysis as unknown as Prisma.InputJsonValue,
+        analyzedAt: new Date(),
+      },
+    });
+
+    return {
+      mainFlowAnalysis,
+      eventCoverageAnalysis,
+    };
+  }
+
+  /**
    * Analyze BLE log quality (uses existing report)
    */
   private async analyzeBleQuality(logFileId: string): Promise<unknown> {

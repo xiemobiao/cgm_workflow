@@ -36,7 +36,7 @@ type StageDurationCandidate = {
  * Event Flow Analyzer Service
  *
  * Analyzes log files to:
- * 1. Track the main flow (app startup → real-time data)
+ * 1. Track the main flow (SDK initialization → real-time data)
  * 2. Calculate event coverage for all known BLE events
  */
 @Injectable()
@@ -48,7 +48,7 @@ export class EventFlowAnalyzerService {
   /**
    * Analyze main flow for a log file
    *
-   * Tracks the complete event chain from app startup to receiving real-time data.
+   * Tracks the complete event chain from SDK initialization to receiving real-time data.
    */
   async analyzeMainFlow(logFileId: string): Promise<MainFlowAnalysisResult> {
     this.logger.log(`Analyzing main flow for log file: ${logFileId}`);

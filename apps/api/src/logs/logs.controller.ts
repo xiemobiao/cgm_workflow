@@ -419,6 +419,30 @@ export class LogsController {
       logFileId: fileId,
     });
 
+    const snapshot = JSON.stringify({
+      mainFlowAnalysis: analysis.mainFlowAnalysis,
+      eventCoverageAnalysis: analysis.eventCoverageAnalysis,
+    });
+    const missingEventFlowAnalysis =
+      !analysis.mainFlowAnalysis || !analysis.eventCoverageAnalysis;
+    const hasLegacyHistoryEvents =
+      snapshot.includes('BLE query history data') ||
+      snapshot.includes('BLE query history data done') ||
+      snapshot.includes('BLE history data callback start') ||
+      snapshot.includes('BLE history data callback done') ||
+      snapshot.includes('BLE history data callback failure') ||
+      snapshot.includes('"stageName":"获取历史有效数据"') ||
+      snapshot.includes('"stageName":"历史数据查询"') ||
+      snapshot.includes('"stageName":"历史数据回调"');
+
+    if (missingEventFlowAnalysis || hasLegacyHistoryEvents) {
+      const refreshed = await this.analyzer.refreshEventFlowAnalysis(fileId);
+      return {
+        mainFlowAnalysis: refreshed.mainFlowAnalysis,
+        eventCoverageAnalysis: refreshed.eventCoverageAnalysis,
+      };
+    }
+
     return {
       mainFlowAnalysis: analysis.mainFlowAnalysis,
       eventCoverageAnalysis: analysis.eventCoverageAnalysis,
