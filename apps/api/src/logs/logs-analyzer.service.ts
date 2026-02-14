@@ -4,6 +4,7 @@ import { BluetoothService } from './bluetooth.service';
 import { KnownIssuesService } from '../known-issues/known-issues.service';
 import { LogsService } from './logs.service';
 import { EventFlowAnalyzerService } from './event-flow-analyzer.service';
+import { EVENT_FLOW_TEMPLATE_VERSION } from './event-flow-templates';
 import { AnalysisStatus, Prisma } from '@prisma/client';
 
 type AnomalyDetectionResult = {
@@ -233,6 +234,49 @@ export class LogsAnalyzerService {
     return {
       mainFlowAnalysis,
       eventCoverageAnalysis,
+    };
+  }
+
+  async refreshEventFlowAnalysisByProject(params: {
+    projectId: string;
+    limit?: number;
+  }): Promise<{
+    projectId: string;
+    templateVersion: number;
+    totalLogFiles: number;
+    refreshed: number;
+    failed: number;
+    failedLogFileIds: string[];
+  }> {
+    const logFiles = await this.prisma.logFile.findMany({
+      where: { projectId: params.projectId },
+      select: { id: true },
+      orderBy: [{ uploadedAt: 'desc' }, { id: 'desc' }],
+      take: params.limit ?? 200,
+    });
+
+    let refreshed = 0;
+    const failedLogFileIds: string[] = [];
+
+    for (const logFile of logFiles) {
+      try {
+        await this.refreshEventFlowAnalysis(logFile.id);
+        refreshed++;
+      } catch (error) {
+        failedLogFileIds.push(logFile.id);
+        this.logger.warn(
+          `Refresh event-flow failed for log file ${logFile.id}: ${String(error)}`,
+        );
+      }
+    }
+
+    return {
+      projectId: params.projectId,
+      templateVersion: EVENT_FLOW_TEMPLATE_VERSION,
+      totalLogFiles: logFiles.length,
+      refreshed,
+      failed: failedLogFileIds.length,
+      failedLogFileIds,
     };
   }
 

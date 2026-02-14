@@ -39,6 +39,12 @@ export type KnownEvent = {
   description: string;
 };
 
+/**
+ * Version tag for event-flow template snapshots persisted to database.
+ * Bump this when main-flow stages/events or known-event categories change.
+ */
+export const EVENT_FLOW_TEMPLATE_VERSION = 20260213;
+
 // ========== Main Flow Template ==========
 
 /**

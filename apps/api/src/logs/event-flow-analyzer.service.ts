@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import {
+  EVENT_FLOW_TEMPLATE_VERSION,
   MAIN_FLOW_TEMPLATE,
   BLE_KNOWN_EVENTS,
   type EventFlowStage,
@@ -553,6 +554,7 @@ export class EventFlowAnalyzerService {
     const sampleSessions = sessions.slice(0, 5);
 
     return {
+      templateVersion: EVENT_FLOW_TEMPLATE_VERSION,
       templateId: MAIN_FLOW_TEMPLATE.id,
       templateName: MAIN_FLOW_TEMPLATE.name,
       totalSessions,
@@ -671,6 +673,7 @@ export class EventFlowAnalyzerService {
     );
 
     return {
+      templateVersion: EVENT_FLOW_TEMPLATE_VERSION,
       totalEvents,
       knownEventsCount,
       summary: {
@@ -688,6 +691,7 @@ export class EventFlowAnalyzerService {
    */
   private getEmptyMainFlowResult(): MainFlowAnalysisResult {
     return {
+      templateVersion: EVENT_FLOW_TEMPLATE_VERSION,
       templateId: MAIN_FLOW_TEMPLATE.id,
       templateName: MAIN_FLOW_TEMPLATE.name,
       totalSessions: 0,

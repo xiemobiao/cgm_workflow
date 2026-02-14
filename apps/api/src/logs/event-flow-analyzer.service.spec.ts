@@ -1,5 +1,6 @@
 import { PrismaService } from '../database/prisma.service';
 import { EventFlowAnalyzerService } from './event-flow-analyzer.service';
+import { EVENT_FLOW_TEMPLATE_VERSION } from './event-flow-templates';
 
 describe('EventFlowAnalyzerService', () => {
   it('uses per-attempt duration for BLE connection stage instead of first-last span', async () => {
@@ -167,6 +168,8 @@ describe('EventFlowAnalyzerService', () => {
 
     const service = new EventFlowAnalyzerService(prisma);
     const result = await service.analyzeMainFlow('lf-1');
+
+    expect(result.templateVersion).toBe(EVENT_FLOW_TEMPLATE_VERSION);
 
     const bleConnect = result.stages.find((s) => s.stageId === 'ble_connect');
     expect(bleConnect).toBeDefined();

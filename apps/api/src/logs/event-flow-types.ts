@@ -8,6 +8,7 @@
  * Main flow analysis result
  */
 export type MainFlowAnalysisResult = {
+  templateVersion: number;
   templateId: string;
   templateName: string;
   totalSessions: number; // Total number of sessions analyzed
@@ -98,6 +99,7 @@ export type StageTiming = {
  * Event coverage analysis result
  */
 export type EventCoverageAnalysisResult = {
+  templateVersion: number;
   totalEvents: number; // Total events in the log file
   knownEventsCount: number; // Total number of known events (54)
 

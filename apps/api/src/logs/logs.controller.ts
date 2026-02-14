@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BluetoothService } from './bluetooth.service';
 import { LogsService } from './logs.service';
 import { LogsAnalyzerService } from './logs-analyzer.service';
+import { EVENT_FLOW_TEMPLATE_VERSION } from './event-flow-templates';
 import {
   LogsFileService,
   LogsSearchService,
@@ -240,6 +241,19 @@ const bluetoothAnomaliesEnhancedSchema = z.object({
   deviceMac: z.string().min(1).optional(),
 });
 
+const eventFlowBackfillSchema = z.object({
+  projectId: z.string().uuid(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+function getAnalysisTemplateVersion(payload: unknown): number | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const version = (payload as { templateVersion?: unknown }).templateVersion;
+  return typeof version === 'number' && Number.isFinite(version)
+    ? version
+    : null;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('logs')
 export class LogsController {
@@ -419,23 +433,19 @@ export class LogsController {
       logFileId: fileId,
     });
 
-    const snapshot = JSON.stringify({
-      mainFlowAnalysis: analysis.mainFlowAnalysis,
-      eventCoverageAnalysis: analysis.eventCoverageAnalysis,
-    });
     const missingEventFlowAnalysis =
       !analysis.mainFlowAnalysis || !analysis.eventCoverageAnalysis;
-    const hasLegacyHistoryEvents =
-      snapshot.includes('BLE query history data') ||
-      snapshot.includes('BLE query history data done') ||
-      snapshot.includes('BLE history data callback start') ||
-      snapshot.includes('BLE history data callback done') ||
-      snapshot.includes('BLE history data callback failure') ||
-      snapshot.includes('"stageName":"获取历史有效数据"') ||
-      snapshot.includes('"stageName":"历史数据查询"') ||
-      snapshot.includes('"stageName":"历史数据回调"');
+    const mainFlowTemplateVersion = getAnalysisTemplateVersion(
+      analysis.mainFlowAnalysis,
+    );
+    const coverageTemplateVersion = getAnalysisTemplateVersion(
+      analysis.eventCoverageAnalysis,
+    );
+    const templateVersionMismatch =
+      mainFlowTemplateVersion !== EVENT_FLOW_TEMPLATE_VERSION ||
+      coverageTemplateVersion !== EVENT_FLOW_TEMPLATE_VERSION;
 
-    if (missingEventFlowAnalysis || hasLegacyHistoryEvents) {
+    if (missingEventFlowAnalysis || templateVersionMismatch) {
       const refreshed = await this.analyzer.refreshEventFlowAnalysis(fileId);
       return {
         mainFlowAnalysis: refreshed.mainFlowAnalysis,
@@ -463,6 +473,27 @@ export class LogsController {
     // Trigger analysis asynchronously
     void this.analyzer.analyzeLogFile(fileId);
     return { message: 'Analysis triggered', logFileId: fileId };
+  }
+
+  @Post('event-flow/backfill')
+  @HttpCode(200)
+  async backfillEventFlowAnalysis(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: unknown,
+  ) {
+    const dto = eventFlowBackfillSchema.parse(body);
+
+    // Reuse existing RBAC gate in file listing before running batch refresh.
+    await this.logsFile.listLogFiles({
+      actorUserId: user.userId,
+      projectId: dto.projectId,
+      limit: 1,
+    });
+
+    return this.analyzer.refreshEventFlowAnalysisByProject({
+      projectId: dto.projectId,
+      limit: dto.limit,
+    });
   }
 
   @Delete('files/:id')
